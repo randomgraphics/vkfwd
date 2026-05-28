@@ -18,12 +18,26 @@ fi
 __vkfwd_setup_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export VKFWD_ROOT="$__vkfwd_setup_dir"
 
-# Keep the layer build output first so local interception artifacts win over
-# any globally installed layer manifests while this development shell is active.
-case ":${VK_LAYER_PATH:-}:" in
-    *":${VKFWD_ROOT}/build/src/vkfwd:"*) ;;
-    *) export VK_LAYER_PATH="${VKFWD_ROOT}/build/src/vkfwd${VK_LAYER_PATH:+:$VK_LAYER_PATH}" ;;
+# Keep repository command helpers discoverable after setup without requiring
+# users to modify their global shell startup files.
+case ":${PATH}:" in
+    *":${VKFWD_ROOT}/dev/bin:"*) ;;
+    *) export PATH="${VKFWD_ROOT}/dev/bin:${PATH}" ;;
 esac
+
+# The local virtual environment isolates Python command-line tooling for this
+# checkout while keeping activation in the caller's shell, matching the sourced
+# setup contract above.
+__vkfwd_venv="${VKFWD_ROOT}/dev/env/.pyvenv"
+if [ ! -d "$__vkfwd_venv" ]; then
+    python3 -m venv "$__vkfwd_venv"
+fi
+if [ -f "$__vkfwd_venv/bin/activate" ]; then
+    # shellcheck source=/dev/null
+    . "$__vkfwd_venv/bin/activate"
+else
+    echo "WARNING: Python virtual environment activation script not found: $__vkfwd_venv/bin/activate"
+fi
 
 # Reference a shared RandomGraphics git config when the workspace parent owns
 # one. The include is repository-local so sourcing this file does not mutate the
@@ -62,10 +76,11 @@ PS1="\n\e[00;92m==== [${__vkfwd_repo_name}] - \e[01;96m${VKFWD_ROOT}\e[00;92m - 
 
 echo
 echo "VKFWD_ROOT    = ${VKFWD_ROOT}"
-echo "VK_LAYER_PATH = ${VK_LAYER_PATH}"
+echo "VIRTUAL_ENV   = ${VIRTUAL_ENV:-}"
 echo
 
 unset __vkfwd_gitconfig
 unset __vkfwd_git_error
 unset __vkfwd_repo_name
 unset __vkfwd_setup_dir
+unset __vkfwd_venv

@@ -90,10 +90,13 @@ The scaffold uses CMake and expects Vulkan headers and loader development files
 to be available on the system.
 
 ```sh
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build
+dev/bin/build.py d
+ctest --test-dir build/linux.gcc.debug
 ```
+
+Build variants are `d` for debug, `r` for release, `p` for profiling
+(`RelWithDebInfo`), and `c` for cleanup. Android builds use `--android` and
+write to a separate `build/android-<abi>.clang.<variant>` folder.
 
 For local development shell setup, source:
 
