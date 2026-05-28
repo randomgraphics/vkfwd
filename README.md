@@ -98,7 +98,7 @@ ctest --test-dir build
 For local development shell setup, source:
 
 ```sh
-. dev/env/setup.sh
+. setup.sh
 ```
 
 ## Status
