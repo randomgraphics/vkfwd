@@ -37,6 +37,11 @@ target_include_directories(vkfwd_receiver
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR})
 
+target_link_libraries(vkfwd_receiver
+  PUBLIC
+    fmt::fmt
+    spdlog::spdlog)
+
 target_compile_definitions(vkfwd_receiver
   PRIVATE
     VKFWD_VERSION="${PROJECT_VERSION}")
@@ -55,6 +60,11 @@ target_link_libraries(vkfwd_layer
   PRIVATE
     vkfwd_capture
     Vulkan::Vulkan)
+
+target_link_libraries(vkfwd_capture
+  PUBLIC
+    fmt::fmt
+    spdlog::spdlog)
 
 target_compile_definitions(vkfwd_layer
   PRIVATE

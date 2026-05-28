@@ -1,0 +1,10 @@
+[submodule "src/contrib/fmt"]
+	path = src/contrib/fmt
+	url = https://github.com/fmtlib/fmt.git
+	branch = 12.1.0
+	shallow = true
+[submodule "src/contrib/spdlog"]
+	path = src/contrib/spdlog
+	url = https://github.com/gabime/spdlog.git
+	branch = v1.17.0
+	shallow = true

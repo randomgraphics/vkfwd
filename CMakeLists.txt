@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
 
+add_subdirectory(src/contrib)
 add_subdirectory(src/vkfwd)
 
 if(BUILD_TESTING)

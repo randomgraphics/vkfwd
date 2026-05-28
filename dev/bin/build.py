@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import configparser
 import os
 import platform
 import shutil
@@ -21,6 +22,13 @@ VARIANTS = {
 }
 
 
+class Submodule:
+    def __init__(self, path: Path, url: str, branch: str | None):
+        self.path = path
+        self.url = url
+        self.branch = branch
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -36,6 +44,93 @@ def run(command: list[str], cwd: Path | None = None) -> None:
         subprocess.check_call(command, cwd=cwd)
     except subprocess.CalledProcessError as err:
         sys.exit(err.returncode)
+
+
+def submodules() -> list[Submodule]:
+    gitmodules = repo_root() / ".gitmodules"
+    if not gitmodules.is_file():
+        return []
+
+    config = configparser.ConfigParser()
+    config.read(gitmodules)
+
+    result: list[Submodule] = []
+    for section in config.sections():
+        if not section.startswith("submodule "):
+            continue
+        if not config.has_option(section, "path") or not config.has_option(section, "url"):
+            continue
+        branch = config.get(section, "branch") if config.has_option(section, "branch") else None
+        result.append(
+            Submodule(
+                repo_root() / config.get(section, "path"),
+                config.get(section, "url"),
+                branch,
+            )
+        )
+    return result
+
+
+def submodule_needs_fetch(path: Path) -> bool:
+    if not path.exists():
+        return True
+    if not path.is_dir():
+        fail(f"submodule path exists but is not a directory: {path}")
+
+    # A populated submodule has either a .git file that points at the real gitdir
+    # or a .git directory for manually cloned checkouts. Empty directories are
+    # treated as not fetched so CMake never configures against half state.
+    if (path / ".git").exists():
+        return False
+    return not any(path.iterdir())
+
+
+def fetch_missing_submodules() -> None:
+    specs = submodules()
+    missing = [spec for spec in specs if submodule_needs_fetch(spec.path)]
+    if not missing:
+        return
+
+    print("Fetching missing git submodules:", flush=True)
+    for spec in missing:
+        print(f"  {spec.path.relative_to(repo_root())}", flush=True)
+
+    # --recursive keeps nested third-party dependencies coherent, while --depth
+    # preserves the repository policy that vendored dependencies should be
+    # shallow unless a developer explicitly asks git for more history. In normal
+    # checkouts this command follows the gitlinks recorded by the repository.
+    run(
+        [
+            "git",
+            "submodule",
+            "update",
+            "--init",
+            "--recursive",
+            "--depth",
+            "1",
+        ],
+        cwd=repo_root(),
+    )
+
+    # During local bootstrapping, .gitmodules may exist before gitlinks are
+    # registered. Fall back to the same shallow clone policy so build.py still
+    # brings the dependency tree into a usable state from repository metadata.
+    for spec in specs:
+        if not submodule_needs_fetch(spec.path):
+            continue
+        spec.path.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--recurse-submodules",
+            "--shallow-submodules",
+        ]
+        if spec.branch:
+            command.extend(["--branch", spec.branch])
+        command.extend([spec.url, str(spec.path)])
+        run(command, cwd=repo_root())
 
 
 def existing_directory_from_env(*names: str) -> Path:
@@ -192,6 +287,7 @@ def main() -> None:
     print(f"Variant    = {cmake_build_type}", flush=True)
 
     if not args.build_only:
+        fetch_missing_submodules()
         run(cmake_configure_args(args, cmake_build_type, build_dir))
     if not args.configure_only:
         run(["cmake", "--build", str(build_dir), "--config", cmake_build_type, f"-j{args.jobs}"])
