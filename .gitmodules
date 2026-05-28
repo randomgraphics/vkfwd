@@ -1,10 +1,13 @@
-[submodule "src/contrib/fmt"]
-	path = src/contrib/fmt
+[submodule "src/third_party/fmt"]
+	path = src/third_party/fmt
 	url = https://github.com/fmtlib/fmt.git
 	branch = 12.1.0
 	shallow = true
-[submodule "src/contrib/spdlog"]
-	path = src/contrib/spdlog
+[submodule "src/third_party/spdlog"]
+	path = src/third_party/spdlog
 	url = https://github.com/gabime/spdlog.git
 	branch = v1.17.0
 	shallow = true
+[submodule "src/third_party/gfxreconstruct"]
+	path = src/third_party/gfxreconstruct
+	url = https://github.com/LunarG/gfxreconstruct.git

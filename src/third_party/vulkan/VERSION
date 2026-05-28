@@ -1,0 +1,11 @@
+Vulkan API version: 1.4.352
+Header version: 352
+Upstream source: https://github.com/KhronosGroup/Vulkan-Headers
+Upstream tag: v1.4.352
+Upstream commit: 015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9
+Imported: 2026-05-28
+
+Contents:
+- include/
+- registry/vk.xml
+- LICENSE.md

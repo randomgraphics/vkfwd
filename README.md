@@ -34,12 +34,23 @@ the full API surface is generated or implemented.
 ## Repository Layout
 
 ```text
-src/vkfwd/      Core vkfwd source files and Vulkan layer entry points.
-src/contrib/    Third-party code referenced directly by the main vkfwd code.
-dev/test/       Development tests and test harnesses.
-dev/env/        Coding environment setup scripts.
-dev/bin/        Helper scripts and utilities.
+src/vkfwd/            Core vkfwd source files and Vulkan layer entry points.
+src/vkfwd/generated/  Generator-owned Vulkan metadata and C++ output.
+src/vkfwd/hooks/      Human-owned per-command hook customizations.
+src/third_party/      Vendored third-party code and pinned Vulkan spec inputs.
+dev/test/             Development tests and test harnesses.
+dev/env/              Coding environment setup scripts.
+dev/bin/              Helper scripts and utilities.
 ```
+
+Everything under `src/vkfwd/generated/` is produced by
+`dev/generator/vulkan_metadata.py` and may be replaced by regeneration. Manual
+code belongs outside that tree. Per-command manual hooks live under
+`src/vkfwd/hooks/<api>Hooks.hpp`; generated command code conditionally includes
+those files when present. Hook implementations that need out-of-line bodies may
+add a matching `.cpp` file and wire it into CMake manually. See
+`src/vkfwd/generated/README.md` and `src/vkfwd/hooks/README.md` for the folder
+ownership rules.
 
 ## Development Rule
 

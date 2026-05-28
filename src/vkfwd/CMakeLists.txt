@@ -1,9 +1,11 @@
-find_package(Vulkan REQUIRED)
-
 # vkfwd_capture is separated from the loadable layer so serialization logic can
 # be unit-tested without involving Vulkan loader discovery.
 add_library(vkfwd_capture STATIC
   forwarder.cpp
+  generated/commands/vkCreateDevice.cpp
+  generated/commands/vkCreateInstance.cpp
+  generated/vulkan_api.cpp
+  hooks/vkCreateDeviceHooks.cpp
   null_forwarding_sink.cpp
   text_call_serializer.cpp)
 
@@ -39,6 +41,7 @@ target_include_directories(vkfwd_receiver
 
 target_link_libraries(vkfwd_receiver
   PUBLIC
+    vkfwd_vulkan_headers
     fmt::fmt
     spdlog::spdlog)
 
@@ -53,16 +56,18 @@ add_library(vkfwd_layer SHARED
 
 target_include_directories(vkfwd_layer
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${Vulkan_INCLUDE_DIRS})
+    ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(vkfwd_layer
   PRIVATE
-    vkfwd_capture
-    Vulkan::Vulkan)
+    # The Vulkan loader loads this layer and provides downstream entry points
+    # through the layer chain. Linking libvulkan here would add an unnecessary
+    # runtime dependency and could blur the dispatch boundary we are testing.
+    vkfwd_capture)
 
 target_link_libraries(vkfwd_capture
   PUBLIC
+    vkfwd_vulkan_headers
     fmt::fmt
     spdlog::spdlog)
 

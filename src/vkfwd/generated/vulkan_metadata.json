@@ -1,0 +1,419 @@
+{
+  "commands": [
+    {
+      "api": "vulkan,vulkansc",
+      "coverage_state": "unclassified",
+      "creates_handles": [
+        "VkInstance"
+      ],
+      "dispatch_parameter": null,
+      "errorcodes": [
+        "VK_ERROR_OUT_OF_HOST_MEMORY",
+        "VK_ERROR_OUT_OF_DEVICE_MEMORY",
+        "VK_ERROR_INITIALIZATION_FAILED",
+        "VK_ERROR_LAYER_NOT_PRESENT",
+        "VK_ERROR_EXTENSION_NOT_PRESENT",
+        "VK_ERROR_INCOMPATIBLE_DRIVER",
+        "VK_ERROR_UNKNOWN",
+        "VK_ERROR_VALIDATION_FAILED"
+      ],
+      "id": 1,
+      "level": "global",
+      "name": "vkCreateInstance",
+      "parameters": [
+        {
+          "const": true,
+          "declaration": "const VkInstanceCreateInfo* pCreateInfo",
+          "direction": "input",
+          "externsync": null,
+          "handle_kind": null,
+          "handle_parent": null,
+          "len": null,
+          "name": "pCreateInfo",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkInstanceCreateInfo"
+        },
+        {
+          "const": true,
+          "declaration": "const VkAllocationCallbacks* pAllocator",
+          "direction": "input",
+          "externsync": null,
+          "handle_kind": null,
+          "handle_parent": null,
+          "len": null,
+          "name": "pAllocator",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkAllocationCallbacks"
+        },
+        {
+          "const": false,
+          "declaration": "VkInstance* pInstance",
+          "direction": "output",
+          "externsync": null,
+          "handle_kind": "dispatchable",
+          "handle_parent": null,
+          "len": null,
+          "name": "pInstance",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkInstance"
+        }
+      ],
+      "return_type": "VkResult",
+      "successcodes": [
+        "VK_SUCCESS"
+      ]
+    },
+    {
+      "api": "vulkan,vulkanbase",
+      "coverage_state": "unclassified",
+      "creates_handles": [
+        "VkDevice"
+      ],
+      "dispatch_parameter": "physicalDevice",
+      "errorcodes": [
+        "VK_ERROR_OUT_OF_HOST_MEMORY",
+        "VK_ERROR_OUT_OF_DEVICE_MEMORY",
+        "VK_ERROR_INITIALIZATION_FAILED",
+        "VK_ERROR_EXTENSION_NOT_PRESENT",
+        "VK_ERROR_FEATURE_NOT_PRESENT",
+        "VK_ERROR_TOO_MANY_OBJECTS",
+        "VK_ERROR_DEVICE_LOST",
+        "VK_ERROR_UNKNOWN",
+        "VK_ERROR_VALIDATION_FAILED"
+      ],
+      "id": 2,
+      "level": "instance",
+      "name": "vkCreateDevice",
+      "parameters": [
+        {
+          "const": false,
+          "declaration": "VkPhysicalDevice physicalDevice",
+          "direction": "input",
+          "externsync": null,
+          "handle_kind": "dispatchable",
+          "handle_parent": "VkInstance",
+          "len": null,
+          "name": "physicalDevice",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkPhysicalDevice"
+        },
+        {
+          "const": true,
+          "declaration": "const VkDeviceCreateInfo* pCreateInfo",
+          "direction": "input",
+          "externsync": null,
+          "handle_kind": null,
+          "handle_parent": null,
+          "len": null,
+          "name": "pCreateInfo",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkDeviceCreateInfo"
+        },
+        {
+          "const": true,
+          "declaration": "const VkAllocationCallbacks* pAllocator",
+          "direction": "input",
+          "externsync": null,
+          "handle_kind": null,
+          "handle_parent": null,
+          "len": null,
+          "name": "pAllocator",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkAllocationCallbacks"
+        },
+        {
+          "const": false,
+          "declaration": "VkDevice* pDevice",
+          "direction": "output",
+          "externsync": null,
+          "handle_kind": "dispatchable",
+          "handle_parent": "VkPhysicalDevice",
+          "len": null,
+          "name": "pDevice",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkDevice"
+        }
+      ],
+      "return_type": "VkResult",
+      "successcodes": [
+        "VK_SUCCESS"
+      ]
+    }
+  ],
+  "generator": {
+    "version": "vkfwd-vulkan-metadata-0.1",
+    "vk_xml": "src/third_party/vulkan/registry/vk.xml",
+    "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
+  },
+  "handles": {
+    "VkDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_DEVICE",
+      "parent": "VkPhysicalDevice"
+    },
+    "VkInstance": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_INSTANCE",
+      "parent": null
+    },
+    "VkPhysicalDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_PHYSICAL_DEVICE",
+      "parent": "VkInstance"
+    }
+  },
+  "protocol": {
+    "generator_schema_version": 1,
+    "wire_major": 1,
+    "wire_minor": 0
+  },
+  "schema": "vkfwd.vulkan-metadata.v1",
+  "structs": {
+    "VkDeviceCreateInfo": {
+      "category": "struct",
+      "has_pnext": true,
+      "members": [
+        {
+          "const": false,
+          "declaration": "VkStructureType sType",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "sType",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkStructureType",
+          "values": "VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO"
+        },
+        {
+          "const": true,
+          "declaration": "const void* pNext",
+          "is_pnext": true,
+          "is_string_array": false,
+          "len": null,
+          "name": "pNext",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkDeviceCreateFlags flags",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "flags",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "VkDeviceCreateFlags",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t queueCreateInfoCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "queueCreateInfoCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkDeviceQueueCreateInfo* pQueueCreateInfos",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": "queueCreateInfoCount",
+          "name": "pQueueCreateInfos",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkDeviceQueueCreateInfo",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t enabledLayerCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "enabledLayerCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const char* const* ppEnabledLayerNames",
+          "is_pnext": false,
+          "is_string_array": true,
+          "len": "enabledLayerCount,null-terminated",
+          "name": "ppEnabledLayerNames",
+          "optional": false,
+          "pointer_depth": 2,
+          "type": "char",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t enabledExtensionCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "enabledExtensionCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const char* const* ppEnabledExtensionNames",
+          "is_pnext": false,
+          "is_string_array": true,
+          "len": "enabledExtensionCount,null-terminated",
+          "name": "ppEnabledExtensionNames",
+          "optional": false,
+          "pointer_depth": 2,
+          "type": "char",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPhysicalDeviceFeatures* pEnabledFeatures",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pEnabledFeatures",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPhysicalDeviceFeatures",
+          "values": null
+        }
+      ]
+    },
+    "VkInstanceCreateInfo": {
+      "category": "struct",
+      "has_pnext": true,
+      "members": [
+        {
+          "const": false,
+          "declaration": "VkStructureType sType",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "sType",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkStructureType",
+          "values": "VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO"
+        },
+        {
+          "const": true,
+          "declaration": "const void* pNext",
+          "is_pnext": true,
+          "is_string_array": false,
+          "len": null,
+          "name": "pNext",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkInstanceCreateFlags flags",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "flags",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "VkInstanceCreateFlags",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkApplicationInfo* pApplicationInfo",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pApplicationInfo",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkApplicationInfo",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t enabledLayerCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "enabledLayerCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const char* const* ppEnabledLayerNames",
+          "is_pnext": false,
+          "is_string_array": true,
+          "len": "enabledLayerCount,null-terminated",
+          "name": "ppEnabledLayerNames",
+          "optional": false,
+          "pointer_depth": 2,
+          "type": "char",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t enabledExtensionCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "enabledExtensionCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const char* const* ppEnabledExtensionNames",
+          "is_pnext": false,
+          "is_string_array": true,
+          "len": "enabledExtensionCount,null-terminated",
+          "name": "ppEnabledExtensionNames",
+          "optional": false,
+          "pointer_depth": 2,
+          "type": "char",
+          "values": null
+        }
+      ]
+    }
+  },
+  "versions": {
+    "header_version": "352",
+    "upstream_commit": "015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9",
+    "upstream_tag": "v1.4.352",
+    "vulkan_api": {
+      "major": 1,
+      "minor": 4,
+      "patch": 352
+    },
+    "vulkan_api_version": "1.4.352"
+  }
+}
