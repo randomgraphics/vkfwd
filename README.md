@@ -106,3 +106,7 @@ For local development shell setup, source:
 This is a new project skeleton. Complete Vulkan API interception, parameter
 serialization, receiver-side deserialization/replay, generated dispatch tables,
 and concrete forwarding transports are not implemented yet.
+
+## License
+
+MIT. See `LICENSE`.
