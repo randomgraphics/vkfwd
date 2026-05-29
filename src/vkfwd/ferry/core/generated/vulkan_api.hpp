@@ -14,9 +14,11 @@
 
 namespace vkfwd::generated {
 
-enum class CommandId : std::uint16_t {
-  CreateInstance = 1,
-  CreateDevice = 2,
+enum class CommandId : std::uint32_t {
+  CreateInstance = 2472334652,
+  DestroyInstance = 748278256,
+  CreateDevice = 1470473620,
+  DestroyDevice = 2054705423,
 };
 
 enum class CommandLevel {
@@ -52,8 +54,6 @@ struct CommandInfo {
   std::string_view return_type;
   std::string_view dispatch_parameter;
   std::span<const std::string_view> creates_handles;
-  std::span<const std::string_view> success_codes;
-  std::span<const std::string_view> error_codes;
 };
 
 struct InstanceDispatchTable {

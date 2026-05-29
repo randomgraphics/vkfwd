@@ -1,0 +1,151 @@
+{
+  "command": {
+    "api": "vulkan,vulkansc",
+    "coverage_state": "unclassified",
+    "creates_handles": [],
+    "dispatch_parameter": "device",
+    "errorcodes": [],
+    "id": 2054705423,
+    "level": "device",
+    "name": "vkDestroyDevice",
+    "parameters": [
+      {
+        "const": false,
+        "declaration": "VkDevice device",
+        "direction": "input",
+        "externsync": "true",
+        "handle_kind": "dispatchable",
+        "handle_parent": "VkPhysicalDevice",
+        "len": null,
+        "name": "device",
+        "optional": true,
+        "pointer_depth": 0,
+        "type": "VkDevice"
+      },
+      {
+        "const": true,
+        "declaration": "const VkAllocationCallbacks* pAllocator",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "pAllocator",
+        "optional": true,
+        "pointer_depth": 1,
+        "type": "VkAllocationCallbacks"
+      }
+    ],
+    "return_type": "void",
+    "successcodes": []
+  },
+  "generator": {
+    "version": "vkfwd-vulkan-metadata-0.1",
+    "vk_xml": "src/third_party/vulkan/registry/vk.xml",
+    "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
+  },
+  "handles": {
+    "VkDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_DEVICE",
+      "parent": "VkPhysicalDevice"
+    }
+  },
+  "protocol": {
+    "generator_schema_version": 1,
+    "wire_major": 1,
+    "wire_minor": 0
+  },
+  "schema": "vkfwd.vulkan-command-metadata.v1",
+  "structs": {
+    "VkAllocationCallbacks": {
+      "category": "struct",
+      "has_pnext": false,
+      "members": [
+        {
+          "const": false,
+          "declaration": "void* pUserData",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pUserData",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkAllocationFunction pfnAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnAllocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkAllocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkReallocationFunction pfnReallocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnReallocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkReallocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkFreeFunction pfnFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnFree",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkFreeFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalAllocationNotification pfnInternalAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalAllocation",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalAllocationNotification",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalFreeNotification pfnInternalFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalFree",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalFreeNotification",
+          "values": null
+        }
+      ]
+    }
+  },
+  "versions": {
+    "header_version": "352",
+    "upstream_commit": "015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9",
+    "upstream_tag": "v1.4.352",
+    "vulkan_api": {
+      "major": 1,
+      "minor": 4,
+      "patch": 352
+    },
+    "vulkan_api_version": "1.4.352"
+  }
+}

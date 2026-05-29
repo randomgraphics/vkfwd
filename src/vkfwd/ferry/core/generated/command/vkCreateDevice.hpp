@@ -16,13 +16,40 @@ struct Parameters {
   VkDevice* pDevice = {};
 };
 
-struct PackedCommand {
-  CommandId command_id = CommandId::CreateDevice;
-  Parameters parameters;
+struct Response {
+  VkResult return_value = VK_SUCCESS;
+  VkDevice* pDevice = {};
 };
 
-PackedCommand pack(Parameters parameters);
-Parameters unpack(PackedCommand packet);
+struct ResponsePacket;
+
+struct ParameterPacket {
+  CommandId command_id = CommandId::CreateDevice;
+  Parameters parameters;
+  using ResponsePacket = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
+};
+
+struct ResponsePacket {
+  CommandId command_id = CommandId::CreateDevice;
+  Response response;
+};
+
+class Command {
+public:
+  using Parameters = vkfwd::generated::commands::vkCreateDevice::Parameters;
+  using Response = vkfwd::generated::commands::vkCreateDevice::Response;
+  using ParameterPacket = vkfwd::generated::commands::vkCreateDevice::ParameterPacket;
+  using ResponsePacket = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
+
+  static VkResult pack_parameters(const Parameters& parameters,
+                                  ParameterPacket* packet);
+  static VkResult unpack_parameters(const ParameterPacket& packet,
+                                    Parameters* parameters);
+  static VkResult pack_response(const Response& response,
+                                ResponsePacket* packet);
+  static VkResult unpack_response(const ResponsePacket& packet,
+                                  Response* response);
+};
 
 } // namespace vkfwd::generated::commands::vkCreateDevice
 

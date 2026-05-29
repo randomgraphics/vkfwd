@@ -10,11 +10,17 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 
-TARGET_COMMANDS = ("vkCreateInstance", "vkCreateDevice")
+TARGET_COMMANDS = (
+    "vkCreateInstance",
+    "vkDestroyInstance",
+    "vkCreateDevice",
+    "vkDestroyDevice",
+)
 GENERATOR_VERSION = "vkfwd-vulkan-metadata-0.1"
 GENERATOR_SCHEMA_VERSION = 1
 WIRE_MAJOR = 1
 WIRE_MINOR = 0
+COMMAND_ID_SALT = "vkfwd.vulkan.command-id.v1:"
 
 
 def repo_root() -> Path:
@@ -184,7 +190,7 @@ def select_command(root: ET.Element, name: str) -> ET.Element:
 
 
 def command_metadata(
-    root: ET.Element, name: str, command_id: int, handles: dict[str, dict[str, str | None]]
+    root: ET.Element, name: str, handles: dict[str, dict[str, str | None]]
 ) -> dict[str, object]:
     command = select_command(root, name)
     params = [classify_parameter(param) for param in command.findall("param")]
@@ -198,7 +204,7 @@ def command_metadata(
         if param["direction"] == "output" and param["type"] in handles
     ]
     return {
-        "id": command_id,
+        "id": stable_command_id(name),
         "name": name,
         "api": command.get("api") or command.get("export"),
         "return_type": text_of(command.find("./proto/type")),
@@ -210,6 +216,28 @@ def command_metadata(
         "creates_handles": handle_outputs,
         "parameters": params,
     }
+
+
+def stable_command_id(name: str) -> int:
+    # Command IDs are part of the wire contract, so they must not depend on
+    # registry ordering. The salt fixes this scheme for compatible protocol
+    # revisions while still deriving IDs mechanically from the API name.
+    digest = hashlib.sha256((COMMAND_ID_SALT + name).encode("utf-8")).digest()
+    value = int.from_bytes(digest[:4], byteorder="big")
+    return value or 1
+
+
+def check_command_id_collisions(commands: list[dict[str, object]]) -> None:
+    seen: dict[int, str] = {}
+    for command in commands:
+        command_id = int(command["id"])
+        existing = seen.get(command_id)
+        if existing is not None:
+            raise ValueError(
+                "stable command ID collision: "
+                f"{existing} and {command['name']} both use {command_id}"
+            )
+        seen[command_id] = str(command["name"])
 
 
 def write_coverage(metadata: dict[str, object], path: Path) -> None:
@@ -261,6 +289,118 @@ def command_namespace(name: str) -> str:
     return name
 
 
+def command_pfn_type(name: str) -> str:
+    return f"PFN_{name}"
+
+
+def command_parameter_declarations(command: dict[str, object]) -> str:
+    return ",\n    ".join(
+        str(parameter["declaration"]) for parameter in command["parameters"]
+    )
+
+
+def command_parameter_names(command: dict[str, object]) -> str:
+    return ", ".join(str(parameter["name"]) for parameter in command["parameters"])
+
+
+def parameter_initializer_list(command: dict[str, object]) -> str:
+    if not command["parameters"]:
+        return "{}"
+    fields = ", ".join(
+        f".{parameter['name']} = {parameter['name']}"
+        for parameter in command["parameters"]
+    )
+    return f"{{{fields}}}"
+
+
+def output_parameter_assignments(command: dict[str, object]) -> str:
+    lines = []
+    for parameter in command["parameters"]:
+        if parameter["direction"] != "output":
+            continue
+        name = parameter["name"]
+        length = parameter.get("len")
+        count_name = str(length).split(",", 1)[0] if length else ""
+        if count_name and count_name != "None":
+            lines.extend(
+                [
+                    f"  if ({name} && response.{name} &&",
+                    f"      response.{name} != {name} &&",
+                    f"      response.{count_name}) {{",
+                    f"    std::copy_n(response.{name},",
+                    f"                *response.{count_name}, {name});",
+                    "  }",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f"  if ({name} && response.{name} &&",
+                    f"      response.{name} != {name}) {{",
+                    f"    *{name} = *response.{name};",
+                    "  }",
+                ]
+            )
+    return "\n".join(lines)
+
+
+def default_return_statement(command: dict[str, object]) -> str:
+    return_type = str(command["return_type"])
+    if return_type == "void":
+        return "  return;"
+    if return_type == "VkResult":
+        return "  return VK_SUCCESS;"
+    return f"  return {return_type}{{}};"
+
+
+def default_return_expression(command: dict[str, object]) -> str:
+    return_type = str(command["return_type"])
+    if return_type == "VkResult":
+        return "VK_SUCCESS"
+    return f"{return_type}{{}}"
+
+
+def response_return_member(command: dict[str, object]) -> str:
+    return_type = str(command["return_type"])
+    if return_type == "void":
+        return ""
+    return f"  {return_type} return_value = {default_return_expression(command)};\n"
+
+
+def response_output_fields(command: dict[str, object]) -> str:
+    fields = []
+    for parameter in command["parameters"]:
+        if parameter["direction"] == "output":
+            fields.append(
+                f"  {parameter_cxx_type(parameter)} {parameter['name']} = {{}};"
+            )
+    return "\n".join(fields)
+
+
+def response_initializer(command: dict[str, object]) -> str:
+    fields = []
+    if str(command["return_type"]) != "void":
+        fields.append(f".return_value = {default_return_expression(command)}")
+    for parameter in command["parameters"]:
+        if parameter["direction"] == "output":
+            fields.append(f".{parameter['name']} = {parameter['name']}")
+    if not fields:
+        return "{}"
+    return "{" + ", ".join(fields) + "}"
+
+
+def response_return_statement(command: dict[str, object]) -> str:
+    if str(command["return_type"]) == "void":
+        return "  return;"
+    return "  return response.return_value;"
+
+
+def status_failure_return_statement(command: dict[str, object], status_name: str) -> str:
+    if str(command["return_type"]) == "void":
+        return "    return;"
+    return f"    return {status_name};"
+
+
 def write_manual_hooks_header(metadata: dict[str, object], path: Path) -> None:
     content = f"""#pragma once
 
@@ -282,11 +422,11 @@ struct CommandHooks {{
   template <class Parameters>
   static constexpr void before_pack(Parameters&) noexcept {{}}
 
-  template <class PackedCommand>
-  static constexpr void after_pack(PackedCommand&) noexcept {{}}
+  template <class ParameterPacket>
+  static constexpr void after_pack(ParameterPacket&) noexcept {{}}
 
-  template <class PackedCommand>
-  static constexpr void before_unpack(PackedCommand&) noexcept {{}}
+  template <class ParameterPacket>
+  static constexpr void before_unpack(ParameterPacket&) noexcept {{}}
 
   template <class Parameters>
   static constexpr void after_unpack(Parameters&) noexcept {{}}
@@ -319,13 +459,39 @@ struct Parameters {{
 {fields}
 }};
 
-struct PackedCommand {{
-  CommandId command_id = CommandId::{enum_name};
-  Parameters parameters;
+struct Response {{
+{response_return_member(command)}{response_output_fields(command)}
 }};
 
-PackedCommand pack(Parameters parameters);
-Parameters unpack(PackedCommand packet);
+struct ResponsePacket;
+
+struct ParameterPacket {{
+  CommandId command_id = CommandId::{enum_name};
+  Parameters parameters;
+  using ResponsePacket = vkfwd::generated::commands::{namespace}::ResponsePacket;
+}};
+
+struct ResponsePacket {{
+  CommandId command_id = CommandId::{enum_name};
+  Response response;
+}};
+
+class Command {{
+public:
+  using Parameters = vkfwd::generated::commands::{namespace}::Parameters;
+  using Response = vkfwd::generated::commands::{namespace}::Response;
+  using ParameterPacket = vkfwd::generated::commands::{namespace}::ParameterPacket;
+  using ResponsePacket = vkfwd::generated::commands::{namespace}::ResponsePacket;
+
+  static VkResult pack_parameters(const Parameters& parameters,
+                                  ParameterPacket* packet);
+  static VkResult unpack_parameters(const ParameterPacket& packet,
+                                    Parameters* parameters);
+  static VkResult pack_response(const Response& response,
+                                ResponsePacket* packet);
+  static VkResult unpack_response(const ResponsePacket& packet,
+                                  Response* response);
+}};
 
 }} // namespace vkfwd::generated::commands::{namespace}
 
@@ -346,36 +512,74 @@ def command_source_content(metadata: dict[str, object], command: dict[str, objec
 
 namespace vkfwd::generated::commands::{namespace} {{
 
-PackedCommand pack(Parameters parameters) {{
+VkResult Command::pack_parameters(const Parameters& parameters,
+                                  ParameterPacket* packet) {{
+  if (!packet) {{
+    return VK_ERROR_UNKNOWN;
+  }}
+
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::{enum_name}>;
   if constexpr (Hooks::before_pack_enabled) {{
-    Hooks::before_pack(parameters);
-  }}
+    Parameters hook_parameters = parameters;
+    Hooks::before_pack(hook_parameters);
 
-  // This generated slice captures the command shape and argument values but
-  // intentionally does not claim wire-stable Vulkan replay yet. Pointer-bearing
-  // parameters, arrays, and pNext chains must be deep-copied by later generated
-  // serializers before a packet can outlive the source call safely.
-  PackedCommand packet{{CommandId::{enum_name}, parameters}};
+    // This generated slice captures the command shape and argument values but
+    // intentionally does not claim wire-stable Vulkan replay yet. Pointer-bearing
+    // parameters, arrays, and pNext chains must be deep-copied by later generated
+    // serializers before a packet can outlive the source call safely.
+    *packet = ParameterPacket{{CommandId::{enum_name}, hook_parameters}};
 
-  if constexpr (Hooks::after_pack_enabled) {{
-    Hooks::after_pack(packet);
+    if constexpr (Hooks::after_pack_enabled) {{
+      Hooks::after_pack(*packet);
+    }}
+    return VK_SUCCESS;
+  }} else {{
+    // With hooks disabled, const-reference input avoids an avoidable pre-pack
+    // copy; the packet copy is the ownership boundary for the captured call.
+    *packet = ParameterPacket{{CommandId::{enum_name}, parameters}};
+
+    if constexpr (Hooks::after_pack_enabled) {{
+      Hooks::after_pack(*packet);
+    }}
+    return VK_SUCCESS;
   }}
-  return packet;
 }}
 
-Parameters unpack(PackedCommand packet) {{
+VkResult Command::unpack_parameters(const ParameterPacket& packet,
+                                    Parameters* parameters) {{
+  if (!parameters) {{
+    return VK_ERROR_UNKNOWN;
+  }}
+
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::{enum_name}>;
   if constexpr (Hooks::before_unpack_enabled) {{
     Hooks::before_unpack(packet);
   }}
 
-  Parameters parameters = packet.parameters;
+  *parameters = packet.parameters;
 
   if constexpr (Hooks::after_unpack_enabled) {{
-    Hooks::after_unpack(parameters);
+    Hooks::after_unpack(*parameters);
   }}
-  return parameters;
+  return VK_SUCCESS;
+}}
+
+VkResult Command::pack_response(const Response& response,
+                                ResponsePacket* packet) {{
+  if (!packet) {{
+    return VK_ERROR_UNKNOWN;
+  }}
+  *packet = ResponsePacket{{CommandId::{enum_name}, response}};
+  return VK_SUCCESS;
+}}
+
+VkResult Command::unpack_response(const ResponsePacket& packet,
+                                  Response* response) {{
+  if (!response) {{
+    return VK_ERROR_UNKNOWN;
+  }}
+  *response = packet.response;
+  return VK_SUCCESS;
 }}
 
 }} // namespace vkfwd::generated::commands::{namespace}
@@ -480,7 +684,7 @@ def write_cxx_header(metadata: dict[str, object], path: Path) -> None:
 
 namespace vkfwd::generated {{
 
-enum class CommandId : std::uint16_t {{
+enum class CommandId : std::uint32_t {{
 {enum_values}
 }};
 
@@ -517,8 +721,6 @@ struct CommandInfo {{
   std::string_view return_type;
   std::string_view dispatch_parameter;
   std::span<const std::string_view> creates_handles;
-  std::span<const std::string_view> success_codes;
-  std::span<const std::string_view> error_codes;
 }};
 
 struct InstanceDispatchTable {{
@@ -551,14 +753,6 @@ def write_cxx_source(metadata: dict[str, object], path: Path) -> None:
             f"constexpr std::array<std::string_view, {len(command['creates_handles'])}> "
             f"k{enum_name}CreatesHandles = {cxx_string_list(command['creates_handles'])};"
         )
-        arrays.append(
-            f"constexpr std::array<std::string_view, {len(command['successcodes'])}> "
-            f"k{enum_name}SuccessCodes = {cxx_string_list(command['successcodes'])};"
-        )
-        arrays.append(
-            f"constexpr std::array<std::string_view, {len(command['errorcodes'])}> "
-            f"k{enum_name}ErrorCodes = {cxx_string_list(command['errorcodes'])};"
-        )
         level = command["level"]
         dispatch_parameter = command["dispatch_parameter"] or ""
         infos.append(
@@ -569,8 +763,6 @@ def write_cxx_source(metadata: dict[str, object], path: Path) -> None:
             f"    \"{command['return_type']}\",\n"
             f"    \"{dispatch_parameter}\",\n"
             f"    k{enum_name}CreatesHandles,\n"
-            f"    k{enum_name}SuccessCodes,\n"
-            f"    k{enum_name}ErrorCodes,\n"
             "  },"
         )
     content = f"""#include "generated/vulkan_api.hpp"
@@ -630,7 +822,207 @@ InstanceDispatchTable load_instance_dispatch_table(
     path.write_text(content, encoding="utf-8")
 
 
-def generate(output_dir: Path) -> None:
+def forwarder_hooks_header_content(metadata: dict[str, object]) -> str:
+    return f"""#pragma once
+
+// Generated by src/vkfwd/ferry/scripts/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include "generated/vulkan_api.hpp"
+
+namespace vkfwd::forwarder::manual {{
+
+template <vkfwd::generated::CommandId>
+struct CommandHooks {{
+  static constexpr bool before_pack_enabled = false;
+  static constexpr bool after_response_unpack_enabled = false;
+
+  template <class... Args>
+  static constexpr void before_pack(Args&...) noexcept {{}}
+
+  template <class Parameters>
+  static constexpr void after_response_unpack(Parameters&) noexcept {{}}
+}};
+
+}} // namespace vkfwd::forwarder::manual
+"""
+
+
+def forwarder_header_content(metadata: dict[str, object]) -> str:
+    declarations = "\n".join(
+        f"VKAPI_ATTR {command['return_type']} VKAPI_CALL {command['name']}(\n"
+        f"    {command_parameter_declarations(command)});"
+        for command in metadata["commands"]
+    )
+    return f"""#pragma once
+
+// Generated by src/vkfwd/ferry/scripts/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include "generated/vulkan_api.hpp"
+
+#include <vulkan/vulkan.h>
+
+namespace vkfwd::forwarder::generated {{
+
+{declarations}
+
+struct GlobalDispatchTable {{
+  PFN_vkCreateInstance create_instance = vkCreateInstance;
+  PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
+  PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
+}};
+
+struct InstanceDispatchTable {{
+  PFN_vkDestroyInstance destroy_instance = vkDestroyInstance;
+  PFN_vkCreateDevice create_device = vkCreateDevice;
+}};
+
+struct DeviceDispatchTable {{
+  PFN_vkDestroyDevice destroy_device = vkDestroyDevice;
+}};
+
+const GlobalDispatchTable& global_dispatch_table();
+const InstanceDispatchTable& instance_dispatch_table();
+const DeviceDispatchTable& device_dispatch_table();
+
+}} // namespace vkfwd::forwarder::generated
+"""
+
+
+def forwarder_tables_source_content(metadata: dict[str, object]) -> str:
+    return f"""#include "generated/vulkan_forwarder.hpp"
+
+// Generated by src/vkfwd/ferry/scripts/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+namespace vkfwd::forwarder::generated {{
+namespace {{
+
+const GlobalDispatchTable kGlobalDispatchTable;
+const InstanceDispatchTable kInstanceDispatchTable;
+const DeviceDispatchTable kDeviceDispatchTable;
+
+}} // namespace
+
+const GlobalDispatchTable& global_dispatch_table() {{
+  return kGlobalDispatchTable;
+}}
+
+const InstanceDispatchTable& instance_dispatch_table() {{
+  return kInstanceDispatchTable;
+}}
+
+const DeviceDispatchTable& device_dispatch_table() {{
+  return kDeviceDispatchTable;
+}}
+
+}} // namespace vkfwd::forwarder::generated
+"""
+
+
+def forwarder_command_source_content(
+    metadata: dict[str, object], command: dict[str, object]
+) -> str:
+    enum_name = command_enum_name(command["name"])
+    namespace = command_namespace(command["name"])
+    return_statement = response_return_statement(command)
+    failure_return = status_failure_return_statement(command, "status")
+    output_assignments = output_parameter_assignments(command)
+    if output_assignments:
+        output_assignments = "\n" + output_assignments + "\n"
+    return f"""#include "generated/vulkan_forwarder.hpp"
+
+#include "forwarder.hpp"
+#include "generated/command/{command['name']}.hpp"
+#include "generated/vulkan_forwarder_hooks.hpp"
+
+// Generated by src/vkfwd/ferry/scripts/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include <algorithm>
+
+#if __has_include("hook/{command['name']}ForwarderHook.hpp")
+#include "hook/{command['name']}ForwarderHook.hpp"
+#endif
+
+namespace vkfwd::forwarder::generated {{
+
+VKAPI_ATTR {command['return_type']} VKAPI_CALL {command['name']}(
+    {command_parameter_declarations(command)}) {{
+  using Command = ::vkfwd::generated::commands::{namespace}::Command;
+  using Hooks = ::vkfwd::forwarder::manual::CommandHooks<
+      ::vkfwd::generated::CommandId::{enum_name}>;
+
+  if constexpr (Hooks::before_pack_enabled) {{
+    Hooks::before_pack({command_parameter_names(command)});
+  }}
+
+  Command::Parameters parameters{parameter_initializer_list(command)};
+  Command::ParameterPacket request;
+  VkResult status = Command::pack_parameters(parameters, &request);
+  if (status != VK_SUCCESS) {{
+{failure_return}
+  }}
+
+  Command::ResponsePacket placeholder_response;
+  status = Command::pack_response({response_initializer(command)},
+                                  &placeholder_response);
+  if (status != VK_SUCCESS) {{
+{failure_return}
+  }}
+
+  Command::ResponsePacket response_packet;
+  status = ::vkfwd::Forwarder::instance().forward(
+      "{command['name']}", request, placeholder_response, &response_packet);
+  if (status != VK_SUCCESS) {{
+{failure_return}
+  }}
+
+  Command::Response response;
+  status = Command::unpack_response(response_packet, &response);
+  if (status != VK_SUCCESS) {{
+{failure_return}
+  }}
+
+  if constexpr (Hooks::after_response_unpack_enabled) {{
+    Hooks::after_response_unpack(response);
+  }}
+{output_assignments}
+  // The endpoint response currently uses a generated placeholder because the
+  // transport contract has not grown real response bytes yet. Once endpoints
+  // carry return payloads, generated code should return that unpacked value
+  // without adding source-side validation or local Vulkan state.
+{return_statement}
+}}
+
+}} // namespace vkfwd::forwarder::generated
+"""
+
+
+def write_forwarder_files(metadata: dict[str, object], forwarder_dir: Path) -> None:
+    commands_dir = forwarder_dir / "command"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    (forwarder_dir / "vulkan_forwarder.hpp").write_text(
+        forwarder_header_content(metadata), encoding="utf-8"
+    )
+    (forwarder_dir / "vulkan_forwarder.cpp").write_text(
+        forwarder_tables_source_content(metadata), encoding="utf-8"
+    )
+    (forwarder_dir / "vulkan_forwarder_hooks.hpp").write_text(
+        forwarder_hooks_header_content(metadata), encoding="utf-8"
+    )
+    for command in metadata["commands"]:
+        (commands_dir / f"{command['name']}.cpp").write_text(
+            forwarder_command_source_content(metadata, command), encoding="utf-8"
+        )
+
+
+def generate(output_dir: Path, forwarder_output_dir: Path) -> None:
     root_dir = repo_root()
     xml_path = root_dir / "src/third_party/vulkan/registry/vk.xml"
     version_path = root_dir / "src/third_party/vulkan/VERSION"
@@ -639,7 +1031,16 @@ def generate(output_dir: Path) -> None:
     versions = parse_version_file(version_path)
     vulkan_api = parse_semver(versions.get("vulkan_api_version"))
     handles = collect_handles(root)
-    command_structs = {"VkInstanceCreateInfo", "VkDeviceCreateInfo"}
+    selected_commands = [
+        command_metadata(root, name, handles)
+        for name in TARGET_COMMANDS
+    ]
+    check_command_id_collisions(selected_commands)
+    command_structs = {
+        str(parameter["type"])
+        for command in selected_commands
+        for parameter in command["parameters"]
+    }
     metadata: dict[str, object] = {
         "schema": "vkfwd.vulkan-metadata.v1",
         "generator": {
@@ -659,10 +1060,7 @@ def generate(output_dir: Path) -> None:
             "upstream_tag": versions.get("upstream_tag"),
             "upstream_commit": versions.get("upstream_commit"),
         },
-        "commands": [
-            command_metadata(root, name, index + 1, handles)
-            for index, name in enumerate(TARGET_COMMANDS)
-        ],
+        "commands": selected_commands,
         "handles": {
             name: handles[name]
             for name in ("VkInstance", "VkPhysicalDevice", "VkDevice")
@@ -676,6 +1074,7 @@ def generate(output_dir: Path) -> None:
     write_command_files(metadata, output_dir)
     write_cxx_header(metadata, output_dir / "vulkan_api.hpp")
     write_cxx_source(metadata, output_dir / "vulkan_api.cpp")
+    write_forwarder_files(metadata, forwarder_output_dir)
 
 
 def main() -> None:
@@ -686,8 +1085,14 @@ def main() -> None:
         default=repo_root() / "src/vkfwd/ferry/core/generated",
         help="directory for generated metadata files",
     )
+    parser.add_argument(
+        "--forwarder-output-dir",
+        type=Path,
+        default=repo_root() / "src/vkfwd/ferry/forwarder/generated",
+        help="directory for generated forwarder files",
+    )
     args = parser.parse_args()
-    generate(args.output_dir)
+    generate(args.output_dir, args.forwarder_output_dir)
 
 
 if __name__ == "__main__":

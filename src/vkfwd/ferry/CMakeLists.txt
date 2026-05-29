@@ -5,6 +5,8 @@
 add_library(vkfwd_core STATIC
   core/generated/command/vkCreateDevice.cpp
   core/generated/command/vkCreateInstance.cpp
+  core/generated/command/vkDestroyDevice.cpp
+  core/generated/command/vkDestroyInstance.cpp
   core/generated/vulkan_api.cpp
   core/hook/vkCreateDeviceHook.cpp
   core/null_api_endpoint.cpp
@@ -59,6 +61,11 @@ target_compile_definitions(vkfwd_receiver
 # lives here because it represents layer runtime policy, not receiver replay
 # state.
 add_library(vkfwd_forwarder SHARED
+  forwarder/generated/command/vkCreateDevice.cpp
+  forwarder/generated/command/vkCreateInstance.cpp
+  forwarder/generated/command/vkDestroyDevice.cpp
+  forwarder/generated/command/vkDestroyInstance.cpp
+  forwarder/generated/vulkan_forwarder.cpp
   forwarder/forwarder.cpp
   forwarder/layer.cpp)
 

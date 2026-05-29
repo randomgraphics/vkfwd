@@ -7,38 +7,36 @@
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
 
-namespace vkfwd::generated::commands::vkCreateInstance {
+namespace vkfwd::generated::commands::vkDestroyDevice {
 
 struct Parameters {
-  const VkInstanceCreateInfo* pCreateInfo = {};
+  VkDevice device = {};
   const VkAllocationCallbacks* pAllocator = {};
-  VkInstance* pInstance = {};
 };
 
 struct Response {
-  VkResult return_value = VK_SUCCESS;
-  VkInstance* pInstance = {};
+
 };
 
 struct ResponsePacket;
 
 struct ParameterPacket {
-  CommandId command_id = CommandId::CreateInstance;
+  CommandId command_id = CommandId::DestroyDevice;
   Parameters parameters;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
+  using ResponsePacket = vkfwd::generated::commands::vkDestroyDevice::ResponsePacket;
 };
 
 struct ResponsePacket {
-  CommandId command_id = CommandId::CreateInstance;
+  CommandId command_id = CommandId::DestroyDevice;
   Response response;
 };
 
 class Command {
 public:
-  using Parameters = vkfwd::generated::commands::vkCreateInstance::Parameters;
-  using Response = vkfwd::generated::commands::vkCreateInstance::Response;
-  using ParameterPacket = vkfwd::generated::commands::vkCreateInstance::ParameterPacket;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
+  using Parameters = vkfwd::generated::commands::vkDestroyDevice::Parameters;
+  using Response = vkfwd::generated::commands::vkDestroyDevice::Response;
+  using ParameterPacket = vkfwd::generated::commands::vkDestroyDevice::ParameterPacket;
+  using ResponsePacket = vkfwd::generated::commands::vkDestroyDevice::ResponsePacket;
 
   static VkResult pack_parameters(const Parameters& parameters,
                                   ParameterPacket* packet);
@@ -50,8 +48,8 @@ public:
                                   Response* response);
 };
 
-} // namespace vkfwd::generated::commands::vkCreateInstance
+} // namespace vkfwd::generated::commands::vkDestroyDevice
 
-#if __has_include("hook/vkCreateInstanceHook.hpp")
-#include "hook/vkCreateInstanceHook.hpp"
+#if __has_include("hook/vkDestroyDeviceHook.hpp")
+#include "hook/vkDestroyDeviceHook.hpp"
 #endif

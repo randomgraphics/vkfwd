@@ -10,13 +10,11 @@ namespace vkfwd::generated {
 namespace {
 
 constexpr std::array<std::string_view, 1> kCreateInstanceCreatesHandles = {{ "VkInstance" }};
-constexpr std::array<std::string_view, 1> kCreateInstanceSuccessCodes = {{ "VK_SUCCESS" }};
-constexpr std::array<std::string_view, 8> kCreateInstanceErrorCodes = {{ "VK_ERROR_OUT_OF_HOST_MEMORY", "VK_ERROR_OUT_OF_DEVICE_MEMORY", "VK_ERROR_INITIALIZATION_FAILED", "VK_ERROR_LAYER_NOT_PRESENT", "VK_ERROR_EXTENSION_NOT_PRESENT", "VK_ERROR_INCOMPATIBLE_DRIVER", "VK_ERROR_UNKNOWN", "VK_ERROR_VALIDATION_FAILED" }};
+constexpr std::array<std::string_view, 0> kDestroyInstanceCreatesHandles = {{}};
 constexpr std::array<std::string_view, 1> kCreateDeviceCreatesHandles = {{ "VkDevice" }};
-constexpr std::array<std::string_view, 1> kCreateDeviceSuccessCodes = {{ "VK_SUCCESS" }};
-constexpr std::array<std::string_view, 9> kCreateDeviceErrorCodes = {{ "VK_ERROR_OUT_OF_HOST_MEMORY", "VK_ERROR_OUT_OF_DEVICE_MEMORY", "VK_ERROR_INITIALIZATION_FAILED", "VK_ERROR_EXTENSION_NOT_PRESENT", "VK_ERROR_FEATURE_NOT_PRESENT", "VK_ERROR_TOO_MANY_OBJECTS", "VK_ERROR_DEVICE_LOST", "VK_ERROR_UNKNOWN", "VK_ERROR_VALIDATION_FAILED" }};
+constexpr std::array<std::string_view, 0> kDestroyDeviceCreatesHandles = {{}};
 
-constexpr std::array<CommandInfo, 2> kCommandInfos = {{
+constexpr std::array<CommandInfo, 4> kCommandInfos = {{
   {
     CommandId::CreateInstance,
     "vkCreateInstance",
@@ -24,8 +22,14 @@ constexpr std::array<CommandInfo, 2> kCommandInfos = {{
     "VkResult",
     "",
     kCreateInstanceCreatesHandles,
-    kCreateInstanceSuccessCodes,
-    kCreateInstanceErrorCodes,
+  },
+  {
+    CommandId::DestroyInstance,
+    "vkDestroyInstance",
+    CommandLevel::global,
+    "void",
+    "",
+    kDestroyInstanceCreatesHandles,
   },
   {
     CommandId::CreateDevice,
@@ -34,8 +38,14 @@ constexpr std::array<CommandInfo, 2> kCommandInfos = {{
     "VkResult",
     "physicalDevice",
     kCreateDeviceCreatesHandles,
-    kCreateDeviceSuccessCodes,
-    kCreateDeviceErrorCodes,
+  },
+  {
+    CommandId::DestroyDevice,
+    "vkDestroyDevice",
+    CommandLevel::device,
+    "void",
+    "device",
+    kDestroyDeviceCreatesHandles,
   },
 }};
 

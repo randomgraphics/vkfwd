@@ -18,11 +18,11 @@ struct CommandHooks {
   template <class Parameters>
   static constexpr void before_pack(Parameters&) noexcept {}
 
-  template <class PackedCommand>
-  static constexpr void after_pack(PackedCommand&) noexcept {}
+  template <class ParameterPacket>
+  static constexpr void after_pack(ParameterPacket&) noexcept {}
 
-  template <class PackedCommand>
-  static constexpr void before_unpack(PackedCommand&) noexcept {}
+  template <class ParameterPacket>
+  static constexpr void before_unpack(ParameterPacket&) noexcept {}
 
   template <class Parameters>
   static constexpr void after_unpack(Parameters&) noexcept {}

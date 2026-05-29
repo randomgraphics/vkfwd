@@ -9,5 +9,7 @@
 
 | Command | ID | Level | Coverage | Creates |
 | --- | ---: | --- | --- | --- |
-| `vkCreateInstance` | 1 | global | unclassified | VkInstance |
-| `vkCreateDevice` | 2 | instance | unclassified | VkDevice |
+| `vkCreateInstance` | 2472334652 | global | unclassified | VkInstance |
+| `vkDestroyInstance` | 748278256 | global | unclassified |  |
+| `vkCreateDevice` | 1470473620 | instance | unclassified | VkDevice |
+| `vkDestroyDevice` | 2054705423 | device | unclassified |  |

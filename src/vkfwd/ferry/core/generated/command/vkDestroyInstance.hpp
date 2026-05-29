@@ -7,38 +7,36 @@
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
 
-namespace vkfwd::generated::commands::vkCreateInstance {
+namespace vkfwd::generated::commands::vkDestroyInstance {
 
 struct Parameters {
-  const VkInstanceCreateInfo* pCreateInfo = {};
+  VkInstance instance = {};
   const VkAllocationCallbacks* pAllocator = {};
-  VkInstance* pInstance = {};
 };
 
 struct Response {
-  VkResult return_value = VK_SUCCESS;
-  VkInstance* pInstance = {};
+
 };
 
 struct ResponsePacket;
 
 struct ParameterPacket {
-  CommandId command_id = CommandId::CreateInstance;
+  CommandId command_id = CommandId::DestroyInstance;
   Parameters parameters;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
+  using ResponsePacket = vkfwd::generated::commands::vkDestroyInstance::ResponsePacket;
 };
 
 struct ResponsePacket {
-  CommandId command_id = CommandId::CreateInstance;
+  CommandId command_id = CommandId::DestroyInstance;
   Response response;
 };
 
 class Command {
 public:
-  using Parameters = vkfwd::generated::commands::vkCreateInstance::Parameters;
-  using Response = vkfwd::generated::commands::vkCreateInstance::Response;
-  using ParameterPacket = vkfwd::generated::commands::vkCreateInstance::ParameterPacket;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
+  using Parameters = vkfwd::generated::commands::vkDestroyInstance::Parameters;
+  using Response = vkfwd::generated::commands::vkDestroyInstance::Response;
+  using ParameterPacket = vkfwd::generated::commands::vkDestroyInstance::ParameterPacket;
+  using ResponsePacket = vkfwd::generated::commands::vkDestroyInstance::ResponsePacket;
 
   static VkResult pack_parameters(const Parameters& parameters,
                                   ParameterPacket* packet);
@@ -50,8 +48,8 @@ public:
                                   Response* response);
 };
 
-} // namespace vkfwd::generated::commands::vkCreateInstance
+} // namespace vkfwd::generated::commands::vkDestroyInstance
 
-#if __has_include("hook/vkCreateInstanceHook.hpp")
-#include "hook/vkCreateInstanceHook.hpp"
+#if __has_include("hook/vkDestroyInstanceHook.hpp")
+#include "hook/vkDestroyInstanceHook.hpp"
 #endif

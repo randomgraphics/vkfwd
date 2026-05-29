@@ -3,8 +3,11 @@
 #include "api_endpoint.hpp"
 #include "call_record.hpp"
 
+#include <vulkan/vulkan.h>
+
 #include <memory>
 #include <mutex>
+#include <string_view>
 
 namespace vkfwd {
 
@@ -26,6 +29,25 @@ public:
   // produced the caller-visible result required for the API, before this
   // function returns.
   void capture(const InterceptedCall& call);
+
+  template <class ParameterPacket, class ResponsePacket>
+  VkResult forward(std::string_view name,
+                   const ParameterPacket& parameter_packet,
+                   const ResponsePacket& placeholder_response,
+                   ResponsePacket* response_packet) {
+    // The generated forwarder path is intentionally pack-first: any pointer,
+    // array, or pNext lifetime work must happen before endpoint submission.
+    // This scaffold still serializes only the command name, so it returns a
+    // generated response placeholder until ApiEndpoint grows a real
+    // command-response payload carrying return values and output parameters.
+    (void)parameter_packet;
+    if (!response_packet) {
+      return VK_ERROR_UNKNOWN;
+    }
+    capture({name});
+    *response_packet = placeholder_response;
+    return VK_SUCCESS;
+  }
 
 private:
   Forwarder() = default;

@@ -6,36 +6,74 @@
 
 namespace vkfwd::generated::commands::vkCreateInstance {
 
-PackedCommand pack(Parameters parameters) {
+VkResult Command::pack_parameters(const Parameters& parameters,
+                                  ParameterPacket* packet) {
+  if (!packet) {
+    return VK_ERROR_UNKNOWN;
+  }
+
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::CreateInstance>;
   if constexpr (Hooks::before_pack_enabled) {
-    Hooks::before_pack(parameters);
-  }
+    Parameters hook_parameters = parameters;
+    Hooks::before_pack(hook_parameters);
 
-  // This generated slice captures the command shape and argument values but
-  // intentionally does not claim wire-stable Vulkan replay yet. Pointer-bearing
-  // parameters, arrays, and pNext chains must be deep-copied by later generated
-  // serializers before a packet can outlive the source call safely.
-  PackedCommand packet{CommandId::CreateInstance, parameters};
+    // This generated slice captures the command shape and argument values but
+    // intentionally does not claim wire-stable Vulkan replay yet. Pointer-bearing
+    // parameters, arrays, and pNext chains must be deep-copied by later generated
+    // serializers before a packet can outlive the source call safely.
+    *packet = ParameterPacket{CommandId::CreateInstance, hook_parameters};
 
-  if constexpr (Hooks::after_pack_enabled) {
-    Hooks::after_pack(packet);
+    if constexpr (Hooks::after_pack_enabled) {
+      Hooks::after_pack(*packet);
+    }
+    return VK_SUCCESS;
+  } else {
+    // With hooks disabled, const-reference input avoids an avoidable pre-pack
+    // copy; the packet copy is the ownership boundary for the captured call.
+    *packet = ParameterPacket{CommandId::CreateInstance, parameters};
+
+    if constexpr (Hooks::after_pack_enabled) {
+      Hooks::after_pack(*packet);
+    }
+    return VK_SUCCESS;
   }
-  return packet;
 }
 
-Parameters unpack(PackedCommand packet) {
+VkResult Command::unpack_parameters(const ParameterPacket& packet,
+                                    Parameters* parameters) {
+  if (!parameters) {
+    return VK_ERROR_UNKNOWN;
+  }
+
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::CreateInstance>;
   if constexpr (Hooks::before_unpack_enabled) {
     Hooks::before_unpack(packet);
   }
 
-  Parameters parameters = packet.parameters;
+  *parameters = packet.parameters;
 
   if constexpr (Hooks::after_unpack_enabled) {
-    Hooks::after_unpack(parameters);
+    Hooks::after_unpack(*parameters);
   }
-  return parameters;
+  return VK_SUCCESS;
+}
+
+VkResult Command::pack_response(const Response& response,
+                                ResponsePacket* packet) {
+  if (!packet) {
+    return VK_ERROR_UNKNOWN;
+  }
+  *packet = ResponsePacket{CommandId::CreateInstance, response};
+  return VK_SUCCESS;
+}
+
+VkResult Command::unpack_response(const ResponsePacket& packet,
+                                  Response* response) {
+  if (!response) {
+    return VK_ERROR_UNKNOWN;
+  }
+  *response = packet.response;
+  return VK_SUCCESS;
 }
 
 } // namespace vkfwd::generated::commands::vkCreateInstance

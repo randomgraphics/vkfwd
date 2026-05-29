@@ -17,7 +17,7 @@
       "VK_ERROR_UNKNOWN",
       "VK_ERROR_VALIDATION_FAILED"
     ],
-    "id": 2,
+    "id": 1470473620,
     "level": "instance",
     "name": "vkCreateDevice",
     "parameters": [
@@ -103,6 +103,84 @@
   },
   "schema": "vkfwd.vulkan-command-metadata.v1",
   "structs": {
+    "VkAllocationCallbacks": {
+      "category": "struct",
+      "has_pnext": false,
+      "members": [
+        {
+          "const": false,
+          "declaration": "void* pUserData",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pUserData",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkAllocationFunction pfnAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnAllocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkAllocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkReallocationFunction pfnReallocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnReallocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkReallocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkFreeFunction pfnFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnFree",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkFreeFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalAllocationNotification pfnInternalAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalAllocation",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalAllocationNotification",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalFreeNotification pfnInternalFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalFree",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalFreeNotification",
+          "values": null
+        }
+      ]
+    },
     "VkDeviceCreateInfo": {
       "category": "struct",
       "has_pnext": true,

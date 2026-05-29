@@ -5,6 +5,7 @@
 set(FMT_INSTALL OFF CACHE BOOL "Disable fmt install rules for vkfwd vendoring" FORCE)
 set(FMT_TEST OFF CACHE BOOL "Disable fmt tests for vkfwd vendoring" FORCE)
 set(FMT_DOC OFF CACHE BOOL "Disable fmt docs for vkfwd vendoring" FORCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(fmt)
 
 # spdlog and vkfwd should use the same fmt target so formatted strings have a
