@@ -199,6 +199,12 @@ Per-command generated code belongs under:
 src/vkfwd/generated/commands/
 ```
 
+Per-command generated metadata should live beside the command's generated
+source files. Do not add one centralized all-command metadata JSON; it will
+become too large and hard to review as coverage grows toward the full Vulkan
+API surface. Small global manifests are acceptable for generator provenance,
+protocol version, Vulkan version, and the list of generated command artifacts.
+
 Every file in `src/vkfwd/generated/` is generator-owned. Do not place
 hand-written code there, and do not expect local edits to survive regeneration.
 The generated root must contain a README that repeats this rule because
@@ -356,12 +362,12 @@ depends on command lookup reaching the right next function.
 ## Serialization Protocol Plan
 
 The protocol should be versioned before any serious replay work begins.
+The detailed pack/unpack design, hot-path expectations, stream compatibility
+rules, ownership requirements, and manual hook contract live in
+`doc/api-pack-unpack-design.md`.
 
 Required fields:
 
-- Magic value and protocol version.
-- Pinned Vulkan API version and Vulkan XML/header version used by the
-  generator.
 - Command id.
 - Monotonic call sequence number.
 - Direction: host-to-receiver or receiver-to-host.
@@ -369,17 +375,23 @@ Required fields:
 - Encoded parameter payload.
 - Result/output payload when the capture policy requires post-call data.
 
-The stream must carry a compatibility header before command-specific payloads.
-The receiver/replay runtime is expected to outlive individual interceptor
-builds, so it must be able to accept streams produced by all compatible
-interceptor/dispatcher builds.
+Before command streaming begins, the dispatcher and receiver must complete a
+handshake. The receiver/replay runtime is expected to outlive individual
+interceptor builds, so it must be able to accept streams produced by all
+compatible interceptor/dispatcher builds.
 
-The compatibility header should contain:
+The handshake should contain:
 
 - Magic value.
 - Wire major and minor version.
 - Vulkan API major, minor, and patch version used by the generator.
 - Generator schema version.
+
+Once the handshake succeeds, the rest of the command stream is assumed to
+follow the negotiated version. Per-command packets must not repeat stream
+version information or redo stream compatibility validation in the hot path.
+Command-specific decoding may still reject unknown command ids, unsupported
+payload revisions, missing extensions, or unimplemented replay policies.
 
 Compatibility rules:
 
@@ -396,12 +408,10 @@ Compatibility rules:
 - Vulkan patch/header differences are recorded for diagnostics and exact
   replay policy, but they should not by themselves imply incompatibility inside
   the same supported major/minor line.
-- Unknown command ids, unknown payload revisions, or unsupported extensions may
-  still be rejected after the stream header passes compatibility checks.
-
 The current scaffold records this boundary in `src/vkfwd/protocol.hpp` and
-generated packets carry a stream header. That is only the foundation; the real
-receiver parser still needs a multi-version command table and payload adapters.
+generated code exposes a `current_handshake()` helper. That is only the
+foundation; the real receiver parser still needs handshake exchange, a
+multi-version command table, and payload adapters.
 
 Parameter encoding must support:
 
@@ -496,7 +506,8 @@ Acceptance criteria:
 - Generated command files live only under `src/vkfwd/generated/commands/`.
 - Human-owned hook files live outside generated output and survive
   regeneration.
-- Generated pack/unpack code includes the current stream compatibility header.
+- Generated code exposes the current handshake metadata, while per-command
+  pack/unpack records avoid repeated stream compatibility data.
 - Empty hook defaults compile out without runtime calls or branches.
 
 Current proof-slice status:

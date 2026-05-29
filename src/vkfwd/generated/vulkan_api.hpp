@@ -37,8 +37,8 @@ constexpr VulkanApiVersion kGeneratedVulkanApiVersion{
 constexpr std::uint32_t kGeneratedSchemaVersion =
     1;
 
-constexpr StreamHeader current_stream_header() {
-  return StreamHeader{
+constexpr Handshake current_handshake() {
+  return Handshake{
       kStreamMagic,
       kGeneratedWireVersion,
       kGeneratedVulkanApiVersion,

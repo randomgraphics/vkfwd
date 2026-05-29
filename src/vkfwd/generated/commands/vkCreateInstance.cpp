@@ -16,7 +16,7 @@ PackedCommand pack(Parameters parameters) {
   // intentionally does not claim wire-stable Vulkan replay yet. Pointer-bearing
   // parameters, arrays, and pNext chains must be deep-copied by later generated
   // serializers before a packet can outlive the source call safely.
-  PackedCommand packet{current_stream_header(), CommandId::CreateInstance, parameters};
+  PackedCommand packet{CommandId::CreateInstance, parameters};
 
   if constexpr (Hooks::after_pack_enabled) {
     Hooks::after_pack(packet);

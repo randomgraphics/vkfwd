@@ -17,7 +17,6 @@ struct Parameters {
 };
 
 struct PackedCommand {
-  ::vkfwd::StreamHeader stream_header = current_stream_header();
   CommandId command_id = CommandId::CreateDevice;
   Parameters parameters;
 };

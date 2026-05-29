@@ -20,7 +20,7 @@ struct WireVersion {
   std::uint16_t minor = 0;
 };
 
-struct StreamHeader {
+struct Handshake {
   std::uint32_t magic = kStreamMagic;
   WireVersion wire_version;
   VulkanApiVersion vulkan_api_version;
@@ -36,8 +36,8 @@ enum class StreamCompatibility {
   NewerVulkanMinor,
 };
 
-constexpr StreamCompatibility check_stream_compatibility(
-    const StreamHeader& incoming,
+constexpr StreamCompatibility check_handshake_compatibility(
+    const Handshake& incoming,
     VulkanApiVersion receiver_vulkan_api_version) {
   if (incoming.magic != kStreamMagic) {
     return StreamCompatibility::BadMagic;
@@ -58,14 +58,13 @@ constexpr StreamCompatibility check_stream_compatibility(
   return StreamCompatibility::Compatible;
 }
 
-constexpr bool is_compatible_stream(
-    const StreamHeader& incoming,
+constexpr bool is_compatible_handshake(
+    const Handshake& incoming,
     VulkanApiVersion receiver_vulkan_api_version) {
-  // The receiver/replay runtime is the long-lived compatibility boundary. A
-  // stream is accepted only when the wire format is in the readable range and
-  // Vulkan stays within the same major API line; command-specific replay can
-  // still reject unknown commands or unsupported payload revisions later.
-  return check_stream_compatibility(incoming, receiver_vulkan_api_version) ==
+  // Compatibility is negotiated once before command streaming begins. The hot
+  // command path relies on the established session version and must not repeat
+  // stream-version validation for every Vulkan call.
+  return check_handshake_compatibility(incoming, receiver_vulkan_api_version) ==
          StreamCompatibility::Compatible;
 }
 

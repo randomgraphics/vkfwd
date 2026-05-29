@@ -320,7 +320,6 @@ struct Parameters {{
 }};
 
 struct PackedCommand {{
-  ::vkfwd::StreamHeader stream_header = current_stream_header();
   CommandId command_id = CommandId::{enum_name};
   Parameters parameters;
 }};
@@ -357,7 +356,7 @@ PackedCommand pack(Parameters parameters) {{
   // intentionally does not claim wire-stable Vulkan replay yet. Pointer-bearing
   // parameters, arrays, and pNext chains must be deep-copied by later generated
   // serializers before a packet can outlive the source call safely.
-  PackedCommand packet{{current_stream_header(), CommandId::{enum_name}, parameters}};
+  PackedCommand packet{{CommandId::{enum_name}, parameters}};
 
   if constexpr (Hooks::after_pack_enabled) {{
     Hooks::after_pack(packet);
@@ -393,9 +392,9 @@ Every file in this directory tree is produced by
 `dev/generator/vulkan_metadata.py`. Do not place manual code here; regeneration
 may replace these files without preserving local edits.
 
-Per-command generated code lives under `commands/`. Human-written hook code
-belongs under `src/vkfwd/hooks/<api>Hooks.hpp` and optional matching `.cpp`
-files.
+Per-command generated code and per-command generated metadata live under
+`commands/`. Human-written hook code belongs under
+`src/vkfwd/hooks/<api>Hooks.hpp` and optional matching `.cpp` files.
 """,
         encoding="utf-8",
     )
@@ -406,6 +405,57 @@ files.
         (commands_dir / f"{command['name']}.cpp").write_text(
             command_source_content(metadata, command), encoding="utf-8"
         )
+        (commands_dir / f"{command['name']}.metadata.json").write_text(
+            json.dumps(command_metadata_document(metadata, command), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+
+def command_metadata_document(
+    metadata: dict[str, object], command: dict[str, object]
+) -> dict[str, object]:
+    handles = metadata["handles"]
+    structs = metadata["structs"]
+    handle_names = sorted(
+        {
+            str(parameter["type"])
+            for parameter in command["parameters"]
+            if str(parameter["type"]) in handles
+        }
+        | {str(handle) for handle in command["creates_handles"]}
+    )
+    struct_names = sorted(
+        {
+            str(parameter["type"])
+            for parameter in command["parameters"]
+            if str(parameter["type"]) in structs
+        }
+    )
+    return {
+        "schema": "vkfwd.vulkan-command-metadata.v1",
+        "generator": metadata["generator"],
+        "protocol": metadata["protocol"],
+        "versions": metadata["versions"],
+        "command": command,
+        "handles": {name: handles[name] for name in handle_names},
+        "structs": {name: structs[name] for name in struct_names},
+    }
+
+
+def write_manifest(metadata: dict[str, object], path: Path) -> None:
+    manifest = {
+        "schema": "vkfwd.vulkan-generation-manifest.v1",
+        "generator": metadata["generator"],
+        "protocol": metadata["protocol"],
+        "versions": metadata["versions"],
+        "command_count": len(metadata["commands"]),
+        "commands": [command["name"] for command in metadata["commands"]],
+        "command_metadata": [
+            f"commands/{command['name']}.metadata.json"
+            for command in metadata["commands"]
+        ],
+    }
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def write_cxx_header(metadata: dict[str, object], path: Path) -> None:
@@ -452,8 +502,8 @@ constexpr VulkanApiVersion kGeneratedVulkanApiVersion{{
 constexpr std::uint32_t kGeneratedSchemaVersion =
     {metadata['protocol']['generator_schema_version']};
 
-constexpr StreamHeader current_stream_header() {{
-  return StreamHeader{{
+constexpr Handshake current_handshake() {{
+  return Handshake{{
       kStreamMagic,
       kGeneratedWireVersion,
       kGeneratedVulkanApiVersion,
@@ -620,9 +670,7 @@ def generate(output_dir: Path) -> None:
         "structs": collect_structs(root, command_structs),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "vulkan_metadata.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    write_manifest(metadata, output_dir / "vulkan_manifest.json")
     write_coverage(metadata, output_dir / "vulkan_coverage.md")
     write_manual_hooks_header(metadata, output_dir / "vulkan_manual_hooks.hpp")
     write_command_files(metadata, output_dir)

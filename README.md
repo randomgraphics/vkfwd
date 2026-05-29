@@ -45,7 +45,10 @@ dev/bin/              Helper scripts and utilities.
 
 Everything under `src/vkfwd/generated/` is produced by
 `dev/generator/vulkan_metadata.py` and may be replaced by regeneration. Manual
-code belongs outside that tree. Per-command manual hooks live under
+code belongs outside that tree. Generated command code and generated
+per-command metadata live under `src/vkfwd/generated/commands/`; the generated
+root may contain small manifests for provenance and versioning, but not one
+centralized all-API metadata blob. Per-command manual hooks live under
 `src/vkfwd/hooks/<api>Hooks.hpp`; generated command code conditionally includes
 those files when present. Hook implementations that need out-of-line bodies may
 add a matching `.cpp` file and wire it into CMake manually. See
@@ -94,6 +97,12 @@ Important early work:
   chains, handles, host memory payloads, and externally synchronized objects.
 - Add receiver-side deserialization and replay with source-to-destination handle
   mapping.
+
+Design notes:
+
+- `doc/vulkan-coverage-plan.md` tracks the overall Vulkan API coverage plan.
+- `doc/api-pack-unpack-design.md` describes the generated API pack/unpack path,
+  stream compatibility, ownership rules, and manual hook contract.
 
 ## Build
 
