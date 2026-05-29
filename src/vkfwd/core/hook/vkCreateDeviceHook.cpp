@@ -1,4 +1,4 @@
-#include "generated/commands/vkCreateDevice.hpp"
+#include "generated/command/vkCreateDevice.hpp"
 
 #include <spdlog/spdlog.h>
 

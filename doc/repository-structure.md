@@ -37,7 +37,7 @@ code that converts Vulkan API parameters into replayable bytes and back into
 receiver-owned records.
 
 Command-specific pack/unpack code belongs in `core/generated/`, with
-human-owned command customization in `core/hooks/`. Keeping those pieces
+human-owned command customization in `core/hook/`. Keeping those pieces
 together makes the generated payload schema, generated code, and manual hook
 boundary visible in one place.
 
@@ -129,7 +129,7 @@ Generated code should stay beside the boundary it serves. `core/generated/`
 remains generator-owned for pack/unpack data, payload schemas, command ids, and
 shared Vulkan metadata. `forwarder/generated/` remains generator-owned for
 forwarder-specific layer entry points, dispatch lookup tables, and supported-API
-interceptor glue. `core/hooks/` remains human-owned for command-specific
+interceptor glue. `core/hook/` remains human-owned for command-specific
 pack/unpack customization. Generated command files and per-command schemas
 should stay close to each command so review and compatibility decisions do not
 collapse into one large central file.

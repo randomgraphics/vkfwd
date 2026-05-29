@@ -211,7 +211,7 @@ loader/dispatch mechanics.
 Per-command generated code belongs under:
 
 ```text
-src/vkfwd/core/generated/commands/
+src/vkfwd/core/generated/command/
 ```
 
 Per-command generated metadata should live beside the command's generated
@@ -329,13 +329,13 @@ Human-owned hook files belong under a dedicated directory, with one clearly
 named header per API command:
 
 ```text
-src/vkfwd/core/hooks/<api>Hooks.hpp
+src/vkfwd/core/hook/<api>Hook.hpp
 ```
 
 For example:
 
 ```text
-src/vkfwd/core/hooks/vkCreateDeviceHooks.hpp
+src/vkfwd/core/hook/vkCreateDeviceHook.hpp
 ```
 
 If hook code needs out-of-line bodies, add a matching `.cpp` file manually and
@@ -519,7 +519,7 @@ Acceptance criteria:
 - The proof slice emits deterministic metadata and compiled C++ for
   `vkCreateInstance` and `vkCreateDevice`.
 - Generated pack/unpack command files live under
-  `src/vkfwd/core/generated/commands/`.
+  `src/vkfwd/core/generated/command/`.
 - Human-owned hook files live outside generated output and survive
   regeneration.
 - Generated code exposes the current handshake metadata, while per-command
@@ -535,7 +535,7 @@ Current proof-slice status:
   pack/unpack files exist for `vkCreateInstance` and `vkCreateDevice`.
 - Generated per-command code is compiled into `vkfwd_core`.
 - A human-owned no-op hook specialization exists for `vkCreateDevice` at
-  `src/vkfwd/core/hooks/vkCreateDeviceHooks.hpp`.
+  `src/vkfwd/core/hook/vkCreateDeviceHook.hpp`.
 - The test suite regenerates into a temporary directory and compares generated
   artifacts byte-for-byte.
 - The current pack/unpack slice is intentionally shallow. Pointer-bearing

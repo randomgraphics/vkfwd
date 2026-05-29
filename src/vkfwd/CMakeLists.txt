@@ -3,10 +3,10 @@
 # Vulkan layer and receiver link this target so generated payload behavior stays
 # identical on both sides of the forwarding boundary.
 add_library(vkfwd_core STATIC
-  core/generated/commands/vkCreateDevice.cpp
-  core/generated/commands/vkCreateInstance.cpp
+  core/generated/command/vkCreateDevice.cpp
+  core/generated/command/vkCreateInstance.cpp
   core/generated/vulkan_api.cpp
-  core/hooks/vkCreateDeviceHooks.cpp
+  core/hook/vkCreateDeviceHook.cpp
   core/null_api_endpoint.cpp
   core/text_call_deserializer.cpp
   core/text_call_serializer.cpp)

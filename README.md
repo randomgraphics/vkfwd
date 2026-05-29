@@ -63,15 +63,15 @@ Everything under a `generated/` source tree is produced by
 `dev/generator/vulkan_metadata.py` or another explicit generator entry point and
 may be replaced by regeneration. Manual code belongs outside generated trees.
 Generated pack/unpack command code and per-command metadata live under
-`src/vkfwd/core/generated/commands/`. Forwarder-specific generated loader,
+`src/vkfwd/core/generated/command/`. Forwarder-specific generated loader,
 dispatch, and interceptor glue should live under
 `src/vkfwd/forwarder/generated/`. Generated roots may contain small manifests
 for provenance and versioning, but not one centralized all-API metadata blob.
-Per-command manual hooks live under `src/vkfwd/core/hooks/<api>Hooks.hpp`;
+Per-command manual hooks live under `src/vkfwd/core/hook/<api>Hook.hpp`;
 generated command code conditionally includes those files when present. Hook
 implementations that need out-of-line bodies may add a matching `.cpp` file and
 wire it into CMake manually. See `src/vkfwd/core/generated/README.md` and
-`src/vkfwd/core/hooks/README.md` for the folder ownership rules.
+`src/vkfwd/core/hook/README.md` for the folder ownership rules.
 
 ## Development Rule
 

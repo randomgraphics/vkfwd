@@ -7,25 +7,24 @@
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
 
-namespace vkfwd::generated::commands::vkCreateDevice {
+namespace vkfwd::generated::commands::vkCreateInstance {
 
 struct Parameters {
-  VkPhysicalDevice physicalDevice = {};
-  const VkDeviceCreateInfo* pCreateInfo = {};
+  const VkInstanceCreateInfo* pCreateInfo = {};
   const VkAllocationCallbacks* pAllocator = {};
-  VkDevice* pDevice = {};
+  VkInstance* pInstance = {};
 };
 
 struct PackedCommand {
-  CommandId command_id = CommandId::CreateDevice;
+  CommandId command_id = CommandId::CreateInstance;
   Parameters parameters;
 };
 
 PackedCommand pack(Parameters parameters);
 Parameters unpack(PackedCommand packet);
 
-} // namespace vkfwd::generated::commands::vkCreateDevice
+} // namespace vkfwd::generated::commands::vkCreateInstance
 
-#if __has_include("hooks/vkCreateDeviceHooks.hpp")
-#include "hooks/vkCreateDeviceHooks.hpp"
+#if __has_include("hook/vkCreateInstanceHook.hpp")
+#include "hook/vkCreateInstanceHook.hpp"
 #endif

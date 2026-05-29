@@ -5,5 +5,5 @@ Every file in this directory tree is produced by
 may replace these files without preserving local edits.
 
 Per-command generated code and per-command generated metadata live under
-`commands/`. Human-written hook code belongs under
-`src/vkfwd/core/hooks/<api>Hooks.hpp` and optional matching `.cpp` files.
+`command/`. Human-written hook code belongs under
+`src/vkfwd/core/hook/<api>Hook.hpp` and optional matching `.cpp` files.

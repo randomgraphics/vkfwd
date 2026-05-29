@@ -44,7 +44,7 @@ Follow-up work:
 
 - Decide whether return-value encoding and source-visible output-parameter
   population belong alongside pack/unpack in `core/generated/` and
-  `core/hooks/`. The current intuition is yes, because response payloads must
+  `core/hook/`. The current intuition is yes, because response payloads must
   follow the same command-specific schema, ownership, and compatibility rules as
   request payloads; however, this needs a deliberate boundary decision against
   the API endpoint and replay layers before implementation.

@@ -1,8 +1,8 @@
 {
   "command_count": 2,
   "command_metadata": [
-    "commands/vkCreateInstance.metadata.json",
-    "commands/vkCreateDevice.metadata.json"
+    "command/vkCreateInstance.metadata.json",
+    "command/vkCreateDevice.metadata.json"
   ],
   "commands": [
     "vkCreateInstance",
