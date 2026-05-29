@@ -6,6 +6,7 @@
 
 namespace vkfwd::generated::commands::vkCreateDevice {
 
+
 VkResult Command::pack_parameters(const Parameters& parameters,
                                   ParameterPacket* packet) {
   if (!packet) {
@@ -17,20 +18,172 @@ VkResult Command::pack_parameters(const Parameters& parameters,
     Parameters hook_parameters = parameters;
     Hooks::before_pack(hook_parameters);
 
-    // This generated slice captures the command shape and argument values but
-    // intentionally does not claim wire-stable Vulkan replay yet. Pointer-bearing
-    // parameters, arrays, and pNext chains must be deep-copied by later generated
-    // serializers before a packet can outlive the source call safely.
-    *packet = ParameterPacket{CommandId::CreateDevice, hook_parameters};
+
+    *packet = ParameterPacket{};
+    packet->command_id = CommandId::CreateDevice;
+    packet->parameters = hook_parameters;
+    if (hook_parameters.pCreateInfo) {
+      auto& storage = packet->storage;
+      storage.create_info = *hook_parameters.pCreateInfo;
+      storage.queue_create_infos.resize(storage.create_info.queueCreateInfoCount);
+      storage.queue_create_info_views.resize(storage.create_info.queueCreateInfoCount);
+      for (uint32_t i = 0; i < storage.create_info.queueCreateInfoCount; ++i) {
+        const auto& source_queue = storage.create_info.pQueueCreateInfos[i];
+        auto& queue_storage = storage.queue_create_infos[i];
+        queue_storage.create_info = source_queue;
+        if (source_queue.queueCount > 0) {
+          if (!source_queue.pQueuePriorities) {
+            return VK_ERROR_UNKNOWN;
+          }
+          VkResult status = ::vkfwd::wire_1_0::copy_sized_array(
+              source_queue.queueCount, source_queue.pQueuePriorities,
+              &queue_storage.priorities);
+          if (status != VK_SUCCESS) {
+            return status;
+          }
+          queue_storage.create_info.pQueuePriorities =
+              queue_storage.priorities.data();
+        }
+        VkResult status = ::vkfwd::wire_1_0::copy_pnext_chain(
+            source_queue.pNext, &queue_storage.pnext);
+        if (status != VK_SUCCESS) {
+          return status;
+        }
+        queue_storage.create_info.pNext =
+            ::vkfwd::wire_1_0::rebuild_pnext_chain(&queue_storage.pnext);
+        storage.queue_create_info_views[i] = queue_storage.create_info;
+      }
+      if (!storage.queue_create_info_views.empty()) {
+        storage.create_info.pQueueCreateInfos =
+            storage.queue_create_info_views.data();
+      }
+      VkResult status = ::vkfwd::wire_1_0::copy_string_array(
+          storage.create_info.enabledLayerCount,
+          storage.create_info.ppEnabledLayerNames,
+          &storage.enabled_layer_names,
+          &storage.enabled_layer_name_ptrs);
+      if (status != VK_SUCCESS) {
+        return status;
+      }
+      if (!storage.enabled_layer_name_ptrs.empty()) {
+        storage.create_info.ppEnabledLayerNames =
+            storage.enabled_layer_name_ptrs.data();
+      }
+      status = ::vkfwd::wire_1_0::copy_string_array(
+          storage.create_info.enabledExtensionCount,
+          storage.create_info.ppEnabledExtensionNames,
+          &storage.enabled_extension_names,
+          &storage.enabled_extension_name_ptrs);
+      if (status != VK_SUCCESS) {
+        return status;
+      }
+      if (!storage.enabled_extension_name_ptrs.empty()) {
+        storage.create_info.ppEnabledExtensionNames =
+            storage.enabled_extension_name_ptrs.data();
+      }
+      if (storage.create_info.pEnabledFeatures) {
+        storage.enabled_features = *storage.create_info.pEnabledFeatures;
+        storage.create_info.pEnabledFeatures = &storage.enabled_features;
+      }
+      status = ::vkfwd::wire_1_0::copy_pnext_chain(storage.create_info.pNext,
+                                &storage.create_info_pnext);
+      if (status != VK_SUCCESS) {
+        return status;
+      }
+      storage.create_info.pNext = ::vkfwd::wire_1_0::rebuild_pnext_chain(&storage.create_info_pnext);
+      packet->parameters.pCreateInfo = &storage.create_info;
+    }
+    if (hook_parameters.pAllocator) {
+      packet->storage.allocator = *hook_parameters.pAllocator;
+      packet->parameters.pAllocator = &packet->storage.allocator;
+    }
+
 
     if constexpr (Hooks::after_pack_enabled) {
       Hooks::after_pack(*packet);
     }
     return VK_SUCCESS;
   } else {
-    // With hooks disabled, const-reference input avoids an avoidable pre-pack
-    // copy; the packet copy is the ownership boundary for the captured call.
-    *packet = ParameterPacket{CommandId::CreateDevice, parameters};
+
+    *packet = ParameterPacket{};
+    packet->command_id = CommandId::CreateDevice;
+    packet->parameters = parameters;
+    if (parameters.pCreateInfo) {
+      auto& storage = packet->storage;
+      storage.create_info = *parameters.pCreateInfo;
+      storage.queue_create_infos.resize(storage.create_info.queueCreateInfoCount);
+      storage.queue_create_info_views.resize(storage.create_info.queueCreateInfoCount);
+      for (uint32_t i = 0; i < storage.create_info.queueCreateInfoCount; ++i) {
+        const auto& source_queue = storage.create_info.pQueueCreateInfos[i];
+        auto& queue_storage = storage.queue_create_infos[i];
+        queue_storage.create_info = source_queue;
+        if (source_queue.queueCount > 0) {
+          if (!source_queue.pQueuePriorities) {
+            return VK_ERROR_UNKNOWN;
+          }
+          VkResult status = ::vkfwd::wire_1_0::copy_sized_array(
+              source_queue.queueCount, source_queue.pQueuePriorities,
+              &queue_storage.priorities);
+          if (status != VK_SUCCESS) {
+            return status;
+          }
+          queue_storage.create_info.pQueuePriorities =
+              queue_storage.priorities.data();
+        }
+        VkResult status = ::vkfwd::wire_1_0::copy_pnext_chain(
+            source_queue.pNext, &queue_storage.pnext);
+        if (status != VK_SUCCESS) {
+          return status;
+        }
+        queue_storage.create_info.pNext =
+            ::vkfwd::wire_1_0::rebuild_pnext_chain(&queue_storage.pnext);
+        storage.queue_create_info_views[i] = queue_storage.create_info;
+      }
+      if (!storage.queue_create_info_views.empty()) {
+        storage.create_info.pQueueCreateInfos =
+            storage.queue_create_info_views.data();
+      }
+      VkResult status = ::vkfwd::wire_1_0::copy_string_array(
+          storage.create_info.enabledLayerCount,
+          storage.create_info.ppEnabledLayerNames,
+          &storage.enabled_layer_names,
+          &storage.enabled_layer_name_ptrs);
+      if (status != VK_SUCCESS) {
+        return status;
+      }
+      if (!storage.enabled_layer_name_ptrs.empty()) {
+        storage.create_info.ppEnabledLayerNames =
+            storage.enabled_layer_name_ptrs.data();
+      }
+      status = ::vkfwd::wire_1_0::copy_string_array(
+          storage.create_info.enabledExtensionCount,
+          storage.create_info.ppEnabledExtensionNames,
+          &storage.enabled_extension_names,
+          &storage.enabled_extension_name_ptrs);
+      if (status != VK_SUCCESS) {
+        return status;
+      }
+      if (!storage.enabled_extension_name_ptrs.empty()) {
+        storage.create_info.ppEnabledExtensionNames =
+            storage.enabled_extension_name_ptrs.data();
+      }
+      if (storage.create_info.pEnabledFeatures) {
+        storage.enabled_features = *storage.create_info.pEnabledFeatures;
+        storage.create_info.pEnabledFeatures = &storage.enabled_features;
+      }
+      status = ::vkfwd::wire_1_0::copy_pnext_chain(storage.create_info.pNext,
+                                &storage.create_info_pnext);
+      if (status != VK_SUCCESS) {
+        return status;
+      }
+      storage.create_info.pNext = ::vkfwd::wire_1_0::rebuild_pnext_chain(&storage.create_info_pnext);
+      packet->parameters.pCreateInfo = &storage.create_info;
+    }
+    if (parameters.pAllocator) {
+      packet->storage.allocator = *parameters.pAllocator;
+      packet->parameters.pAllocator = &packet->storage.allocator;
+    }
+
 
     if constexpr (Hooks::after_pack_enabled) {
       Hooks::after_pack(*packet);

@@ -29,9 +29,9 @@ loader, dispatch, handle-mapping, and replay-ordering assumptions.
   application. It owns Vulkan loader entry points, dispatch-table chaining,
   source-side capture, and source-visible API completion.
 - **Receiver executable**: a process on the destination machine or destination
-  runtime. It accepts command payloads, unpacks them into receiver-owned data,
-  replays them against the local Vulkan implementation, and sends required
-  results back through the endpoint/transport path.
+  runtime. It accepts command payloads from an endpoint transport, unpacks them
+  into receiver-owned data, replays them against the local Vulkan
+  implementation, and sends required results back through the endpoint path.
 
 Optional tools should be modeled as variants of those roles rather than as new
 core abstractions:
@@ -65,10 +65,10 @@ compatibility rules.
 ### API Endpoint
 
 The API endpoint is the end of an intercepted Vulkan call from the
-application's point of view. Sending a serialized command into a complete
-endpoint should behave like calling the real driver for the subset of Vulkan
-that endpoint supports: it must return required values, populate output
-parameters, preserve ordering, and maintain source-to-receiver handle identity.
+application's point of view. Submitting a packed command to a complete endpoint
+should behave like calling the real driver for the subset of Vulkan that
+endpoint supports: it must return required values, populate output parameters,
+preserve ordering, and maintain source-to-receiver handle identity.
 
 Endpoint implementations can serve different purposes:
 
@@ -120,14 +120,14 @@ src/vkfwd/
     receiver/
       receiver.cpp
       ...
-    scripts/
+    script/
       generator/
-    tests/
+    test/
 
   facade/
     README.md
-    scripts/
-    tests/
+    script/
+    test/
 ```
 
 Generated code should stay beside the implementation boundary it serves.
@@ -149,7 +149,8 @@ that the extra directory earns its keep.
 The build expresses these runtime boundaries:
 
 - `vkfwd_core`: static library containing generated pack/unpack code, endpoint
-  interfaces, transport interfaces, hooks, protocol, and utilities for `ferry`.
+  interfaces, hooks, protocol, versioned wire helpers, and utilities for
+  `ferry`.
 - `vkfwd_forwarder`: shared library loaded by the Vulkan loader; links
   `vkfwd_core` and owns `ferry` forwarder-specific generated interception code.
 - `vkfwd_receiver`: receiver library that hosts the receiver endpoint and replay
@@ -165,9 +166,9 @@ handling, but it should not accidentally become a hidden global runtime.
 
 ## Remaining Growth Points
 
-1. Add generated forwarding dispatch/interceptor glue under
-   `src/vkfwd/ferry/forwarder/generated/` when the forwarding layer generator is
-   introduced.
+1. Expand generated forwarding dispatch/interceptor glue under
+   `src/vkfwd/ferry/forwarder/generated/` beyond the current create/destroy
+   instance/device slice.
 2. Add receiver executable entry points only after receiver process/runtime
    policy is defined.
 3. Add recorder and replay-tool folders when their endpoint behavior is defined

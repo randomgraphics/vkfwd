@@ -8,8 +8,9 @@ machine for rendering.
 The core problem is Vulkan API interception and faithful call reconstruction:
 every intercepted call must have its parameters, pointed-to structures, chained
 `pNext` data, handles, memory ranges, synchronization state, and ordering
-serialized into a replayable stream. On the receiving side, that stream must be
-deserialized and invoked against the real Vulkan implementation.
+packed into replayable command payloads. On the receiving side, those payloads
+must be unpacked into receiver-owned data and invoked against the real Vulkan
+implementation.
 
 Forwarding to another process or remote machine is intentionally an internal
 endpoint detail for now. The project starts with two main modules plus an
@@ -21,10 +22,10 @@ The intended long-term shape is:
 
 - `vkfwd_forwarder`: a Vulkan explicit layer implementation that
   intercepts instance, device, queue, command buffer, memory, synchronization,
-  and presentation calls, then serializes every parameter needed to replay them.
-- `vkfwd_receiver`: a receiver library/runtime that deserializes the captured
-  stream, reconstructs Vulkan object state, and invokes actual Vulkan API calls
-  on the receiving side.
+  and presentation calls, then packs every parameter needed to replay them.
+- `vkfwd_receiver`: a receiver library/runtime that unpacks forwarded command
+  payloads, reconstructs Vulkan object state, and invokes actual Vulkan API
+  calls on the receiving side.
 - An API endpoint interface that completes intercepted calls with the same
   caller-visible contract as a Vulkan driver call. Internally, an endpoint may
   use local IPC, remote network transports, capture files, or in-process test
@@ -58,13 +59,13 @@ reserved for a future stateful front end with local Vulkan-visible state and
 local handle identities.
 
 Within `ferry`, the shared core static library
-contains pack/unpack, endpoint contracts, transport interfaces, protocol code,
+contains pack/unpack, endpoint contracts, protocol code, versioned wire helpers,
 generated command code, hooks, and common utilities. The forwarder shared
 library, receiver executable, recorder layer, and saved-stream replay tool are
 thin role-specific targets that link the core library.
 
 Everything under a `generated/` source tree is produced by
-`src/vkfwd/ferry/scripts/generator/vulkan_metadata.py` or another explicit
+`src/vkfwd/ferry/script/generator/vulkan_metadata.py` or another explicit
 generator entry point and may be replaced by regeneration. Manual code belongs
 outside generated trees.
 Generated pack/unpack command code and per-command metadata live under
@@ -92,35 +93,40 @@ The capture/replay path is expected to evolve around five components:
 
 1. Forwarder Vulkan entry points exported from `src/vkfwd/ferry/forwarder/layer.cpp`.
 2. Generated or hand-written interceptors that capture every Vulkan parameter
-   before forwarding the call to the next Vulkan implementation.
-3. A serializer that deep-copies Vulkan structs, arrays, handles, `pNext`
-   chains, memory payloads, and call ordering into a stable wire format.
-4. An API endpoint interface that accepts serialized calls, executes them
-   locally or remotely, and completes the caller-visible return value, output
-   parameters, and handle mapping before the intercepted API call returns.
-5. A receiver/replay runtime that deserializes calls, maps source handles to
-   receiver handles, reconstructs state, and invokes the real Vulkan API.
+   before forwarding the packed command to the API endpoint.
+3. Generated command pack/unpack code that deep-copies Vulkan structs, arrays,
+   handles, `pNext` chains, memory payloads, and call ordering according to the
+   selected wire revision.
+4. An API endpoint interface that completes the caller-visible return value,
+   output parameters, and handle mapping before the intercepted API call
+   returns. Any IPC, network, file, or local replay implementation sits below
+   this boundary.
+5. A receiver/replay runtime that maps source handles to receiver handles,
+   reconstructs state, and invokes the real Vulkan API.
 
 The module split is:
 
 - `vkfwd_core`: shared generated pack/unpack, endpoint, protocol, and utility
   code.
 - `vkfwd_forwarder`: loadable Vulkan layer shared object for forwarding.
-- `vkfwd_receiver`: receiver-side deserialization and replay helpers.
+- `vkfwd_receiver`: receiver-side replay scaffolding and future unpack/replay
+  helpers.
 
-The first implementation milestone is a loadable explicit Vulkan layer that can
-be discovered by the Vulkan loader and can trace a small set of calls while
-passing them through locally. From there, the project can grow toward generated
-dispatch tables and complete Vulkan API coverage.
+The current implementation milestone is a loadable explicit Vulkan layer with
+generated entry points for `vkCreateInstance`, `vkDestroyInstance`,
+`vkCreateDevice`, and `vkDestroyDevice`. These calls are packed, submitted to
+the configured endpoint boundary, unpack a placeholder response, and then return
+to the application. The placeholder endpoint is trace-only; it is not complete
+remote forwarding or Vulkan replay.
 
 Important early work:
 
 - Build complete Vulkan dispatch interception for instance and device commands.
 - Generate parameter metadata from Vulkan XML instead of manually duplicating
   the whole API surface.
-- Define serialization rules for structs, optional pointers, arrays, `pNext`
+- Define wire rules for structs, optional pointers, arrays, `pNext`
   chains, handles, host memory payloads, and externally synchronized objects.
-- Add receiver-side deserialization and replay with source-to-destination handle
+- Add receiver-side unpack/replay with source-to-destination handle
   mapping.
 
 Design notes:
@@ -154,8 +160,8 @@ For local development shell setup, source:
 
 ## Status
 
-This is a new project skeleton. Complete Vulkan API interception, parameter
-serialization, receiver-side deserialization/replay, generated dispatch tables,
+This is an early forwarding scaffold. Complete Vulkan API interception,
+wire-format encoding, receiver-side unpack/replay, endpoint response payloads,
 and concrete API endpoint implementations are not implemented yet.
 
 ## License

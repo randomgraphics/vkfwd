@@ -18,8 +18,8 @@ virtual calls should stay out of the hot path.
 - Keep absent manual hooks at true zero runtime overhead.
 - Support human-owned command-specific intervention without regeneration
   overwriting manual code.
-- Produce a stream format that one receiver/replay runtime can read across
-  compatible interceptor builds.
+- Produce a wire payload format that one receiver/replay runtime can read
+  across compatible interceptor builds.
 - Keep the fast path predictable: contiguous writes, bounded branching, and no
   heap churn for small fixed-shape commands.
 
@@ -37,9 +37,10 @@ virtual calls should stay out of the hot path.
 - **Parameters** are the immediate C/C++ values passed to a Vulkan command.
 - **Packed command** is the generated, command-specific representation produced
   by capture-side pack code.
-- **Wire payload** is the byte stream handed to an API endpoint. The endpoint
-  may send that payload over IPC, write it to a file, or replay it in-process,
-  but those choices sit below the top-level API completion contract.
+- **Wire payload** is the command data handed to an API endpoint. The endpoint
+  may encode it as bytes, send it over IPC, write it to a file, or replay it
+  in-process, but those choices sit below the top-level API completion
+  contract.
 - **Unpacked command** is the receiver-owned representation produced from the
   wire payload.
 - **Replay record** is the data the receiver uses to invoke Vulkan after handle
@@ -51,10 +52,13 @@ virtual calls should stay out of the hot path.
   intercepted command returns when Vulkan semantics require a synchronous
   result.
 
-The current proof slice has generated `Parameters` and `PackedCommand` structs
-for `vkCreateInstance` and `vkCreateDevice`, but it is intentionally shallow:
-pointer-bearing parameters are copied as pointer values only. That is useful to
-prove code generation and hook mechanics, but it is not replay-stable yet.
+The current proof slice generates command classes for `vkCreateInstance`,
+`vkDestroyInstance`, `vkCreateDevice`, and `vkDestroyDevice`. Create commands
+deep-copy the currently modeled input pointers, arrays, string arrays, and
+opaque `pNext` chains into command-owned storage. It is still not complete
+Vulkan replay: handles are not mapped to receiver-side handles, endpoint
+responses are placeholders, and `pNext` nodes are copied opaquely rather than
+decoded into structure-specific policy.
 
 ## Generated Layout
 
@@ -99,11 +103,11 @@ Generated pack code should be shaped like a direct hand-written function:
 2. Compile-time call `before_pack` only when enabled.
 3. Copy or deep-copy parameters into an owned command-specific packed record.
 4. Compile-time call `after_pack` only when enabled.
-5. Emit or hand the packed record to serialization.
+5. Hand the packed record to the API endpoint boundary.
 
 Generated unpack code mirrors this:
 
-1. Trust the already-negotiated stream/session version.
+1. Trust the already-negotiated wire/session version.
 2. Validate only command-specific payload shape and payload revision.
 3. Compile-time call `before_unpack` only when enabled.
 4. Read the payload into receiver-owned command-specific data.
@@ -155,10 +159,10 @@ struct CommandHooks<vkfwd::generated::CommandId::CreateDevice> {
 
 ## Handshake And Stream Compatibility
 
-Before any command payloads are streamed, the dispatcher and receiver must
-complete a handshake. The receiver/replay runtime may be newer or older than
-the interceptor that produced a stream, so compatibility is decided once at
-session setup, before command payload decoding starts.
+Before any command payloads cross an endpoint transport, the dispatcher and
+receiver must complete a handshake. The receiver/replay runtime may be newer or
+older than the interceptor, so compatibility is decided once at session setup,
+before command payload decoding starts.
 
 The handshake includes:
 
@@ -167,7 +171,9 @@ The handshake includes:
 - Vulkan API major, minor, and patch version that the generator was built
   against. Note that it could be different than the actual version that
   the game/app is using.
-- Generator schema version.
+- Generator schema version. This identifies generated metadata/tooling shape;
+  runtime wire compatibility is controlled by the wire version and command
+  payload revisions.
 
 Receiver rules:
 
@@ -181,7 +187,7 @@ Receiver rules:
   requires stricter behavior.
 
 After the handshake succeeds, command packets must not carry or revalidate the
-stream version. The rest of the stream is interpreted according to the
+wire version. The rest of the session is interpreted according to the
 negotiated version to keep the hot path small. Command-specific decoding may
 still reject unknown command ids, unsupported payload revisions, missing
 extensions, or unimplemented replay policies.

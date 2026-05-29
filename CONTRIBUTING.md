@@ -16,7 +16,7 @@ For Vulkan interception and replay code, comments should call out:
 
 - Loader-chain assumptions and dispatch-table invariants.
 - Pointer, array, and `pNext` lifetime expectations.
-- Serialization ownership rules for borrowed application memory.
+- Pack/unpack ownership rules for borrowed application memory.
 - Handle-mapping assumptions between source and receiver Vulkan instances.
 - Replay ordering requirements and externally synchronized state.
 - Placeholder behavior that must not be mistaken for complete forwarding.

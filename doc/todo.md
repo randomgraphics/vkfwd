@@ -59,7 +59,7 @@ Follow-up work:
   partial success, caller buffer truncation, and commands that mutate output
   structs through `pNext` chains.
 - Define the source-to-receiver handle map as a first-class replay structure.
-  Serialized payloads should carry typed source handle identities, while replay
+  Forwarded payloads should carry typed source handle identities, while replay
   resolves them to receiver-side handles created in the corresponding replay
   order.
 - Define when handle mappings are inserted, updated, invalidated, and destroyed,

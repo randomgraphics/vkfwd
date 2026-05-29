@@ -14,7 +14,7 @@ public:
   // output parameters, handle identities, ordering, and error behavior. Logging,
   // files, IPC, or network transport are implementation details below this
   // boundary, not the contract exposed to interceptors.
-  virtual void call(const SerializedCall& call) = 0;
+  virtual void call(const InterceptedCall& call) = 0;
 };
 
 } // namespace vkfwd

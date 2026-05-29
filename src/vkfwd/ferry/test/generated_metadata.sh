@@ -7,14 +7,13 @@ trap 'rm -rf "$tmpdir"' EXIT
 core_tmp="$tmpdir/core"
 forwarder_tmp="$tmpdir/forwarder"
 
-"$root/src/vkfwd/ferry/scripts/generator/vulkan_metadata.py" \
+"$root/src/vkfwd/ferry/script/generator/vulkan_metadata.py" \
   --output-dir "$core_tmp" \
   --forwarder-output-dir "$forwarder_tmp"
 
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_manifest.json" "$core_tmp/vulkan_manifest.json"
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_coverage.md" "$core_tmp/vulkan_coverage.md"
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_api.hpp" "$core_tmp/vulkan_api.hpp"
-cmp "$root/src/vkfwd/ferry/core/generated/vulkan_api.cpp" "$core_tmp/vulkan_api.cpp"
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_manual_hooks.hpp" "$core_tmp/vulkan_manual_hooks.hpp"
 cmp "$root/src/vkfwd/ferry/core/generated/README.md" "$core_tmp/README.md"
 cmp "$root/src/vkfwd/ferry/forwarder/generated/vulkan_forwarder.hpp" "$forwarder_tmp/vulkan_forwarder.hpp"

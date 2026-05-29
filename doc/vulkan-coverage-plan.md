@@ -1,7 +1,7 @@
 # Vulkan Coverage Plan
 
 This document is the working plan for growing `vkfwd` from a small Vulkan
-layer scaffold into broad Vulkan API capture, serialization, forwarding, and
+layer scaffold into broad Vulkan API capture, wire encoding, forwarding, and
 receiver-side replay. It is written for both humans and agents: use it to pick
 the next unit of work, decide what belongs in generated code, and avoid
 mistaking trace-only placeholders for complete forwarding.
@@ -12,7 +12,7 @@ scaffolding and semantic special cases, but the full Vulkan command and
 structure surface is too large and too version-sensitive to maintain by hand.
 
 The selected Vulkan API version is a repository-wide contract. Generated code,
-coverage policy, serializer command ids, `pNext` structure handling, replay
+coverage policy, command ids, `pNext` structure handling, replay
 records, tests, documentation, and build assumptions must all agree with that
 one version. Updating the Vulkan header or `vk.xml` is therefore not a local
 dependency refresh; it is an API-version migration that must regenerate and
@@ -24,9 +24,9 @@ revalidate the repository against the new specification.
 - Build all generated Vulkan knowledge from one explicitly selected Vulkan API
   version.
 - Preserve Vulkan loader-chain and dispatch-table invariants.
-- Serialize every parameter needed to replay a command after the original
+- Pack every parameter needed to replay a command after the original
   application-owned memory is gone.
-- Deserialize serialized calls into receiver-owned replay records.
+- Unpack forwarded command payloads into receiver-owned replay records.
 - Replay against a receiver-side Vulkan implementation using source-to-receiver
   handle mappings.
 - Track unsupported commands and extensions explicitly.
@@ -44,9 +44,9 @@ revalidate the repository against the new specification.
 
 - **Capture** means intercepting a Vulkan call and copying all data required to
   describe that call independent of the application's stack or heap lifetime.
-- **Serialization** means converting captured data into a stable protocol
+- **Wire encoding** means converting captured data into a stable protocol
   payload. A log line is not sufficient for replay.
-- **Forwarding** means completing serialized calls through an API endpoint. The
+- **Forwarding** means completing packed calls through an API endpoint. The
   endpoint is the driver-like boundary that must produce caller-visible return
   values, output parameters, handle identities, ordering, and error behavior;
   in-process execution, IPC, network transport, logging, and file capture are
@@ -88,8 +88,8 @@ Every Vulkan command should eventually have one explicit state:
 | `unclassified` | The command exists in the selected Vulkan XML but no policy has been assigned. |
 | `passthrough-only` | The layer forwards locally but does not serialize enough information for replay. |
 | `trace-only` | The layer records limited metadata for diagnostics only. |
-| `capture-ready` | Capture records own all call inputs needed for serialization. |
-| `roundtrip-ready` | Capture, serialization, and deserialization preserve the call shape. |
+| `capture-ready` | Capture records own all call inputs needed for wire encoding. |
+| `roundtrip-ready` | Capture, pack, and unpack preserve the call shape. |
 | `replay-ready` | Receiver-side replay invokes the real Vulkan command with mapped handles. |
 | `endpoint-ready` | The full intercepted call path completes return values, output parameters, handle mapping, and ordering through an API endpoint. |
 | `unsupported-explicit` | The command is recognized and intentionally rejected or logged as unsupported. |
@@ -110,7 +110,7 @@ That pinned version is the source of truth for:
 - Core and extension command classification.
 - Struct, enum, bitmask, and handle definitions.
 - `pNext` structure recognition.
-- Serialization and replay records.
+- Wire payload and replay records.
 - Coverage reports and tests.
 
 A Vulkan API-version migration must update these pieces together:
@@ -186,7 +186,7 @@ Rules:
 - Global, instance, and device entry point declarations.
 - `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` lookup tables.
 - Capture record types.
-- Serializer and deserializer skeletons.
+- Pack/unpack skeletons.
 - Replay executor skeletons.
 - Coverage reports for commands, structs, handles, enums, and extensions.
 
@@ -244,8 +244,8 @@ source.
 ### Command Metadata Model
 
 The normalized generator metadata should include enough information for
-dispatch, capture, serialization, deserialization, replay, coverage, and
-compatibility decisions without repeatedly re-parsing XML in runtime code.
+dispatch, capture, pack/unpack, replay, coverage, and compatibility decisions
+without repeatedly re-parsing XML in runtime code.
 
 Required command metadata:
 
@@ -255,7 +255,6 @@ Required command metadata:
 - Command level: global, instance, or device.
 - Dispatch parameter, if any.
 - Source API dialect, such as standard Vulkan versus Vulkan SC.
-- Success and error codes.
 - Created or destroyed handle types.
 - Parameter list with declaration, base type, pointer depth, constness,
   optionality, length expression, direction, handle kind, and handle parent.
@@ -374,7 +373,7 @@ depends on command lookup reaching the right next function.
 - Remove device dispatch state after `vkDestroyDevice` is forwarded.
 - Treat device dispatch as mandatory for meaningful Vulkan workload coverage.
 
-## Serialization Protocol Plan
+## Wire Protocol Plan
 
 The protocol should be versioned before any serious replay work begins.
 The detailed pack/unpack design, hot-path expectations, stream compatibility
@@ -390,10 +389,10 @@ Required fields:
 - Encoded parameter payload.
 - Result/output payload when the capture policy requires post-call data.
 
-Before command streaming begins, the dispatcher and receiver must complete a
-handshake. The receiver/replay runtime is expected to outlive individual
-interceptor builds, so it must be able to accept streams produced by all
-compatible interceptor/dispatcher builds.
+Before command payloads cross an endpoint transport, the dispatcher and
+receiver must complete a handshake. The receiver/replay runtime is expected to
+outlive individual interceptor builds, so it must be able to accept payloads
+produced by all compatible interceptor/dispatcher builds.
 
 The handshake should contain:
 
@@ -402,9 +401,9 @@ The handshake should contain:
 - Vulkan API major, minor, and patch version used by the generator.
 - Generator schema version.
 
-Once the handshake succeeds, the rest of the command stream is assumed to
-follow the negotiated version. Per-command packets must not repeat stream
-version information or redo stream compatibility validation in the hot path.
+Once the handshake succeeds, the rest of the session is assumed to follow the
+negotiated version. Per-command packets must not repeat wire-version
+information or redo compatibility validation in the hot path.
 Command-specific decoding may still reject unknown command ids, unsupported
 payload revisions, missing extensions, or unimplemented replay policies.
 
@@ -423,10 +422,10 @@ Compatibility rules:
 - Vulkan patch/header differences are recorded for diagnostics and exact
   replay policy, but they should not by themselves imply incompatibility inside
   the same supported major/minor line.
-The current scaffold records this boundary in `src/vkfwd/ferry/core/protocol.hpp` and
-generated code exposes a `current_handshake()` helper. That is only the
-foundation; the real receiver parser still needs handshake exchange, a
-multi-version command table, and payload adapters.
+The current scaffold records this boundary in `src/vkfwd/ferry/core/protocol.hpp`
+with stable handshake request/response types and compatibility checks. That is
+only the foundation; the real endpoint transport still needs handshake
+exchange, a multi-version command table, and payload adapters.
 
 Parameter encoding must support:
 
@@ -492,8 +491,8 @@ Acceptance criteria:
 
 - This plan exists and is kept current.
 - The current scaffold continues to build and pass smoke tests.
-- Placeholder serializer, deserializer, endpoint, and replay comments clearly
-  say they are not complete forwarding, endpoint execution, or Vulkan replay.
+- Placeholder endpoint and replay comments clearly say they are not complete
+  forwarding, endpoint execution, or Vulkan replay.
 
 ### Milestone 1: Generator Skeleton
 
@@ -517,30 +516,34 @@ Acceptance criteria:
 - A build check verifies the compiler is using the vendored Vulkan headers.
 - Commands are classified as `unclassified` until policy is added.
 - The proof slice emits deterministic metadata and compiled C++ for
-  `vkCreateInstance` and `vkCreateDevice`.
+  `vkCreateInstance`, `vkDestroyInstance`, `vkCreateDevice`, and
+  `vkDestroyDevice`.
 - Generated pack/unpack command files live under
   `src/vkfwd/ferry/core/generated/command/`.
 - Human-owned hook files live outside generated output and survive
   regeneration.
-- Generated code exposes the current handshake metadata, while per-command
-  pack/unpack records avoid repeated stream compatibility data.
+- Shared protocol code exposes the stable handshake metadata, while per-command
+  pack/unpack records avoid repeated wire compatibility data.
 - Empty hook defaults compile out without runtime calls or branches.
 
 Current proof-slice status:
 
-- `src/vkfwd/ferry/scripts/generator/vulkan_metadata.py` parses the pinned `vk.xml`.
+- `src/vkfwd/ferry/script/generator/vulkan_metadata.py` parses the pinned `vk.xml`.
 - The generator selects the standard Vulkan variant when Vulkan SC defines a
   same-named command with a different contract.
-- Generated metadata, coverage, command info, dispatch helper, and per-command
-  pack/unpack files exist for `vkCreateInstance` and `vkCreateDevice`.
+- Generated metadata, coverage, `vulkan_api.hpp`, forwarder dispatch tables,
+  and per-command pack/unpack files exist for `vkCreateInstance`,
+  `vkDestroyInstance`, `vkCreateDevice`, and `vkDestroyDevice`.
 - Generated per-command code is compiled into `vkfwd_core`.
 - A human-owned no-op hook specialization exists for `vkCreateDevice` at
   `src/vkfwd/ferry/core/hook/vkCreateDeviceHook.hpp`.
 - The test suite regenerates into a temporary directory and compares generated
   artifacts byte-for-byte.
-- The current pack/unpack slice is intentionally shallow. Pointer-bearing
-  parameters, counted arrays, strings, and `pNext` chains still need generated
-  deep-copy serialization before the stream can be considered replay-stable.
+- The current pack/unpack slice deep-copies the currently modeled create-info
+  pointers, counted arrays, strings, allocation callbacks, and opaque `pNext`
+  chains for instance/device creation. It is not replay-stable yet because
+  endpoint responses are placeholders, handle mapping is not implemented, and
+  broad command-specific `pNext` policy is still missing.
 
 ### Milestone 2: Generated Dispatch Tables
 
@@ -572,7 +575,7 @@ Initial command families:
 Acceptance criteria:
 
 - Capture records own all input data for these calls.
-- Serialization round-trips command shape and key parameters.
+- Pack/unpack round-trips command shape and key parameters.
 - Source-to-receiver mappings exist for instance, physical device, device, and
   queue handles.
 
@@ -688,10 +691,9 @@ Test layers:
   basic build integration.
 - **Generator tests:** metadata parsing, deterministic output, and policy
   classification.
-- **Serialization golden tests:** representative binary payloads for scalars,
-  arrays, strings, handles, structs, and `pNext`.
-- **Round-trip tests:** serialize then deserialize into equivalent replay
-  records.
+- **Wire golden tests:** representative command payloads for scalars, arrays,
+  strings, handles, structs, and `pNext`.
+- **Round-trip tests:** pack then unpack into equivalent replay records.
 - **Layer loader tests:** confirm the Vulkan loader can discover and call the
   layer.
 - **Dispatch tests:** confirm global, instance, and device command lookup uses

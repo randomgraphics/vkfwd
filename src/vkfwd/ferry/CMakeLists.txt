@@ -3,15 +3,13 @@
 # Vulkan layer and receiver link this target so generated payload behavior stays
 # identical on both sides of the forwarding boundary.
 add_library(vkfwd_core STATIC
+  core/blob.cpp
   core/generated/command/vkCreateDevice.cpp
   core/generated/command/vkCreateInstance.cpp
   core/generated/command/vkDestroyDevice.cpp
   core/generated/command/vkDestroyInstance.cpp
-  core/generated/vulkan_api.cpp
   core/hook/vkCreateDeviceHook.cpp
-  core/null_api_endpoint.cpp
-  core/text_call_deserializer.cpp
-  core/text_call_serializer.cpp)
+  core/null_api_endpoint.cpp)
 
 set_target_properties(vkfwd_core PROPERTIES
   # Core is linked into the Vulkan layer shared object, so it must be
@@ -33,8 +31,8 @@ target_compile_definitions(vkfwd_core
     VKFWD_VERSION="${PROJECT_VERSION}")
 
 # vkfwd_receiver is a separate module because replay owns receiver-only state:
-# destination Vulkan dispatch, source-to-destination handle maps, and
-# deserialized object lifetimes.
+# destination Vulkan dispatch, source-to-destination handle maps, and copied
+# command lifetimes.
 add_library(vkfwd_receiver STATIC
   receiver/receiver.cpp
   receiver/trace_replay_executor.cpp)
@@ -98,5 +96,5 @@ configure_file(
   @ONLY)
 
 if(BUILD_TESTING)
-  add_subdirectory(tests)
+  add_subdirectory(test)
 endif()

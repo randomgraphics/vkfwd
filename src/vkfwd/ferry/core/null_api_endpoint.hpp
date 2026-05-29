@@ -10,7 +10,7 @@ public:
   // the top-level API boundary, but it deliberately does not satisfy the real
   // endpoint contract for output parameters, return values, handle mapping, or
   // receiver-side Vulkan execution.
-  void call(const SerializedCall& call) override;
+  void call(const InterceptedCall& call) override;
 };
 
 } // namespace vkfwd

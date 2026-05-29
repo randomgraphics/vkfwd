@@ -7,6 +7,12 @@
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
 
+#include <vulkan/vulkan.h>
+
+#include <cstddef>
+#include <string>
+#include <vector>
+
 namespace vkfwd::generated::commands::vkCreateDevice {
 
 struct Parameters {
@@ -21,11 +27,33 @@ struct Response {
   VkDevice* pDevice = {};
 };
 
+
+struct DeviceQueueCreateInfoStorage {
+  VkDeviceQueueCreateInfo create_info = {};
+  std::vector<float> priorities;
+  std::vector<vkfwd::wire_1_0::PNextNode> pnext;
+};
+
+struct ParameterStorage {
+  VkDeviceCreateInfo create_info = {};
+  std::vector<DeviceQueueCreateInfoStorage> queue_create_infos;
+  std::vector<VkDeviceQueueCreateInfo> queue_create_info_views;
+  std::vector<std::string> enabled_layer_names;
+  std::vector<const char*> enabled_layer_name_ptrs;
+  std::vector<std::string> enabled_extension_names;
+  std::vector<const char*> enabled_extension_name_ptrs;
+  VkPhysicalDeviceFeatures enabled_features = {};
+  std::vector<vkfwd::wire_1_0::PNextNode> create_info_pnext;
+  VkAllocationCallbacks allocator = {};
+};
+
+
 struct ResponsePacket;
 
 struct ParameterPacket {
   CommandId command_id = CommandId::CreateDevice;
   Parameters parameters;
+  ParameterStorage storage;
   using ResponsePacket = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
 };
 

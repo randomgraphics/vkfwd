@@ -15,19 +15,16 @@ class Forwarder {
 public:
   static Forwarder& instance();
 
-  // These setters exist so tests and future runtime configuration can swap the
-  // serialization format and API endpoint without changing the Vulkan layer
-  // entry points. The layer should stay focused on interception mechanics.
-  void set_serializer(std::unique_ptr<CallSerializer> serializer);
+  // This setter exists so tests and future runtime configuration can swap the
+  // API endpoint without changing the Vulkan layer entry points. The layer
+  // should stay focused on interception mechanics.
   void set_endpoint(std::unique_ptr<ApiEndpoint> endpoint);
 
   // capture() is the layer-side boundary: callers provide a fully captured
-  // Vulkan call record, and this object owns the policy of serialization plus
-  // endpoint dispatch. Today the record is minimal; the invariant for the real
+  // Vulkan call record, and this object dispatches it to the configured
+  // endpoint. Today the record is minimal; the invariant for the real
   // implementation is that all borrowed Vulkan parameter memory has already
-  // been converted into replayable owned data, and the configured endpoint has
-  // produced the caller-visible result required for the API, before this
-  // function returns.
+  // been converted into replayable owned data before the endpoint receives it.
   void capture(const InterceptedCall& call);
 
   template <class ParameterPacket, class ResponsePacket>
@@ -37,7 +34,7 @@ public:
                    ResponsePacket* response_packet) {
     // The generated forwarder path is intentionally pack-first: any pointer,
     // array, or pNext lifetime work must happen before endpoint submission.
-    // This scaffold still serializes only the command name, so it returns a
+    // This scaffold still submits only the command name, so it returns a
     // generated response placeholder until ApiEndpoint grows a real
     // command-response payload carrying return values and output parameters.
     (void)parameter_packet;
@@ -53,7 +50,6 @@ private:
   Forwarder() = default;
 
   std::mutex mutex_;
-  std::unique_ptr<CallSerializer> serializer_;
   std::unique_ptr<ApiEndpoint> endpoint_;
 };
 
