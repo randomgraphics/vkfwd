@@ -61,11 +61,11 @@ prove code generation and hook mechanics, but it is not replay-stable yet.
 Generated pack/unpack command code lives under:
 
 ```text
-src/vkfwd/core/generated/
+src/vkfwd/ferry/core/generated/
 ```
 
 Forwarder-specific generated Vulkan layer entry points, dispatch lookup tables,
-and interceptor glue belong under `src/vkfwd/forwarder/generated/` instead of
+and interceptor glue belong under `src/vkfwd/ferry/forwarder/generated/` instead of
 the core generated command tree. Keeping generated output near the boundary it serves
 prevents loader/dispatch mechanics from being confused with replayable payload
 schema.
@@ -73,7 +73,7 @@ schema.
 Per-command generated pack/unpack files live under:
 
 ```text
-src/vkfwd/core/generated/command/
+src/vkfwd/ferry/core/generated/command/
 ```
 
 Per-command generated schema and metadata should live in the same directory as
@@ -84,8 +84,8 @@ APIs.
 Human-written hooks live outside generated output:
 
 ```text
-src/vkfwd/core/hook/<api>Hook.hpp
-src/vkfwd/core/hook/<api>Hook.cpp
+src/vkfwd/ferry/core/hook/<api>Hook.hpp
+src/vkfwd/ferry/core/hook/<api>Hook.cpp
 ```
 
 The generator may conditionally include hook headers with `__has_include`, but
@@ -140,7 +140,7 @@ manually. If hook code breaks the build, the build should fail normally.
 Example:
 
 ```cpp
-// src/vkfwd/core/hook/vkCreateDeviceHook.hpp
+// src/vkfwd/ferry/core/hook/vkCreateDeviceHook.hpp
 template <>
 struct CommandHooks<vkfwd::generated::CommandId::CreateDevice> {
   static constexpr bool before_pack_enabled = true;
@@ -244,7 +244,7 @@ command files. These are an early form of per-command metadata, not yet full
 payload schemas. They should evolve into files such as:
 
 ```text
-src/vkfwd/core/generated/command/vkCreateDevice.schema.json
+src/vkfwd/ferry/core/generated/command/vkCreateDevice.schema.json
 ```
 
 ## Schema Hash And Revision Enforcement
@@ -314,7 +314,7 @@ that latest shape.
 Conceptual layout:
 
 ```text
-src/vkfwd/core/generated/command/vkCreateDevice/
+src/vkfwd/ferry/core/generated/command/vkCreateDevice/
   schema.rev1.json
   schema.rev2.json
   schema.rev3.json

@@ -43,35 +43,40 @@ the full API surface is generated or implemented.
 ## Repository Layout
 
 ```text
-src/vkfwd/core/       Shared core library source, generated command code, hooks.
-src/vkfwd/forwarder/  Vulkan layer implementation loaded into source apps.
-src/vkfwd/receiver/   Receiver-side pipeline and replay scaffolding.
-src/third_party/  Vendored third-party code and pinned Vulkan spec inputs.
-dev/test/         Development tests and test harnesses.
-dev/env/          Coding environment setup scripts.
-dev/bin/          Helper scripts and utilities.
+src/vkfwd/ferry/    Per-API-call forwarding implementation.
+src/vkfwd/facade/   Placeholder for a stateful Vulkan front-end implementation.
+src/third_party/    Vendored third-party code and pinned Vulkan spec inputs.
+dev/env/            Coding environment setup scripts.
+dev/bin/            Helper scripts and utilities.
 ```
 
 The source layout is documented in `doc/repository-structure.md`. In that
-model, the shared core static library
+model, each implementation folder is self-contained. `ferry` currently owns the
+shared core static library, forwarder layer, receiver/replay scaffolding,
+generator scripts, and tests for the mechanical per-API-call path. `facade` is
+reserved for a future stateful front end with local Vulkan-visible state and
+local handle identities.
+
+Within `ferry`, the shared core static library
 contains pack/unpack, endpoint contracts, transport interfaces, protocol code,
 generated command code, hooks, and common utilities. The forwarder shared
 library, receiver executable, recorder layer, and saved-stream replay tool are
 thin role-specific targets that link the core library.
 
 Everything under a `generated/` source tree is produced by
-`dev/generator/vulkan_metadata.py` or another explicit generator entry point and
-may be replaced by regeneration. Manual code belongs outside generated trees.
+`src/vkfwd/ferry/scripts/generator/vulkan_metadata.py` or another explicit
+generator entry point and may be replaced by regeneration. Manual code belongs
+outside generated trees.
 Generated pack/unpack command code and per-command metadata live under
-`src/vkfwd/core/generated/command/`. Forwarder-specific generated loader,
+`src/vkfwd/ferry/core/generated/command/`. Forwarder-specific generated loader,
 dispatch, and interceptor glue should live under
-`src/vkfwd/forwarder/generated/`. Generated roots may contain small manifests
+`src/vkfwd/ferry/forwarder/generated/`. Generated roots may contain small manifests
 for provenance and versioning, but not one centralized all-API metadata blob.
-Per-command manual hooks live under `src/vkfwd/core/hook/<api>Hook.hpp`;
+Per-command manual hooks live under `src/vkfwd/ferry/core/hook/<api>Hook.hpp`;
 generated command code conditionally includes those files when present. Hook
 implementations that need out-of-line bodies may add a matching `.cpp` file and
-wire it into CMake manually. See `src/vkfwd/core/generated/README.md` and
-`src/vkfwd/core/hook/README.md` for the folder ownership rules.
+wire it into CMake manually. See `src/vkfwd/ferry/core/generated/README.md` and
+`src/vkfwd/ferry/core/hook/README.md` for the folder ownership rules.
 
 ## Development Rule
 
@@ -85,7 +90,7 @@ for the agent-facing rule.
 
 The capture/replay path is expected to evolve around five components:
 
-1. Forwarder Vulkan entry points exported from `src/vkfwd/forwarder/layer.cpp`.
+1. Forwarder Vulkan entry points exported from `src/vkfwd/ferry/forwarder/layer.cpp`.
 2. Generated or hand-written interceptors that capture every Vulkan parameter
    before forwarding the call to the next Vulkan implementation.
 3. A serializer that deep-copies Vulkan structs, arrays, handles, `pNext`

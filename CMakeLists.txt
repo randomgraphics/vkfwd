@@ -25,7 +25,3 @@ target_include_directories(vkfwd_vulkan_headers
 
 add_subdirectory(src/third_party)
 add_subdirectory(src/vkfwd)
-
-if(BUILD_TESTING)
-  add_subdirectory(dev/test)
-endif()

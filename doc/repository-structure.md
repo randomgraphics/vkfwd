@@ -1,9 +1,25 @@
 # Repository Structure
 
 This document describes the high-level source layout for `vkfwd`.
-The goal is to keep the two runtime roles small and explicit while putting the
-shared Vulkan command model, pack/unpack code, endpoint interfaces, transport
-interfaces, and utility code in one core library.
+The goal is to keep each implementation strategy self-contained so the project
+can compare per-API-call forwarding, a stateful Vulkan front end, or a hybrid
+without mixing their runtime assumptions.
+
+## Implementation Families
+
+`src/vkfwd` is split by implementation family:
+
+- `ferry`: the current mechanical per-API-call forwarding path. It owns the
+  shared command model, generated pack/unpack code, forwarder layer,
+  receiver/replay scaffolding, generator scripts, and tests for that approach.
+- `facade`: a placeholder for a future stateful Vulkan front end. It will own
+  local Vulkan-facing state, local handle identities, and any forwarding/replay
+  policy that depends on those local objects.
+
+Code, scripts, generated files, and tests should stay inside the implementation
+folder whose invariants they assume. Shared top-level code should be introduced
+only when both families need the same contract and can preserve the same Vulkan
+loader, dispatch, handle-mapping, and replay-ordering assumptions.
 
 ## Runtime Roles
 
@@ -27,7 +43,7 @@ core abstractions:
 
 ## Main Components
 
-The shared core library should contain these major parts.
+The `ferry` core library should contain these major parts.
 
 ### Pack/Unpack
 
@@ -88,64 +104,54 @@ The current source shape is:
 
 ```text
 src/vkfwd/
-  core/
-    api_endpoint.*
-    call_record.*
-    protocol.*
-    transport.*
-    ...
-    generated/
-    hooks/
+  ferry/
+    core/
+      api_endpoint.*
+      call_record.*
+      protocol.*
+      ...
+      generated/
+      hook/
+    forwarder/
+      forwarder.cpp
+      ...
+      generated/
+      manifest/
+    receiver/
+      receiver.cpp
+      ...
+    scripts/
+      generator/
+    tests/
 
-  forwarder/
-    forwarder.cpp
-    ...
-    generated/
-    manifest/
-
-  receiver/
-    receiver.cpp
-    ...
-    replay/
+  facade/
+    README.md
+    scripts/
+    tests/
 ```
 
-Optional future tools should use sibling folders when their behavior is defined:
+Generated code should stay beside the implementation boundary it serves.
+`ferry/core/generated/` remains generator-owned for pack/unpack data, payload
+schemas, command ids, and shared Vulkan metadata for the per-call path.
+`ferry/forwarder/generated/` remains generator-owned for forwarder-specific
+layer entry points, dispatch lookup tables, and supported-API interceptor glue.
+`ferry/core/hook/` remains human-owned for command-specific pack/unpack
+customization. Generated command files and per-command schemas should stay close
+to each command so review and compatibility decisions do not collapse into one
+large central file.
 
-```text
-src/vkfwd/
-  recorder/
-    recorder.cpp
-    ...
-    generated/
-    manifest/
-
-  replay/
-    replay.cpp
-    ...
-    generated/
-```
-
-Generated code should stay beside the boundary it serves. `core/generated/`
-remains generator-owned for pack/unpack data, payload schemas, command ids, and
-shared Vulkan metadata. `forwarder/generated/` remains generator-owned for
-forwarder-specific layer entry points, dispatch lookup tables, and supported-API
-interceptor glue. `core/hook/` remains human-owned for command-specific
-pack/unpack customization. Generated command files and per-command schemas
-should stay close to each command so review and compatibility decisions do not
-collapse into one large central file.
-
-Other core files should stay flat directly under `core/` for now. Add more
-subfolders only when an implementation boundary becomes large enough that the
-extra directory earns its keep.
+Other ferry core files should stay flat directly under `ferry/core/` for now.
+Add more subfolders only when an implementation boundary becomes large enough
+that the extra directory earns its keep.
 
 ## CMake Target Shape
 
 The build expresses these runtime boundaries:
 
 - `vkfwd_core`: static library containing generated pack/unpack code, endpoint
-  interfaces, transport interfaces, hooks, protocol, and utilities.
+  interfaces, transport interfaces, hooks, protocol, and utilities for `ferry`.
 - `vkfwd_forwarder`: shared library loaded by the Vulkan loader; links
-  `vkfwd_core` and owns forwarder-specific generated interception code.
+  `vkfwd_core` and owns `ferry` forwarder-specific generated interception code.
 - `vkfwd_receiver`: receiver library that hosts the receiver endpoint and replay
   scaffolding; links `vkfwd_core`. It can grow an executable entry point when
   process/runtime policy exists.
@@ -160,7 +166,7 @@ handling, but it should not accidentally become a hidden global runtime.
 ## Remaining Growth Points
 
 1. Add generated forwarding dispatch/interceptor glue under
-   `src/vkfwd/forwarder/generated/` when the forwarding layer generator is
+   `src/vkfwd/ferry/forwarder/generated/` when the forwarding layer generator is
    introduced.
 2. Add receiver executable entry points only after receiver process/runtime
    policy is defined.

@@ -6,7 +6,7 @@ capture, packing, unpacking, dispatch, or replay behavior.
 Use one clearly named header per Vulkan API command:
 
 ```text
-src/vkfwd/core/hook/<api>Hook.hpp
+src/vkfwd/ferry/core/hook/<api>Hook.hpp
 ```
 
 If a hook needs out-of-line logic, add a matching `.cpp` file, for example

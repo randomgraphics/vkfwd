@@ -199,19 +199,19 @@ Generated pack/unpack command code belongs under the generator-owned output
 tree:
 
 ```text
-src/vkfwd/core/generated/
+src/vkfwd/ferry/core/generated/
 ```
 
 Forwarder-specific generated Vulkan layer entry points, dispatch lookup tables,
 and interceptor glue should live under
-`src/vkfwd/forwarder/generated/`. Generated files should stay beside the runtime
+`src/vkfwd/ferry/forwarder/generated/`. Generated files should stay beside the runtime
 boundary they serve so replayable payload schema is not mixed with
 loader/dispatch mechanics.
 
 Per-command generated code belongs under:
 
 ```text
-src/vkfwd/core/generated/command/
+src/vkfwd/ferry/core/generated/command/
 ```
 
 Per-command generated metadata should live beside the command's generated
@@ -220,7 +220,7 @@ become too large and hard to review as coverage grows toward the full Vulkan
 API surface. Small global manifests are acceptable for generator provenance,
 protocol version, Vulkan version, and the list of generated command artifacts.
 
-Every file in `src/vkfwd/core/generated/` is generator-owned. Do not place
+Every file in `src/vkfwd/ferry/core/generated/` is generator-owned. Do not place
 hand-written code there, and do not expect local edits to survive regeneration.
 The generated root must contain a README that repeats this rule because
 generated command files will become numerous and easy to mistake for normal
@@ -329,13 +329,13 @@ Human-owned hook files belong under a dedicated directory, with one clearly
 named header per API command:
 
 ```text
-src/vkfwd/core/hook/<api>Hook.hpp
+src/vkfwd/ferry/core/hook/<api>Hook.hpp
 ```
 
 For example:
 
 ```text
-src/vkfwd/core/hook/vkCreateDeviceHook.hpp
+src/vkfwd/ferry/core/hook/vkCreateDeviceHook.hpp
 ```
 
 If hook code needs out-of-line bodies, add a matching `.cpp` file manually and
@@ -423,7 +423,7 @@ Compatibility rules:
 - Vulkan patch/header differences are recorded for diagnostics and exact
   replay policy, but they should not by themselves imply incompatibility inside
   the same supported major/minor line.
-The current scaffold records this boundary in `src/vkfwd/core/protocol.hpp` and
+The current scaffold records this boundary in `src/vkfwd/ferry/core/protocol.hpp` and
 generated code exposes a `current_handshake()` helper. That is only the
 foundation; the real receiver parser still needs handshake exchange, a
 multi-version command table, and payload adapters.
@@ -519,7 +519,7 @@ Acceptance criteria:
 - The proof slice emits deterministic metadata and compiled C++ for
   `vkCreateInstance` and `vkCreateDevice`.
 - Generated pack/unpack command files live under
-  `src/vkfwd/core/generated/command/`.
+  `src/vkfwd/ferry/core/generated/command/`.
 - Human-owned hook files live outside generated output and survive
   regeneration.
 - Generated code exposes the current handshake metadata, while per-command
@@ -528,14 +528,14 @@ Acceptance criteria:
 
 Current proof-slice status:
 
-- `dev/generator/vulkan_metadata.py` parses the pinned `vk.xml`.
+- `src/vkfwd/ferry/scripts/generator/vulkan_metadata.py` parses the pinned `vk.xml`.
 - The generator selects the standard Vulkan variant when Vulkan SC defines a
   same-named command with a different contract.
 - Generated metadata, coverage, command info, dispatch helper, and per-command
   pack/unpack files exist for `vkCreateInstance` and `vkCreateDevice`.
 - Generated per-command code is compiled into `vkfwd_core`.
 - A human-owned no-op hook specialization exists for `vkCreateDevice` at
-  `src/vkfwd/core/hook/vkCreateDeviceHook.hpp`.
+  `src/vkfwd/ferry/core/hook/vkCreateDeviceHook.hpp`.
 - The test suite regenerates into a temporary directory and compares generated
   artifacts byte-for-byte.
 - The current pack/unpack slice is intentionally shallow. Pointer-bearing
