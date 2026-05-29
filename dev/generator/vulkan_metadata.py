@@ -394,7 +394,7 @@ may replace these files without preserving local edits.
 
 Per-command generated code and per-command generated metadata live under
 `commands/`. Human-written hook code belongs under
-`src/vkfwd/hooks/<api>Hooks.hpp` and optional matching `.cpp` files.
+`src/vkfwd/core/hooks/<api>Hooks.hpp` and optional matching `.cpp` files.
 """,
         encoding="utf-8",
     )
@@ -683,7 +683,7 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=repo_root() / "src/vkfwd/generated",
+        default=repo_root() / "src/vkfwd/core/generated",
         help="directory for generated metadata files",
     )
     args = parser.parse_args()

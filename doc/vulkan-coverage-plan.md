@@ -46,8 +46,15 @@ revalidate the repository against the new specification.
   describe that call independent of the application's stack or heap lifetime.
 - **Serialization** means converting captured data into a stable protocol
   payload. A log line is not sufficient for replay.
-- **Forwarding** means delivering serialized calls to a sink. The sink may be
-  in-process, IPC, network, or file-backed.
+- **Forwarding** means completing serialized calls through an API endpoint. The
+  endpoint is the driver-like boundary that must produce caller-visible return
+  values, output parameters, handle identities, ordering, and error behavior;
+  in-process execution, IPC, network transport, logging, and file capture are
+  implementation details below that boundary.
+- **API endpoint** means the end of an intercepted Vulkan command from the
+  application's perspective. A complete endpoint may delegate to local or remote
+  replay internally, but it must not return to the application until the
+  command's required outputs and error policy are resolved.
 - **Replay** means invoking Vulkan calls on a receiver-side Vulkan
   implementation using receiver-owned state and mapped handles.
 - **Trace-only** means recording command names or partial metadata for
@@ -84,6 +91,7 @@ Every Vulkan command should eventually have one explicit state:
 | `capture-ready` | Capture records own all call inputs needed for serialization. |
 | `roundtrip-ready` | Capture, serialization, and deserialization preserve the call shape. |
 | `replay-ready` | Receiver-side replay invokes the real Vulkan command with mapped handles. |
+| `endpoint-ready` | The full intercepted call path completes return values, output parameters, handle mapping, and ordering through an API endpoint. |
 | `unsupported-explicit` | The command is recognized and intentionally rejected or logged as unsupported. |
 
 The build or test suite should eventually fail if commands remain
@@ -187,16 +195,23 @@ command such as `vkCreateDevice` should have its own generated declaration and
 implementation files so review, testing, and future replay policy can stay
 local to that command.
 
-Generated code belongs under the generator-owned output tree:
+Generated pack/unpack command code belongs under the generator-owned output
+tree:
 
 ```text
-src/vkfwd/generated/
+src/vkfwd/core/generated/
 ```
+
+Forwarder-specific generated Vulkan layer entry points, dispatch lookup tables,
+and interceptor glue should live under
+`src/vkfwd/forwarder/generated/`. Generated files should stay beside the runtime
+boundary they serve so replayable payload schema is not mixed with
+loader/dispatch mechanics.
 
 Per-command generated code belongs under:
 
 ```text
-src/vkfwd/generated/commands/
+src/vkfwd/core/generated/commands/
 ```
 
 Per-command generated metadata should live beside the command's generated
@@ -205,7 +220,7 @@ become too large and hard to review as coverage grows toward the full Vulkan
 API surface. Small global manifests are acceptable for generator provenance,
 protocol version, Vulkan version, and the list of generated command artifacts.
 
-Every file in `src/vkfwd/generated/` is generator-owned. Do not place
+Every file in `src/vkfwd/core/generated/` is generator-owned. Do not place
 hand-written code there, and do not expect local edits to survive regeneration.
 The generated root must contain a README that repeats this rule because
 generated command files will become numerous and easy to mistake for normal
@@ -314,13 +329,13 @@ Human-owned hook files belong under a dedicated directory, with one clearly
 named header per API command:
 
 ```text
-src/vkfwd/hooks/<api>Hooks.hpp
+src/vkfwd/core/hooks/<api>Hooks.hpp
 ```
 
 For example:
 
 ```text
-src/vkfwd/hooks/vkCreateDeviceHooks.hpp
+src/vkfwd/core/hooks/vkCreateDeviceHooks.hpp
 ```
 
 If hook code needs out-of-line bodies, add a matching `.cpp` file manually and
@@ -408,7 +423,7 @@ Compatibility rules:
 - Vulkan patch/header differences are recorded for diagnostics and exact
   replay policy, but they should not by themselves imply incompatibility inside
   the same supported major/minor line.
-The current scaffold records this boundary in `src/vkfwd/protocol.hpp` and
+The current scaffold records this boundary in `src/vkfwd/core/protocol.hpp` and
 generated code exposes a `current_handshake()` helper. That is only the
 foundation; the real receiver parser still needs handshake exchange, a
 multi-version command table, and payload adapters.
@@ -431,7 +446,7 @@ endianness, handle representation, memory addresses, or driver object identity.
 
 ## Capture Ownership Rules
 
-By the time a captured call reaches a forwarding sink:
+By the time a captured call reaches an API endpoint:
 
 - No parameter may depend on application stack memory remaining alive.
 - No borrowed pointer may be stored without an ownership comment and a bounded
@@ -457,13 +472,13 @@ Handle table categories:
 - Swapchain and presentation handles.
 - Synthetic handles used only by the protocol.
 
-Replay rules:
+Replay and endpoint rules:
 
 - Creation commands add mappings only after receiver-side success.
 - Destruction commands remove mappings only after the receiver call has been
   issued or the failure policy has run.
-- Commands that return handles need a response policy if the host continues to
-  use source-side results.
+- Commands that return handles need an endpoint response policy before the host
+  continues to use source-side results.
 - Failed source-side calls may still need trace visibility but usually must not
   create receiver-side state.
 - Externally synchronized Vulkan objects require explicit ordering assumptions
@@ -477,8 +492,8 @@ Acceptance criteria:
 
 - This plan exists and is kept current.
 - The current scaffold continues to build and pass smoke tests.
-- Placeholder serializer, deserializer, and replay executor comments clearly
-  say they are not complete forwarding or Vulkan replay.
+- Placeholder serializer, deserializer, endpoint, and replay comments clearly
+  say they are not complete forwarding, endpoint execution, or Vulkan replay.
 
 ### Milestone 1: Generator Skeleton
 
@@ -503,7 +518,8 @@ Acceptance criteria:
 - Commands are classified as `unclassified` until policy is added.
 - The proof slice emits deterministic metadata and compiled C++ for
   `vkCreateInstance` and `vkCreateDevice`.
-- Generated command files live only under `src/vkfwd/generated/commands/`.
+- Generated pack/unpack command files live under
+  `src/vkfwd/core/generated/commands/`.
 - Human-owned hook files live outside generated output and survive
   regeneration.
 - Generated code exposes the current handshake metadata, while per-command
@@ -517,9 +533,9 @@ Current proof-slice status:
   same-named command with a different contract.
 - Generated metadata, coverage, command info, dispatch helper, and per-command
   pack/unpack files exist for `vkCreateInstance` and `vkCreateDevice`.
-- Generated per-command code is compiled into `vkfwd_capture`.
+- Generated per-command code is compiled into `vkfwd_core`.
 - A human-owned no-op hook specialization exists for `vkCreateDevice` at
-  `src/vkfwd/hooks/vkCreateDeviceHooks.hpp`.
+  `src/vkfwd/core/hooks/vkCreateDeviceHooks.hpp`.
 - The test suite regenerates into a temporary directory and compares generated
   artifacts byte-for-byte.
 - The current pack/unpack slice is intentionally shallow. Pointer-bearing

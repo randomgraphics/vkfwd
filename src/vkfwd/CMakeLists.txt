@@ -1,34 +1,41 @@
-# vkfwd_capture is separated from the loadable layer so serialization logic can
-# be unit-tested without involving Vulkan loader discovery.
-add_library(vkfwd_capture STATIC
-  forwarder.cpp
-  generated/commands/vkCreateDevice.cpp
-  generated/commands/vkCreateInstance.cpp
-  generated/vulkan_api.cpp
-  hooks/vkCreateDeviceHooks.cpp
-  null_forwarding_sink.cpp
-  text_call_serializer.cpp)
+# vkfwd_core holds the shared command model, generated pack/unpack code,
+# endpoint contracts, protocol metadata, and small debug implementations. The
+# Vulkan layer and receiver link this target so generated payload behavior stays
+# identical on both sides of the forwarding boundary.
+add_library(vkfwd_core STATIC
+  core/generated/commands/vkCreateDevice.cpp
+  core/generated/commands/vkCreateInstance.cpp
+  core/generated/vulkan_api.cpp
+  core/hooks/vkCreateDeviceHooks.cpp
+  core/null_api_endpoint.cpp
+  core/text_call_deserializer.cpp
+  core/text_call_serializer.cpp)
 
-set_target_properties(vkfwd_capture PROPERTIES
-  # The capture library is linked into the Vulkan layer shared object, so it
-  # must be position-independent even though it is currently built as static.
+set_target_properties(vkfwd_core PROPERTIES
+  # Core is linked into the Vulkan layer shared object, so it must be
+  # position-independent even though it is currently built as static.
   POSITION_INDEPENDENT_CODE ON)
 
-target_include_directories(vkfwd_capture
+target_include_directories(vkfwd_core
   PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR})
+    ${CMAKE_CURRENT_SOURCE_DIR}/core)
 
-target_compile_definitions(vkfwd_capture
+target_link_libraries(vkfwd_core
+  PUBLIC
+    vkfwd_vulkan_headers
+    fmt::fmt
+    spdlog::spdlog)
+
+target_compile_definitions(vkfwd_core
   PRIVATE
     VKFWD_VERSION="${PROJECT_VERSION}")
 
-# vkfwd_receiver is a separate module because replay owns different state from
-# capture: destination Vulkan dispatch, source-to-destination handle maps, and
+# vkfwd_receiver is a separate module because replay owns receiver-only state:
+# destination Vulkan dispatch, source-to-destination handle maps, and
 # deserialized object lifetimes.
 add_library(vkfwd_receiver STATIC
-  receiver.cpp
-  text_call_deserializer.cpp
-  trace_replay_executor.cpp)
+  receiver/receiver.cpp
+  receiver/trace_replay_executor.cpp)
 
 set_target_properties(vkfwd_receiver PROPERTIES
   # Keep this PIC as well so the receiver can later be embedded into a daemon,
@@ -37,45 +44,40 @@ set_target_properties(vkfwd_receiver PROPERTIES
 
 target_include_directories(vkfwd_receiver
   PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR})
+    ${CMAKE_CURRENT_SOURCE_DIR}/receiver)
 
 target_link_libraries(vkfwd_receiver
   PUBLIC
-    vkfwd_vulkan_headers
-    fmt::fmt
-    spdlog::spdlog)
+    vkfwd_core)
 
 target_compile_definitions(vkfwd_receiver
   PRIVATE
     VKFWD_VERSION="${PROJECT_VERSION}")
 
-# The layer target should stay small: it exports Vulkan loader entry points and
-# delegates capture details to vkfwd_capture.
-add_library(vkfwd_layer SHARED
-  layer.cpp)
+# The forwarder target should stay small: it exports Vulkan loader entry points
+# and delegates payload handling to vkfwd_core. The forwarder-specific singleton
+# lives here because it represents layer runtime policy, not receiver replay
+# state.
+add_library(vkfwd_forwarder SHARED
+  forwarder/forwarder.cpp
+  forwarder/layer.cpp)
 
-target_include_directories(vkfwd_layer
+target_include_directories(vkfwd_forwarder
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR})
+    ${CMAKE_CURRENT_SOURCE_DIR}/forwarder)
 
-target_link_libraries(vkfwd_layer
+target_link_libraries(vkfwd_forwarder
   PRIVATE
     # The Vulkan loader loads this layer and provides downstream entry points
     # through the layer chain. Linking libvulkan here would add an unnecessary
     # runtime dependency and could blur the dispatch boundary we are testing.
-    vkfwd_capture)
+    vkfwd_core)
 
-target_link_libraries(vkfwd_capture
-  PUBLIC
-    vkfwd_vulkan_headers
-    fmt::fmt
-    spdlog::spdlog)
-
-target_compile_definitions(vkfwd_layer
+target_compile_definitions(vkfwd_forwarder
   PRIVATE
     VKFWD_VERSION="${PROJECT_VERSION}")
 
-set_target_properties(vkfwd_layer PROPERTIES
+set_target_properties(vkfwd_forwarder PROPERTIES
   OUTPUT_NAME "VkLayer_VKFWD_forwarder"
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN YES)
@@ -84,6 +86,6 @@ set(VKFWD_LAYER_LIBRARY_PATH
   "${CMAKE_SHARED_LIBRARY_PREFIX}VkLayer_VKFWD_forwarder${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
 configure_file(
-  manifest/VK_LAYER_VKFWD_forwarder.json.in
+  forwarder/manifest/VK_LAYER_VKFWD_forwarder.json.in
   ${CMAKE_CURRENT_BINARY_DIR}/VK_LAYER_VKFWD_forwarder.json
   @ONLY)

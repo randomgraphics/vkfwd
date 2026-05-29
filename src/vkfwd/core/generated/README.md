@@ -6,4 +6,4 @@ may replace these files without preserving local edits.
 
 Per-command generated code and per-command generated metadata live under
 `commands/`. Human-written hook code belongs under
-`src/vkfwd/hooks/<api>Hooks.hpp` and optional matching `.cpp` files.
+`src/vkfwd/core/hooks/<api>Hooks.hpp` and optional matching `.cpp` files.

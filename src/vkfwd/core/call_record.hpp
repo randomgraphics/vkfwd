@@ -27,8 +27,8 @@ struct InterceptedCall {
   CallDirection direction = CallDirection::HostToReceiver;
 };
 
-// SerializedCall owns its bytes because forwarding may be asynchronous. A sink
-// must be able to queue, batch, or move the payload without retaining references
+// SerializedCall owns its bytes because an endpoint may use async transport or
+// queueing internally. That implementation detail must not retain references
 // into the layer's stack frame or into the original application's parameters.
 struct SerializedCall {
   std::vector<std::uint8_t> bytes;

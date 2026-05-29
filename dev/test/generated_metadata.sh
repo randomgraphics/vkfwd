@@ -7,23 +7,23 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 "$root/dev/generator/vulkan_metadata.py" --output-dir "$tmpdir"
 
-cmp "$root/src/vkfwd/generated/vulkan_manifest.json" "$tmpdir/vulkan_manifest.json"
-cmp "$root/src/vkfwd/generated/vulkan_coverage.md" "$tmpdir/vulkan_coverage.md"
-cmp "$root/src/vkfwd/generated/vulkan_api.hpp" "$tmpdir/vulkan_api.hpp"
-cmp "$root/src/vkfwd/generated/vulkan_api.cpp" "$tmpdir/vulkan_api.cpp"
-cmp "$root/src/vkfwd/generated/vulkan_manual_hooks.hpp" "$tmpdir/vulkan_manual_hooks.hpp"
-cmp "$root/src/vkfwd/generated/README.md" "$tmpdir/README.md"
-cmp "$root/src/vkfwd/generated/commands/vkCreateInstance.metadata.json" "$tmpdir/commands/vkCreateInstance.metadata.json"
-cmp "$root/src/vkfwd/generated/commands/vkCreateInstance.hpp" "$tmpdir/commands/vkCreateInstance.hpp"
-cmp "$root/src/vkfwd/generated/commands/vkCreateInstance.cpp" "$tmpdir/commands/vkCreateInstance.cpp"
-cmp "$root/src/vkfwd/generated/commands/vkCreateDevice.metadata.json" "$tmpdir/commands/vkCreateDevice.metadata.json"
-cmp "$root/src/vkfwd/generated/commands/vkCreateDevice.hpp" "$tmpdir/commands/vkCreateDevice.hpp"
-cmp "$root/src/vkfwd/generated/commands/vkCreateDevice.cpp" "$tmpdir/commands/vkCreateDevice.cpp"
+cmp "$root/src/vkfwd/core/generated/vulkan_manifest.json" "$tmpdir/vulkan_manifest.json"
+cmp "$root/src/vkfwd/core/generated/vulkan_coverage.md" "$tmpdir/vulkan_coverage.md"
+cmp "$root/src/vkfwd/core/generated/vulkan_api.hpp" "$tmpdir/vulkan_api.hpp"
+cmp "$root/src/vkfwd/core/generated/vulkan_api.cpp" "$tmpdir/vulkan_api.cpp"
+cmp "$root/src/vkfwd/core/generated/vulkan_manual_hooks.hpp" "$tmpdir/vulkan_manual_hooks.hpp"
+cmp "$root/src/vkfwd/core/generated/README.md" "$tmpdir/README.md"
+cmp "$root/src/vkfwd/core/generated/commands/vkCreateInstance.metadata.json" "$tmpdir/commands/vkCreateInstance.metadata.json"
+cmp "$root/src/vkfwd/core/generated/commands/vkCreateInstance.hpp" "$tmpdir/commands/vkCreateInstance.hpp"
+cmp "$root/src/vkfwd/core/generated/commands/vkCreateInstance.cpp" "$tmpdir/commands/vkCreateInstance.cpp"
+cmp "$root/src/vkfwd/core/generated/commands/vkCreateDevice.metadata.json" "$tmpdir/commands/vkCreateDevice.metadata.json"
+cmp "$root/src/vkfwd/core/generated/commands/vkCreateDevice.hpp" "$tmpdir/commands/vkCreateDevice.hpp"
+cmp "$root/src/vkfwd/core/generated/commands/vkCreateDevice.cpp" "$tmpdir/commands/vkCreateDevice.cpp"
 
 python3 - \
-  "$root/src/vkfwd/generated/vulkan_manifest.json" \
-  "$root/src/vkfwd/generated/commands/vkCreateInstance.metadata.json" \
-  "$root/src/vkfwd/generated/commands/vkCreateDevice.metadata.json" <<'PY'
+  "$root/src/vkfwd/core/generated/vulkan_manifest.json" \
+  "$root/src/vkfwd/core/generated/commands/vkCreateInstance.metadata.json" \
+  "$root/src/vkfwd/core/generated/commands/vkCreateDevice.metadata.json" <<'PY'
 import json
 import sys
 

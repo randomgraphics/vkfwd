@@ -1,6 +1,6 @@
 #include "forwarder.hpp"
 
-#include "null_forwarding_sink.hpp"
+#include "null_api_endpoint.hpp"
 #include "text_call_serializer.hpp"
 
 #include <cstdio>
@@ -18,9 +18,9 @@ void Forwarder::set_serializer(std::unique_ptr<CallSerializer> serializer) {
   serializer_ = std::move(serializer);
 }
 
-void Forwarder::set_sink(std::unique_ptr<ForwardingSink> sink) {
+void Forwarder::set_endpoint(std::unique_ptr<ApiEndpoint> endpoint) {
   std::lock_guard lock(mutex_);
-  sink_ = std::move(sink);
+  endpoint_ = std::move(endpoint);
 }
 
 void Forwarder::capture(const InterceptedCall& call) {
@@ -31,11 +31,11 @@ void Forwarder::capture(const InterceptedCall& call) {
   if (!serializer_) {
     serializer_ = std::make_unique<TextCallSerializer>();
   }
-  if (!sink_) {
-    sink_ = std::make_unique<NullForwardingSink>();
+  if (!endpoint_) {
+    endpoint_ = std::make_unique<NullApiEndpoint>();
   }
 
-  sink_->submit(serializer_->serialize(call));
+  endpoint_->call(serializer_->serialize(call));
 }
 
 } // namespace vkfwd

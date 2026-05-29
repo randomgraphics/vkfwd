@@ -37,11 +37,19 @@ virtual calls should stay out of the hot path.
 - **Parameters** are the immediate C/C++ values passed to a Vulkan command.
 - **Packed command** is the generated, command-specific representation produced
   by capture-side pack code.
-- **Wire payload** is the byte stream sent through a forwarding sink.
+- **Wire payload** is the byte stream handed to an API endpoint. The endpoint
+  may send that payload over IPC, write it to a file, or replay it in-process,
+  but those choices sit below the top-level API completion contract.
 - **Unpacked command** is the receiver-owned representation produced from the
   wire payload.
 - **Replay record** is the data the receiver uses to invoke Vulkan after handle
   mapping and any compatibility adaptation.
+- **API endpoint** is the driver-like completion boundary for an intercepted
+  call. It may use local replay, remote replay, logs, files, or transport
+  internally, but it must complete the caller-visible return value, output
+  parameters, handle identities, ordering, and error policy before the
+  intercepted command returns when Vulkan semantics require a synchronous
+  result.
 
 The current proof slice has generated `Parameters` and `PackedCommand` structs
 for `vkCreateInstance` and `vkCreateDevice`, but it is intentionally shallow:
@@ -50,16 +58,22 @@ prove code generation and hook mechanics, but it is not replay-stable yet.
 
 ## Generated Layout
 
-All generated code lives under:
+Generated pack/unpack command code lives under:
 
 ```text
-src/vkfwd/generated/
+src/vkfwd/core/generated/
 ```
+
+Forwarder-specific generated Vulkan layer entry points, dispatch lookup tables,
+and interceptor glue belong under `src/vkfwd/forwarder/generated/` instead of
+the core generated command tree. Keeping generated output near the boundary it serves
+prevents loader/dispatch mechanics from being confused with replayable payload
+schema.
 
 Per-command generated pack/unpack files live under:
 
 ```text
-src/vkfwd/generated/commands/
+src/vkfwd/core/generated/commands/
 ```
 
 Per-command generated schema and metadata should live in the same directory as
@@ -70,8 +84,8 @@ APIs.
 Human-written hooks live outside generated output:
 
 ```text
-src/vkfwd/hooks/<api>Hooks.hpp
-src/vkfwd/hooks/<api>Hooks.cpp
+src/vkfwd/core/hooks/<api>Hooks.hpp
+src/vkfwd/core/hooks/<api>Hooks.cpp
 ```
 
 The generator may conditionally include hook headers with `__has_include`, but
@@ -126,7 +140,7 @@ manually. If hook code breaks the build, the build should fail normally.
 Example:
 
 ```cpp
-// src/vkfwd/hooks/vkCreateDeviceHooks.hpp
+// src/vkfwd/core/hooks/vkCreateDeviceHooks.hpp
 template <>
 struct CommandHooks<vkfwd::generated::CommandId::CreateDevice> {
   static constexpr bool before_pack_enabled = true;
@@ -230,7 +244,7 @@ command files. These are an early form of per-command metadata, not yet full
 payload schemas. They should evolve into files such as:
 
 ```text
-src/vkfwd/generated/commands/vkCreateDevice.schema.json
+src/vkfwd/core/generated/commands/vkCreateDevice.schema.json
 ```
 
 ## Schema Hash And Revision Enforcement
@@ -300,7 +314,7 @@ that latest shape.
 Conceptual layout:
 
 ```text
-src/vkfwd/generated/commands/vkCreateDevice/
+src/vkfwd/core/generated/commands/vkCreateDevice/
   schema.rev1.json
   schema.rev2.json
   schema.rev3.json
@@ -421,6 +435,31 @@ For command payloads:
 The encoder should prefer a contiguous append buffer with reserve estimates
 from generated metadata. Avoid per-field heap allocation. For common small
 commands, keep packed data trivially movable and cheap to construct.
+
+## API Endpoint Boundary
+
+The endpoint sits above transport and replay mechanics. It is the abstraction
+interceptors call after packing a command, and a complete endpoint must behave
+like the end of the Vulkan API call from the application's perspective.
+
+Endpoint implementations may:
+
+- Replay in-process against a local Vulkan driver.
+- Send the command to a remote receiver and wait for the required response.
+- Write capture/log data as a side effect.
+- Use test doubles for deterministic local debugging.
+
+Endpoint implementations must:
+
+- Return the command's Vulkan-visible return value.
+- Populate source-visible output parameters before returning.
+- Create, resolve, and retire source-to-receiver handle mappings.
+- Preserve command ordering and externally synchronized object assumptions.
+- Surface receiver-side failure according to an explicit divergence policy.
+
+Pure file, log, or queue writers are not top-level endpoints unless they also
+provide the API-visible completion behavior above. They can still exist as
+internal components of an endpoint.
 
 ## Replay Boundary
 
