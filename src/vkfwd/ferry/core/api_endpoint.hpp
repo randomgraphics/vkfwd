@@ -1,6 +1,6 @@
 #pragma once
 
-#include "call_record.hpp"
+#include "blob.hpp"
 
 namespace vkfwd {
 
@@ -8,13 +8,13 @@ class ApiEndpoint {
 public:
   virtual ~ApiEndpoint() = default;
 
-  // The endpoint is the top-level boundary for a captured API call. Real
-  // implementations must complete enough local or remote execution to provide
-  // the same caller-visible contract as a Vulkan driver call: return value,
-  // output parameters, handle identities, ordering, and error behavior. Logging,
-  // files, IPC, or network transport are implementation details below this
-  // boundary, not the contract exposed to interceptors.
-  virtual void call(const InterceptedCall& call) = 0;
+  // Flush is the synchronous boundary for a per-thread stream of packed calls.
+  // request_blob may contain multiple deferrable command chunks followed by the
+  // non-deferrable command that forced the flush. Endpoint implementations own
+  // transport, replay, handle mapping, and any shared channel coordination. The
+  // returned blob contains the response chunk for the last API call in that
+  // packed stream.
+  virtual Blob flush(Blob& request_blob) = 0;
 };
 
 } // namespace vkfwd

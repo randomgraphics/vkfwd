@@ -1,4 +1,4 @@
-#include "generated/vulkan_forwarder.hpp"
+#include "generated/dispatch_table.hpp"
 
 #include <vulkan/vulkan.h>
 

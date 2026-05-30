@@ -1,4 +1,4 @@
-#include "generated/vulkan_forwarder.hpp"
+#include "generated/dispatch_table.hpp"
 
 #include "forwarder.hpp"
 #include "generated/command/vkCreateInstance.hpp"
@@ -9,6 +9,7 @@
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
 #include <algorithm>
+#include <cstdint>
 
 #if __has_include("hook/vkCreateInstanceForwarderHook.hpp")
 #include "hook/vkCreateInstanceForwarderHook.hpp"
@@ -28,30 +29,22 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     Hooks::before_pack(pCreateInfo, pAllocator, pInstance);
   }
 
+  auto& forwarder = ::vkfwd::Forwarder::instance();
   Command::Parameters parameters{.pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pInstance = pInstance};
   Command::ParameterPacket request;
-  VkResult status = Command::pack_parameters(parameters, &request);
-  if (status != VK_SUCCESS) {
+  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+  if (status != VK_SUCCESS) [[unlikely]] {
     return status;
   }
 
-  Command::ResponsePacket placeholder_response;
-  status = Command::pack_response({.return_value = VK_SUCCESS, .pInstance = pInstance},
-                                  &placeholder_response);
-  if (status != VK_SUCCESS) {
-    return status;
-  }
-
+  Blob response_blob = forwarder.flush();
   Command::ResponsePacket response_packet;
-  status = ::vkfwd::Forwarder::instance().forward(
-      "vkCreateInstance", request, placeholder_response, &response_packet);
-  if (status != VK_SUCCESS) {
-    return status;
-  }
+  response_packet.command_offset = 0;
+  response_packet.command_size = static_cast<std::uint32_t>(response_blob.size());
 
   Command::Response response;
-  status = Command::unpack_response(response_packet, &response);
-  if (status != VK_SUCCESS) {
+  status = Command::unpack_response(response_blob, response_packet, response);
+  if (status != VK_SUCCESS) [[unlikely]] {
     return status;
   }
 
@@ -64,10 +57,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     *pInstance = *response.pInstance;
   }
 
-  // The endpoint response currently uses a generated placeholder because the
-  // transport contract has not grown real response bytes yet. Once endpoints
-  // carry return payloads, generated code should return that unpacked value
-  // without adding source-side validation or local Vulkan state.
+  // Synchronous forwarding flushes this thread's pending request blob and
+  // returns a fresh response blob. Generated code only decodes that blob here;
+  // endpoint implementations own transport, replay, and handle mapping policy.
+
   return response.return_value;
 }
 

@@ -64,7 +64,7 @@ add_library(vkfwd_forwarder SHARED
   forwarder/generated/command/vkCreateInstance.cpp
   forwarder/generated/command/vkDestroyDevice.cpp
   forwarder/generated/command/vkDestroyInstance.cpp
-  forwarder/generated/vulkan_forwarder.cpp
+  forwarder/generated/dispatch_table.cpp
   forwarder/forwarder.cpp
   forwarder/layer.cpp)
 

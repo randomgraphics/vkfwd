@@ -28,25 +28,8 @@ struct Response {
     VkInstance * pInstance    = {};
 };
 
-struct ResponsePacket;
-
-struct ParameterPacket {
-    CommandId command_id = CommandId::CreateInstance;
-    // The blob owns a command chunk whose pointer-valued slots contain
-    // command-relative offsets. Parameters remain as the source-call view for
-    // hooks only; replay must decode from blob so borrowed app memory is not
-    // reused past interception.
-    Parameters    parameters;
-    std::size_t   command_offset = 0;
-    std::uint32_t command_size   = 0;
-    Blob          blob;
-    using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
-};
-
-struct ResponsePacket {
-    CommandId command_id = CommandId::CreateInstance;
-    Response  response;
-};
+using ParameterPacket = vkfwd::CommandChunk;
+using ResponsePacket  = vkfwd::CommandChunk;
 
 class Command {
 public:
@@ -55,10 +38,10 @@ public:
     using ParameterPacket = vkfwd::generated::commands::vkCreateInstance::ParameterPacket;
     using ResponsePacket  = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
 
-    static VkResult pack_parameters(const Parameters & parameters, ParameterPacket * packet);
-    static VkResult unpack_parameters(const ParameterPacket & packet, Parameters * parameters);
-    static VkResult pack_response(const Response & response, ResponsePacket * packet);
-    static VkResult unpack_response(const ResponsePacket & packet, Response * response);
+    static VkResult pack_parameters(Blob & blob, const Parameters & parameters, ParameterPacket & packet);
+    static VkResult unpack_parameters(Blob & blob, const ParameterPacket & packet, Parameters & parameters);
+    static VkResult pack_response(Blob & blob, const Response & response, ResponsePacket & packet);
+    static VkResult unpack_response(Blob & blob, const ResponsePacket & packet, Response & response);
 };
 
 } // namespace vkfwd::generated::commands::vkCreateInstance

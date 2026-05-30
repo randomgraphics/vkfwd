@@ -29,24 +29,8 @@ struct Response {
     VkDevice * pDevice      = {};
 };
 
-struct ResponsePacket;
-
-struct ParameterPacket {
-    CommandId command_id = CommandId::CreateDevice;
-    // The blob owns the replayable command chunk. Any pointer slot in the command
-    // argument record is a command-relative offset; pointer slots inside nested
-    // structs are relative to those nested struct chunks.
-    Parameters    parameters;
-    std::size_t   command_offset = 0;
-    std::uint32_t command_size   = 0;
-    Blob          blob;
-    using ResponsePacket = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
-};
-
-struct ResponsePacket {
-    CommandId command_id = CommandId::CreateDevice;
-    Response  response;
-};
+using ParameterPacket = vkfwd::CommandChunk;
+using ResponsePacket  = vkfwd::CommandChunk;
 
 class Command {
 public:
@@ -55,10 +39,10 @@ public:
     using ParameterPacket = vkfwd::generated::commands::vkCreateDevice::ParameterPacket;
     using ResponsePacket  = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
 
-    static VkResult pack_parameters(const Parameters & parameters, ParameterPacket * packet);
-    static VkResult unpack_parameters(const ParameterPacket & packet, Parameters * parameters);
-    static VkResult pack_response(const Response & response, ResponsePacket * packet);
-    static VkResult unpack_response(const ResponsePacket & packet, Response * response);
+    static VkResult pack_parameters(Blob & blob, const Parameters & parameters, ParameterPacket & packet);
+    static VkResult unpack_parameters(Blob & blob, const ParameterPacket & packet, Parameters & parameters);
+    static VkResult pack_response(Blob & blob, const Response & response, ResponsePacket & packet);
+    static VkResult unpack_response(Blob & blob, const ResponsePacket & packet, Response & response);
 };
 
 } // namespace vkfwd::generated::commands::vkCreateDevice

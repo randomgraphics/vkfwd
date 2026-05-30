@@ -4,79 +4,118 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
+#if __has_include(<spdlog/spdlog.h>)
+    #include <spdlog/spdlog.h>
+#else
+namespace spdlog {
+template<class... Args>
+void error(const char*, Args&&...) noexcept {}
+} // namespace spdlog
+#endif
+
+#include <new>
+
 namespace vkfwd::generated::commands::vkDestroyDevice {
+namespace {
 
 
-VkResult Command::pack_parameters(const Parameters& parameters,
-                                  ParameterPacket* packet) {
-  if (!packet) {
+template<class T>
+VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk) {
+  const std::size_t command_offset = blob.next_offset();
+  chunk = CommandChunk{.command_offset = command_offset, .command_size = 0};
+
+  CommandChunkHeader header{};
+  try {
+    blob.append_value(header, alignof(CommandChunkHeader));
+    blob.append_value(payload, alignof(T));
+  } catch (const std::bad_alloc&) {
+    spdlog::error("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={}, payload_size={}",
+                  static_cast<std::uint32_t>(command_id), sizeof(T));
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }
+
+  header.command_id = static_cast<std::uint32_t>(command_id);
+  header.size = static_cast<std::uint32_t>(blob.next_offset() - command_offset);
+  header.command_revision = revision;
+  if (!blob.overwrite_bytes(command_offset, &header, sizeof(header))) [[unlikely]] {
+    spdlog::error("vkfwd ferry command pack failed: could not write command chunk header, command_id={}, command_offset={}, command_size={}",
+                  static_cast<std::uint32_t>(command_id), command_offset, header.size);
+    return VK_ERROR_UNKNOWN;
+  }
+  chunk.command_size = header.size;
+  return VK_SUCCESS;
+}
+
+template<class T>
+VkResult unpack_command_chunk(const Blob& blob, const CommandChunk& chunk, CommandId command_id, std::uint32_t revision, const T** payload) {
+  const auto* header = reinterpret_cast<const CommandChunkHeader*>(blob.data_at(chunk.command_offset, sizeof(CommandChunkHeader)));
+  const auto* packed_payload = reinterpret_cast<const T*>(blob.data_at(chunk.command_offset + sizeof(CommandChunkHeader), sizeof(T)));
+  if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
+      header->size != chunk.command_size) [[unlikely]] {
+    spdlog::error(
+        "vkfwd ferry command unpack failed: invalid command chunk, offset={}, size={}, has_header={}, has_payload={}, command_id={}, "
+        "expected_command_id={}, revision={}, expected_revision={}, header_size={}",
+        chunk.command_offset, chunk.command_size, header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,
+        static_cast<std::uint32_t>(command_id), header ? header->command_revision : 0, revision, header ? header->size : 0);
     return VK_ERROR_UNKNOWN;
   }
 
+  *payload = packed_payload;
+  return VK_SUCCESS;
+}
+
+
+} // namespace
+
+
+VkResult Command::pack_parameters(Blob& blob,
+                                  const Parameters& parameters,
+                                  ParameterPacket& packet) {
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::DestroyDevice>;
   if constexpr (Hooks::before_pack_enabled) {
     Parameters hook_parameters = parameters;
     Hooks::before_pack(hook_parameters);
 
 
-    *packet = ParameterPacket{};
-    packet->command_id = CommandId::DestroyDevice;
-    packet->parameters = hook_parameters;
+    VkResult status = append_command_chunk(blob, CommandId::DestroyDevice, 1, hook_parameters, packet);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
 
     if constexpr (Hooks::after_pack_enabled) {
-      Hooks::after_pack(*packet);
+      Hooks::after_pack(packet);
     }
     return VK_SUCCESS;
   } else {
 
-    *packet = ParameterPacket{};
-    packet->command_id = CommandId::DestroyDevice;
-    packet->parameters = parameters;
+    VkResult status = append_command_chunk(blob, CommandId::DestroyDevice, 1, parameters, packet);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
 
     if constexpr (Hooks::after_pack_enabled) {
-      Hooks::after_pack(*packet);
+      Hooks::after_pack(packet);
     }
     return VK_SUCCESS;
   }
 }
 
-VkResult Command::unpack_parameters(const ParameterPacket& packet,
-                                    Parameters* parameters) {
-  if (!parameters) {
-    return VK_ERROR_UNKNOWN;
-  }
-
+VkResult Command::unpack_parameters(Blob& blob,
+                                    const ParameterPacket& packet,
+                                    Parameters& parameters) {
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::DestroyDevice>;
   if constexpr (Hooks::before_unpack_enabled) {
     Hooks::before_unpack(packet);
   }
 
-  *parameters = packet.parameters;
+  const Parameters* packed_parameters = nullptr;
+  VkResult status = unpack_command_chunk(blob, packet, CommandId::DestroyDevice, 1, &packed_parameters);
+  if (status != VK_SUCCESS) [[unlikely]] { return status; }
+  parameters = *packed_parameters;
 
   if constexpr (Hooks::after_unpack_enabled) {
-    Hooks::after_unpack(*parameters);
+    Hooks::after_unpack(parameters);
   }
   return VK_SUCCESS;
 }
 
-VkResult Command::pack_response(const Response& response,
-                                ResponsePacket* packet) {
-  if (!packet) {
-    return VK_ERROR_UNKNOWN;
-  }
-  *packet = ResponsePacket{CommandId::DestroyDevice, response};
-  return VK_SUCCESS;
-}
-
-VkResult Command::unpack_response(const ResponsePacket& packet,
-                                  Response* response) {
-  if (!response) {
-    return VK_ERROR_UNKNOWN;
-  }
-  *response = packet.response;
-  return VK_SUCCESS;
-}
 
 } // namespace vkfwd::generated::commands::vkDestroyDevice

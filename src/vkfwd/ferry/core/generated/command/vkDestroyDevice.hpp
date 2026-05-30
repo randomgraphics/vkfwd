@@ -6,12 +6,11 @@
 
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
+#include "blob.hpp"
 
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
-#include <string>
-#include <vector>
 
 namespace vkfwd::generated::commands::vkDestroyDevice {
 
@@ -20,43 +19,21 @@ struct Parameters {
   const VkAllocationCallbacks* pAllocator = {};
 };
 
-struct Response {
+using ParameterPacket = vkfwd::CommandChunk;
 
-};
-
-
-struct ParameterStorage {};
-
-
-struct ResponsePacket;
-
-struct ParameterPacket {
-  CommandId command_id = CommandId::DestroyDevice;
-  Parameters parameters;
-  ParameterStorage storage;
-  using ResponsePacket = vkfwd::generated::commands::vkDestroyDevice::ResponsePacket;
-};
-
-struct ResponsePacket {
-  CommandId command_id = CommandId::DestroyDevice;
-  Response response;
-};
 
 class Command {
 public:
   using Parameters = vkfwd::generated::commands::vkDestroyDevice::Parameters;
-  using Response = vkfwd::generated::commands::vkDestroyDevice::Response;
   using ParameterPacket = vkfwd::generated::commands::vkDestroyDevice::ParameterPacket;
-  using ResponsePacket = vkfwd::generated::commands::vkDestroyDevice::ResponsePacket;
 
-  static VkResult pack_parameters(const Parameters& parameters,
-                                  ParameterPacket* packet);
-  static VkResult unpack_parameters(const ParameterPacket& packet,
-                                    Parameters* parameters);
-  static VkResult pack_response(const Response& response,
-                                ResponsePacket* packet);
-  static VkResult unpack_response(const ResponsePacket& packet,
-                                  Response* response);
+  static VkResult pack_parameters(Blob& blob,
+                                  const Parameters& parameters,
+                                  ParameterPacket& packet);
+  static VkResult unpack_parameters(Blob& blob,
+                                    const ParameterPacket& packet,
+                                    Parameters& parameters);
+
 };
 
 } // namespace vkfwd::generated::commands::vkDestroyDevice

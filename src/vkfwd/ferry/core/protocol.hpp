@@ -19,6 +19,14 @@ struct CommandChunkHeader {
   std::uint32_t command_revision = 0;
 };
 
+struct CommandChunk {
+  // The chunk range is metadata only; all command bytes live in the Blob passed
+  // beside it. Keeping ownership out of the range makes forwarding and replay
+  // choose their own storage lifetime without copying packet wrappers around.
+  std::size_t command_offset = 0;
+  std::uint32_t command_size = 0;
+};
+
 // Handshake messages are the stable bootstrapping envelope for the generated
 // command/structure schema. Schema version is the session-level compatibility
 // number; command chunks still carry their own payload revision so one schema

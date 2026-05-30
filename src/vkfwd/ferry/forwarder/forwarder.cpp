@@ -5,27 +5,45 @@
 #include <memory>
 
 namespace vkfwd {
+namespace {
+
+std::unique_ptr<ApiEndpoint> make_null_endpoint() {
+  return std::make_unique<NullApiEndpoint>();
+}
+
+Forwarder::EndpointCreator& endpoint_creator_slot() {
+  // This process-level creator is configuration, not the hot forwarding state.
+  // It should be set during layer/test startup before application threads begin
+  // calling Vulkan entry points.
+  static Forwarder::EndpointCreator creator = make_null_endpoint;
+  return creator;
+}
+
+} // namespace
 
 Forwarder& Forwarder::instance() {
-  static Forwarder forwarder;
+  thread_local Forwarder forwarder;
   return forwarder;
 }
 
-void Forwarder::set_endpoint(std::unique_ptr<ApiEndpoint> endpoint) {
-  std::lock_guard lock(mutex_);
-  endpoint_ = std::move(endpoint);
+void Forwarder::set_endpoint_creator(EndpointCreator creator) {
+  endpoint_creator_slot() = creator ? creator : make_null_endpoint;
 }
 
-void Forwarder::capture(const InterceptedCall& call) {
-  std::lock_guard lock(mutex_);
-  // Defaults keep the layer useful before configuration exists. They are
-  // deliberately trace-only so a developer cannot mistake this path for remote
-  // execution or complete Vulkan replay.
+Forwarder::Forwarder(): endpoint_(endpoint_creator_slot()()) {
   if (!endpoint_) {
-    endpoint_ = std::make_unique<NullApiEndpoint>();
+    endpoint_ = make_null_endpoint();
   }
+}
 
-  endpoint_->call(call);
+Blob Forwarder::flush() {
+  Blob response_blob = endpoint().flush(request_blob_);
+  request_blob_.reset();
+  return response_blob;
+}
+
+ApiEndpoint& Forwarder::endpoint() {
+  return *endpoint_;
 }
 
 } // namespace vkfwd

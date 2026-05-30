@@ -1,4 +1,4 @@
-#include "generated/vulkan_forwarder.hpp"
+#include "generated/dispatch_table.hpp"
 
 #include "forwarder.hpp"
 #include "generated/command/vkDestroyDevice.hpp"
@@ -9,6 +9,7 @@
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
 #include <algorithm>
+#include <cstdint>
 
 #if __has_include("hook/vkDestroyDeviceForwarderHook.hpp")
 #include "hook/vkDestroyDeviceForwarderHook.hpp"
@@ -27,41 +28,19 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
     Hooks::before_pack(device, pAllocator);
   }
 
+  auto& forwarder = ::vkfwd::Forwarder::instance();
   Command::Parameters parameters{.device = device, .pAllocator = pAllocator};
   Command::ParameterPacket request;
-  VkResult status = Command::pack_parameters(parameters, &request);
-  if (status != VK_SUCCESS) {
+  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+  if (status != VK_SUCCESS) [[unlikely]] {
     return;
   }
 
-  Command::ResponsePacket placeholder_response;
-  status = Command::pack_response({},
-                                  &placeholder_response);
-  if (status != VK_SUCCESS) {
-    return;
-  }
+  // Deferrable commands have no return value or output parameters, so the
+  // entry point only appends to the thread-local request blob. The next
+  // non-deferrable command is responsible for flushing this thread's pending
+  // command sequence through the endpoint.
 
-  Command::ResponsePacket response_packet;
-  status = ::vkfwd::Forwarder::instance().forward(
-      "vkDestroyDevice", request, placeholder_response, &response_packet);
-  if (status != VK_SUCCESS) {
-    return;
-  }
-
-  Command::Response response;
-  status = Command::unpack_response(response_packet, &response);
-  if (status != VK_SUCCESS) {
-    return;
-  }
-
-  if constexpr (Hooks::after_response_unpack_enabled) {
-    Hooks::after_response_unpack(response);
-  }
-
-  // The endpoint response currently uses a generated placeholder because the
-  // transport contract has not grown real response bytes yet. Once endpoints
-  // carry return payloads, generated code should return that unpacked value
-  // without adding source-side validation or local Vulkan state.
   return;
 }
 

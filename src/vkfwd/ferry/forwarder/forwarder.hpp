@@ -1,55 +1,38 @@
 #pragma once
 
 #include "api_endpoint.hpp"
-#include "call_record.hpp"
+#include "blob.hpp"
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
 #include <memory>
-#include <mutex>
-#include <string_view>
 
 namespace vkfwd {
 
 class Forwarder {
 public:
+  using EndpointCreator = std::unique_ptr<ApiEndpoint> (*)();
+
   static Forwarder& instance();
 
-  // This setter exists so tests and future runtime configuration can swap the
-  // API endpoint without changing the Vulkan layer entry points. The layer
-  // should stay focused on interception mechanics.
-  void set_endpoint(std::unique_ptr<ApiEndpoint> endpoint);
+  // Configure this before worker threads enter Vulkan. Each thread-local
+  // Forwarder calls the creator from its constructor and owns the endpoint it
+  // receives; any cross-thread transport sharing belongs inside endpoint
+  // implementations, not in Forwarder.
+  static void set_endpoint_creator(EndpointCreator creator);
 
-  // capture() is the layer-side boundary: callers provide a fully captured
-  // Vulkan call record, and this object dispatches it to the configured
-  // endpoint. Today the record is minimal; the invariant for the real
-  // implementation is that all borrowed Vulkan parameter memory has already
-  // been converted into replayable owned data before the endpoint receives it.
-  void capture(const InterceptedCall& call);
-
-  template <class ParameterPacket, class ResponsePacket>
-  VkResult forward(std::string_view name,
-                   const ParameterPacket& parameter_packet,
-                   const ResponsePacket& placeholder_response,
-                   ResponsePacket* response_packet) {
-    // The generated forwarder path is intentionally pack-first: any pointer,
-    // array, or pNext lifetime work must happen before endpoint submission.
-    // This scaffold still submits only the command name, so it returns a
-    // generated response placeholder until ApiEndpoint grows a real
-    // command-response payload carrying return values and output parameters.
-    (void)parameter_packet;
-    if (!response_packet) {
-      return VK_ERROR_UNKNOWN;
-    }
-    capture({name});
-    *response_packet = placeholder_response;
-    return VK_SUCCESS;
-  }
+  Blob& request_blob() { return request_blob_; }
+  Blob flush();
 
 private:
-  Forwarder() = default;
+  Forwarder();
+  ApiEndpoint& endpoint();
 
-  std::mutex mutex_;
+  // The Forwarder itself is thread-local, so this blob is already per-thread
+  // state. Deferrable commands append here until a synchronous command flushes
+  // it through endpoint().
+  Blob request_blob_;
   std::unique_ptr<ApiEndpoint> endpoint_;
 };
 
