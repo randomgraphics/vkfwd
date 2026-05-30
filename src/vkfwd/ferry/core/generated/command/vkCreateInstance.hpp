@@ -6,74 +6,63 @@
 
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
+#include "blob.hpp"
 
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
-#include <string>
-#include <vector>
+#include <cstdint>
 
 namespace vkfwd::generated::commands::vkCreateInstance {
 
+constexpr std::uint32_t kCommandRevision = 1;
+
 struct Parameters {
-  const VkInstanceCreateInfo* pCreateInfo = {};
-  const VkAllocationCallbacks* pAllocator = {};
-  VkInstance* pInstance = {};
+    const VkInstanceCreateInfo *  pCreateInfo = {};
+    const VkAllocationCallbacks * pAllocator  = {};
+    VkInstance *                  pInstance   = {};
 };
 
 struct Response {
-  VkResult return_value = VK_SUCCESS;
-  VkInstance* pInstance = {};
+    VkResult     return_value = VK_SUCCESS;
+    VkInstance * pInstance    = {};
 };
-
-
-struct ParameterStorage {
-  VkInstanceCreateInfo create_info = {};
-  VkApplicationInfo application_info = {};
-  std::string application_name;
-  std::string engine_name;
-  std::vector<std::string> enabled_layer_names;
-  std::vector<const char*> enabled_layer_name_ptrs;
-  std::vector<std::string> enabled_extension_names;
-  std::vector<const char*> enabled_extension_name_ptrs;
-  std::vector<vkfwd::wire_1_0::PNextNode> create_info_pnext;
-  VkAllocationCallbacks allocator = {};
-};
-
 
 struct ResponsePacket;
 
 struct ParameterPacket {
-  CommandId command_id = CommandId::CreateInstance;
-  Parameters parameters;
-  ParameterStorage storage;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
+    CommandId command_id = CommandId::CreateInstance;
+    // The blob owns a command chunk whose pointer-valued slots contain
+    // command-relative offsets. Parameters remain as the source-call view for
+    // hooks only; replay must decode from blob so borrowed app memory is not
+    // reused past interception.
+    Parameters    parameters;
+    std::size_t   command_offset = 0;
+    std::uint32_t command_size   = 0;
+    Blob          blob;
+    using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
 };
 
 struct ResponsePacket {
-  CommandId command_id = CommandId::CreateInstance;
-  Response response;
+    CommandId command_id = CommandId::CreateInstance;
+    Response  response;
 };
 
 class Command {
 public:
-  using Parameters = vkfwd::generated::commands::vkCreateInstance::Parameters;
-  using Response = vkfwd::generated::commands::vkCreateInstance::Response;
-  using ParameterPacket = vkfwd::generated::commands::vkCreateInstance::ParameterPacket;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
+    using Parameters      = vkfwd::generated::commands::vkCreateInstance::Parameters;
+    using Response        = vkfwd::generated::commands::vkCreateInstance::Response;
+    using ParameterPacket = vkfwd::generated::commands::vkCreateInstance::ParameterPacket;
+    using ResponsePacket  = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
 
-  static VkResult pack_parameters(const Parameters& parameters,
-                                  ParameterPacket* packet);
-  static VkResult unpack_parameters(const ParameterPacket& packet,
-                                    Parameters* parameters);
-  static VkResult pack_response(const Response& response,
-                                ResponsePacket* packet);
-  static VkResult unpack_response(const ResponsePacket& packet,
-                                  Response* response);
+    static VkResult pack_parameters(const Parameters & parameters, ParameterPacket * packet);
+    static VkResult unpack_parameters(const ParameterPacket & packet, Parameters * parameters);
+    static VkResult pack_response(const Response & response, ResponsePacket * packet);
+    static VkResult unpack_response(const ResponsePacket & packet, Response * response);
 };
 
 } // namespace vkfwd::generated::commands::vkCreateInstance
 
 #if __has_include("hook/vkCreateInstanceHook.hpp")
-#include "hook/vkCreateInstanceHook.hpp"
+    #include "hook/vkCreateInstanceHook.hpp"
 #endif

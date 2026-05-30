@@ -8,6 +8,7 @@ add_library(vkfwd_core STATIC
   core/generated/command/vkCreateInstance.cpp
   core/generated/command/vkDestroyDevice.cpp
   core/generated/command/vkDestroyInstance.cpp
+  core/generated/structure/core.cpp
   core/hook/vkCreateDeviceHook.cpp
   core/null_api_endpoint.cpp)
 

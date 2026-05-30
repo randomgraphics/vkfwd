@@ -37,6 +37,7 @@
       }
     ],
     "return_type": "void",
+    "revision": 1,
     "successcodes": []
   },
   "generator": {
@@ -52,9 +53,7 @@
     }
   },
   "protocol": {
-    "generator_schema_version": 1,
-    "wire_major": 1,
-    "wire_minor": 0
+    "schema_version": 1
   },
   "schema": "vkfwd.vulkan-command-metadata.v1",
   "structs": {

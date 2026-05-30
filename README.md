@@ -59,7 +59,7 @@ reserved for a future stateful front end with local Vulkan-visible state and
 local handle identities.
 
 Within `ferry`, the shared core static library
-contains pack/unpack, endpoint contracts, protocol code, versioned wire helpers,
+contains pack/unpack, endpoint contracts, schema handshake code,
 generated command code, hooks, and common utilities. The forwarder shared
 library, receiver executable, recorder layer, and saved-stream replay tool are
 thin role-specific targets that link the core library.
@@ -96,7 +96,7 @@ The capture/replay path is expected to evolve around five components:
    before forwarding the packed command to the API endpoint.
 3. Generated command pack/unpack code that deep-copies Vulkan structs, arrays,
    handles, `pNext` chains, memory payloads, and call ordering according to the
-   selected wire revision.
+   selected schema version.
 4. An API endpoint interface that completes the caller-visible return value,
    output parameters, and handle mapping before the intercepted API call
    returns. Any IPC, network, file, or local replay implementation sits below
@@ -124,7 +124,7 @@ Important early work:
 - Build complete Vulkan dispatch interception for instance and device commands.
 - Generate parameter metadata from Vulkan XML instead of manually duplicating
   the whole API surface.
-- Define wire rules for structs, optional pointers, arrays, `pNext`
+- Define schema rules for structs, optional pointers, arrays, `pNext`
   chains, handles, host memory payloads, and externally synchronized objects.
 - Add receiver-side unpack/replay with source-to-destination handle
   mapping.
@@ -161,7 +161,7 @@ For local development shell setup, source:
 ## Status
 
 This is an early forwarding scaffold. Complete Vulkan API interception,
-wire-format encoding, receiver-side unpack/replay, endpoint response payloads,
+schema-based encoding, receiver-side unpack/replay, endpoint response payloads,
 and concrete API endpoint implementations are not implemented yet.
 
 ## License

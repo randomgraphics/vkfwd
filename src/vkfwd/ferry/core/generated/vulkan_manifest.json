@@ -18,9 +18,7 @@
     "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
   },
   "protocol": {
-    "generator_schema_version": 1,
-    "wire_major": 1,
-    "wire_minor": 0
+    "schema_version": 1
   },
   "schema": "vkfwd.vulkan-generation-manifest.v1",
   "versions": {

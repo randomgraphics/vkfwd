@@ -149,7 +149,7 @@ that the extra directory earns its keep.
 The build expresses these runtime boundaries:
 
 - `vkfwd_core`: static library containing generated pack/unpack code, endpoint
-  interfaces, hooks, protocol, versioned wire helpers, and utilities for
+  interfaces, hooks, schema handshake code, and utilities for
   `ferry`.
 - `vkfwd_forwarder`: shared library loaded by the Vulkan loader; links
   `vkfwd_core` and owns `ferry` forwarder-specific generated interception code.

@@ -60,12 +60,12 @@ assert commands["vkCreateInstance"]["level"] == "global"
 assert commands["vkCreateDevice"]["level"] == "instance"
 assert commands["vkCreateInstance"]["id"] == 2472334652
 assert commands["vkCreateDevice"]["id"] == 1470473620
+assert commands["vkCreateInstance"]["revision"] == 1
+assert commands["vkCreateDevice"]["revision"] == 1
 assert commands["vkCreateInstance"]["creates_handles"] == ["VkInstance"]
 assert commands["vkCreateDevice"]["creates_handles"] == ["VkDevice"]
 assert commands["vkCreateDevice"]["dispatch_parameter"] == "physicalDevice"
-assert manifest["protocol"]["wire_major"] == 1
-assert manifest["protocol"]["wire_minor"] == 0
-assert manifest["protocol"]["generator_schema_version"] == 1
+assert manifest["protocol"]["schema_version"] == 1
 assert manifest["versions"]["vulkan_api"] == {"major": 1, "minor": 4, "patch": 352}
 assert create_device["handles"]["VkDevice"]["parent"] == "VkPhysicalDevice"
 assert create_instance["structs"]["VkInstanceCreateInfo"]["has_pnext"] is True

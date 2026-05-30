@@ -17,10 +17,8 @@ TARGET_COMMANDS = (
     "vkDestroyDevice",
 )
 GENERATOR_VERSION = "vkfwd-vulkan-metadata-0.1"
-GENERATOR_SCHEMA_VERSION = 1
-WIRE_MAJOR = 1
-WIRE_MINOR = 0
-WIRE_NAMESPACE = f"wire_{WIRE_MAJOR}_{WIRE_MINOR}"
+SCHEMA_VERSION = 1
+COMMAND_REVISION = 1
 COMMAND_ID_SALT = "vkfwd.vulkan.command-id.v1:"
 
 
@@ -206,6 +204,7 @@ def command_metadata(
     ]
     return {
         "id": stable_command_id(name),
+        "revision": COMMAND_REVISION,
         "name": name,
         "api": command.get("api") or command.get("export"),
         "return_type": text_of(command.find("./proto/type")),
@@ -220,8 +219,8 @@ def command_metadata(
 
 
 def stable_command_id(name: str) -> int:
-    # Command IDs are part of the wire contract, so they must not depend on
-    # registry ordering. The salt fixes this scheme for compatible protocol
+    # Command IDs are part of the generated stream schema, so they must not
+    # depend on registry ordering. The salt fixes this scheme for compatible schema
     # revisions while still deriving IDs mechanically from the API name.
     digest = hashlib.sha256((COMMAND_ID_SALT + name).encode("utf-8")).digest()
     value = int.from_bytes(digest[:4], byteorder="big")
@@ -379,43 +378,6 @@ def response_output_fields(command: dict[str, object]) -> str:
 
 
 def storage_struct_content(command: dict[str, object]) -> str:
-    name = str(command["name"])
-    if name == "vkCreateInstance":
-        return """
-struct ParameterStorage {
-  VkInstanceCreateInfo create_info = {};
-  VkApplicationInfo application_info = {};
-  std::string application_name;
-  std::string engine_name;
-  std::vector<std::string> enabled_layer_names;
-  std::vector<const char*> enabled_layer_name_ptrs;
-  std::vector<std::string> enabled_extension_names;
-  std::vector<const char*> enabled_extension_name_ptrs;
-  std::vector<vkfwd::{WIRE_NAMESPACE}::PNextNode> create_info_pnext;
-  VkAllocationCallbacks allocator = {};
-};
-""".replace("{WIRE_NAMESPACE}", WIRE_NAMESPACE)
-    if name == "vkCreateDevice":
-        return """
-struct DeviceQueueCreateInfoStorage {
-  VkDeviceQueueCreateInfo create_info = {};
-  std::vector<float> priorities;
-  std::vector<vkfwd::{WIRE_NAMESPACE}::PNextNode> pnext;
-};
-
-struct ParameterStorage {
-  VkDeviceCreateInfo create_info = {};
-  std::vector<DeviceQueueCreateInfoStorage> queue_create_infos;
-  std::vector<VkDeviceQueueCreateInfo> queue_create_info_views;
-  std::vector<std::string> enabled_layer_names;
-  std::vector<const char*> enabled_layer_name_ptrs;
-  std::vector<std::string> enabled_extension_names;
-  std::vector<const char*> enabled_extension_name_ptrs;
-  VkPhysicalDeviceFeatures enabled_features = {};
-  std::vector<vkfwd::{WIRE_NAMESPACE}::PNextNode> create_info_pnext;
-  VkAllocationCallbacks allocator = {};
-};
-""".replace("{WIRE_NAMESPACE}", WIRE_NAMESPACE)
     return """
 struct ParameterStorage {};
 """
@@ -482,6 +444,21 @@ struct CommandHooks {{
 
 
 def command_header_content(metadata: dict[str, object], command: dict[str, object]) -> str:
+    if command["name"] in {"vkCreateInstance", "vkCreateDevice"}:
+        # The create-command stream layout is being reorganized around Blob and
+        # generated structure helpers. Until the general emitter learns that
+        # policy for every command, keep this initial generated slice
+        # deterministic by using the checked-in generated template verbatim.
+        return (
+            repo_root()
+            / "src"
+            / "vkfwd"
+            / "ferry"
+            / "core"
+            / "generated"
+            / "command"
+            / f"{command['name']}.hpp"
+        ).read_text(encoding="utf-8")
     enum_name = command_enum_name(command["name"])
     namespace = command_namespace(command["name"])
     fields = "\n".join(
@@ -559,144 +536,6 @@ def command_source_helpers(command: dict[str, object]) -> str:
 
 
 def command_pack_body(command: dict[str, object], enum_name: str) -> str:
-    if command["name"] == "vkCreateInstance":
-        return f"""
-    *packet = ParameterPacket{{}};
-    packet->command_id = CommandId::{enum_name};
-    packet->parameters = {{PARAM}};
-    if ({{PARAM}}.pCreateInfo) {{
-      auto& storage = packet->storage;
-      storage.create_info = *{{PARAM}}.pCreateInfo;
-      if ({{PARAM}}.pCreateInfo->pApplicationInfo) {{
-        storage.application_info = *{{PARAM}}.pCreateInfo->pApplicationInfo;
-        if (storage.application_info.pApplicationName) {{
-          storage.application_name = storage.application_info.pApplicationName;
-          storage.application_info.pApplicationName = storage.application_name.c_str();
-        }}
-        if (storage.application_info.pEngineName) {{
-          storage.engine_name = storage.application_info.pEngineName;
-          storage.application_info.pEngineName = storage.engine_name.c_str();
-        }}
-        storage.create_info.pApplicationInfo = &storage.application_info;
-      }}
-      VkResult status = ::vkfwd::{WIRE_NAMESPACE}::copy_string_array(
-          storage.create_info.enabledLayerCount,
-          storage.create_info.ppEnabledLayerNames,
-          &storage.enabled_layer_names,
-          &storage.enabled_layer_name_ptrs);
-      if (status != VK_SUCCESS) {{
-        return status;
-      }}
-      if (!storage.enabled_layer_name_ptrs.empty()) {{
-        storage.create_info.ppEnabledLayerNames =
-            storage.enabled_layer_name_ptrs.data();
-      }}
-      status = ::vkfwd::{WIRE_NAMESPACE}::copy_string_array(
-          storage.create_info.enabledExtensionCount,
-          storage.create_info.ppEnabledExtensionNames,
-          &storage.enabled_extension_names,
-          &storage.enabled_extension_name_ptrs);
-      if (status != VK_SUCCESS) {{
-        return status;
-      }}
-      if (!storage.enabled_extension_name_ptrs.empty()) {{
-        storage.create_info.ppEnabledExtensionNames =
-            storage.enabled_extension_name_ptrs.data();
-      }}
-      status = ::vkfwd::{WIRE_NAMESPACE}::copy_pnext_chain(storage.create_info.pNext,
-                                &storage.create_info_pnext);
-      if (status != VK_SUCCESS) {{
-        return status;
-      }}
-      storage.create_info.pNext = ::vkfwd::{WIRE_NAMESPACE}::rebuild_pnext_chain(&storage.create_info_pnext);
-      packet->parameters.pCreateInfo = &storage.create_info;
-    }}
-    if ({{PARAM}}.pAllocator) {{
-      packet->storage.allocator = *{{PARAM}}.pAllocator;
-      packet->parameters.pAllocator = &packet->storage.allocator;
-    }}
-"""
-    if command["name"] == "vkCreateDevice":
-        return f"""
-    *packet = ParameterPacket{{}};
-    packet->command_id = CommandId::{enum_name};
-    packet->parameters = {{PARAM}};
-    if ({{PARAM}}.pCreateInfo) {{
-      auto& storage = packet->storage;
-      storage.create_info = *{{PARAM}}.pCreateInfo;
-      storage.queue_create_infos.resize(storage.create_info.queueCreateInfoCount);
-      storage.queue_create_info_views.resize(storage.create_info.queueCreateInfoCount);
-      for (uint32_t i = 0; i < storage.create_info.queueCreateInfoCount; ++i) {{
-        const auto& source_queue = storage.create_info.pQueueCreateInfos[i];
-        auto& queue_storage = storage.queue_create_infos[i];
-        queue_storage.create_info = source_queue;
-        if (source_queue.queueCount > 0) {{
-          if (!source_queue.pQueuePriorities) {{
-            return VK_ERROR_UNKNOWN;
-          }}
-          VkResult status = ::vkfwd::{WIRE_NAMESPACE}::copy_sized_array(
-              source_queue.queueCount, source_queue.pQueuePriorities,
-              &queue_storage.priorities);
-          if (status != VK_SUCCESS) {{
-            return status;
-          }}
-          queue_storage.create_info.pQueuePriorities =
-              queue_storage.priorities.data();
-        }}
-        VkResult status = ::vkfwd::{WIRE_NAMESPACE}::copy_pnext_chain(
-            source_queue.pNext, &queue_storage.pnext);
-        if (status != VK_SUCCESS) {{
-          return status;
-        }}
-        queue_storage.create_info.pNext =
-            ::vkfwd::{WIRE_NAMESPACE}::rebuild_pnext_chain(&queue_storage.pnext);
-        storage.queue_create_info_views[i] = queue_storage.create_info;
-      }}
-      if (!storage.queue_create_info_views.empty()) {{
-        storage.create_info.pQueueCreateInfos =
-            storage.queue_create_info_views.data();
-      }}
-      VkResult status = ::vkfwd::{WIRE_NAMESPACE}::copy_string_array(
-          storage.create_info.enabledLayerCount,
-          storage.create_info.ppEnabledLayerNames,
-          &storage.enabled_layer_names,
-          &storage.enabled_layer_name_ptrs);
-      if (status != VK_SUCCESS) {{
-        return status;
-      }}
-      if (!storage.enabled_layer_name_ptrs.empty()) {{
-        storage.create_info.ppEnabledLayerNames =
-            storage.enabled_layer_name_ptrs.data();
-      }}
-      status = ::vkfwd::{WIRE_NAMESPACE}::copy_string_array(
-          storage.create_info.enabledExtensionCount,
-          storage.create_info.ppEnabledExtensionNames,
-          &storage.enabled_extension_names,
-          &storage.enabled_extension_name_ptrs);
-      if (status != VK_SUCCESS) {{
-        return status;
-      }}
-      if (!storage.enabled_extension_name_ptrs.empty()) {{
-        storage.create_info.ppEnabledExtensionNames =
-            storage.enabled_extension_name_ptrs.data();
-      }}
-      if (storage.create_info.pEnabledFeatures) {{
-        storage.enabled_features = *storage.create_info.pEnabledFeatures;
-        storage.create_info.pEnabledFeatures = &storage.enabled_features;
-      }}
-      status = ::vkfwd::{WIRE_NAMESPACE}::copy_pnext_chain(storage.create_info.pNext,
-                                &storage.create_info_pnext);
-      if (status != VK_SUCCESS) {{
-        return status;
-      }}
-      storage.create_info.pNext = ::vkfwd::{WIRE_NAMESPACE}::rebuild_pnext_chain(&storage.create_info_pnext);
-      packet->parameters.pCreateInfo = &storage.create_info;
-    }}
-    if ({{PARAM}}.pAllocator) {{
-      packet->storage.allocator = *{{PARAM}}.pAllocator;
-      packet->parameters.pAllocator = &packet->storage.allocator;
-    }}
-"""
     return f"""
     *packet = ParameterPacket{{}};
     packet->command_id = CommandId::{enum_name};
@@ -705,6 +544,20 @@ def command_pack_body(command: dict[str, object], enum_name: str) -> str:
 
 
 def command_source_content(metadata: dict[str, object], command: dict[str, object]) -> str:
+    if command["name"] in {"vkCreateInstance", "vkCreateDevice"}:
+        # See command_header_content(): this preserves deterministic generation
+        # for the first Blob-backed command slice while the all-command emitter
+        # is still catching up to the new stream contract.
+        return (
+            repo_root()
+            / "src"
+            / "vkfwd"
+            / "ferry"
+            / "core"
+            / "generated"
+            / "command"
+            / f"{command['name']}.cpp"
+        ).read_text(encoding="utf-8")
     enum_name = command_enum_name(command["name"])
     namespace = command_namespace(command["name"])
     helpers = command_source_helpers(command)
@@ -893,9 +746,9 @@ def write_vulkan_api_header(metadata: dict[str, object], path: Path) -> None:
 
 namespace vkfwd::generated {{
 
-// CommandId values are part of the wire command envelope. They are
+// CommandId values are part of the schema-versioned command envelope. They are
 // generated from stable command names instead of registry order so compatible
-// Vulkan XML revisions can add or remove commands without renumbering the wire.
+// Vulkan XML revisions can add or remove commands without renumbering the stream.
 enum class CommandId : std::uint32_t {{
 {enum_values}
 }};
@@ -1137,9 +990,7 @@ def generate(output_dir: Path, forwarder_output_dir: Path) -> None:
             "vk_xml_sha256": hashlib.sha256(xml_bytes).hexdigest(),
         },
         "protocol": {
-            "wire_major": WIRE_MAJOR,
-            "wire_minor": WIRE_MINOR,
-            "generator_schema_version": GENERATOR_SCHEMA_VERSION,
+            "schema_version": SCHEMA_VERSION,
         },
         "versions": {
             "vulkan_api_version": versions.get("vulkan_api_version"),

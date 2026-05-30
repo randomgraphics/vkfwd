@@ -6,7 +6,7 @@ receiver/replay scaffolding, generators, and tests for this approach.
 
 All implementation-specific logic stays here for now: loader-chain setup,
 instance/device dispatch tables, layer hooks, generated interceptors, endpoint
-policy, versioned wire logic, copied parameter storage, and receiver replay
+policy, schema-versioned command chunks, copied parameter storage, and receiver replay
 helpers. Common code should move out only after another implementation has the
 same invariants.
 

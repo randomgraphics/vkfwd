@@ -1,7 +1,7 @@
 # Vulkan Coverage Plan
 
 This document is the working plan for growing `vkfwd` from a small Vulkan
-layer scaffold into broad Vulkan API capture, wire encoding, forwarding, and
+layer scaffold into broad Vulkan API capture, schema encoding, forwarding, and
 receiver-side replay. It is written for both humans and agents: use it to pick
 the next unit of work, decide what belongs in generated code, and avoid
 mistaking trace-only placeholders for complete forwarding.
@@ -88,7 +88,7 @@ Every Vulkan command should eventually have one explicit state:
 | `unclassified` | The command exists in the selected Vulkan XML but no policy has been assigned. |
 | `passthrough-only` | The layer forwards locally but does not serialize enough information for replay. |
 | `trace-only` | The layer records limited metadata for diagnostics only. |
-| `capture-ready` | Capture records own all call inputs needed for wire encoding. |
+| `capture-ready` | Capture records own all call inputs needed for schema encoding. |
 | `roundtrip-ready` | Capture, pack, and unpack preserve the call shape. |
 | `replay-ready` | Receiver-side replay invokes the real Vulkan command with mapped handles. |
 | `endpoint-ready` | The full intercepted call path completes return values, output parameters, handle mapping, and ordering through an API endpoint. |
@@ -397,26 +397,23 @@ produced by all compatible interceptor/dispatcher builds.
 The handshake should contain:
 
 - Magic value.
-- Wire major and minor version.
+- Schema version.
 - Vulkan API major, minor, and patch version used by the generator.
-- Generator schema version.
 
 Once the handshake succeeds, the rest of the session is assumed to follow the
-negotiated version. Per-command packets must not repeat wire-version
+negotiated schema version. Per-command packets must not repeat schema-version
 information or redo compatibility validation in the hot path.
 Command-specific decoding may still reject unknown command ids, unsupported
 payload revisions, missing extensions, or unimplemented replay policies.
 
 Compatibility rules:
 
-- Wire major changes are breaking unless the receiver explicitly supports that
-  older major.
-- Wire minor changes are readable only inside the receiver's declared readable
-  minor range.
+- Schema version changes are breaking unless the receiver explicitly supports
+  the older schema.
 - Vulkan major version must match.
 - Vulkan minor versions are backward-compatible only when the receiver was
   generated against the same or newer minor version. A receiver generated
-  against Vulkan 1.4 may read Vulkan 1.3 streams if the wire format is
+  against Vulkan 1.4 may read Vulkan 1.3 streams if the schema is
   compatible, but a Vulkan 1.3 receiver must reject a Vulkan 1.4 stream unless
   a deliberate compatibility shim exists.
 - Vulkan patch/header differences are recorded for diagnostics and exact
@@ -523,7 +520,7 @@ Acceptance criteria:
 - Human-owned hook files live outside generated output and survive
   regeneration.
 - Shared protocol code exposes the stable handshake metadata, while per-command
-  pack/unpack records avoid repeated wire compatibility data.
+  pack/unpack records avoid repeated schema compatibility data.
 - Empty hook defaults compile out without runtime calls or branches.
 
 Current proof-slice status:

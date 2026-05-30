@@ -6,81 +6,63 @@
 
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
+#include "blob.hpp"
 
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
-#include <string>
-#include <vector>
+#include <cstdint>
 
 namespace vkfwd::generated::commands::vkCreateDevice {
 
+constexpr std::uint32_t kCommandRevision = 1;
+
 struct Parameters {
-  VkPhysicalDevice physicalDevice = {};
-  const VkDeviceCreateInfo* pCreateInfo = {};
-  const VkAllocationCallbacks* pAllocator = {};
-  VkDevice* pDevice = {};
+    VkPhysicalDevice              physicalDevice = {};
+    const VkDeviceCreateInfo *    pCreateInfo    = {};
+    const VkAllocationCallbacks * pAllocator     = {};
+    VkDevice *                    pDevice        = {};
 };
 
 struct Response {
-  VkResult return_value = VK_SUCCESS;
-  VkDevice* pDevice = {};
+    VkResult   return_value = VK_SUCCESS;
+    VkDevice * pDevice      = {};
 };
-
-
-struct DeviceQueueCreateInfoStorage {
-  VkDeviceQueueCreateInfo create_info = {};
-  std::vector<float> priorities;
-  std::vector<vkfwd::wire_1_0::PNextNode> pnext;
-};
-
-struct ParameterStorage {
-  VkDeviceCreateInfo create_info = {};
-  std::vector<DeviceQueueCreateInfoStorage> queue_create_infos;
-  std::vector<VkDeviceQueueCreateInfo> queue_create_info_views;
-  std::vector<std::string> enabled_layer_names;
-  std::vector<const char*> enabled_layer_name_ptrs;
-  std::vector<std::string> enabled_extension_names;
-  std::vector<const char*> enabled_extension_name_ptrs;
-  VkPhysicalDeviceFeatures enabled_features = {};
-  std::vector<vkfwd::wire_1_0::PNextNode> create_info_pnext;
-  VkAllocationCallbacks allocator = {};
-};
-
 
 struct ResponsePacket;
 
 struct ParameterPacket {
-  CommandId command_id = CommandId::CreateDevice;
-  Parameters parameters;
-  ParameterStorage storage;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
+    CommandId command_id = CommandId::CreateDevice;
+    // The blob owns the replayable command chunk. Any pointer slot in the command
+    // argument record is a command-relative offset; pointer slots inside nested
+    // structs are relative to those nested struct chunks.
+    Parameters    parameters;
+    std::size_t   command_offset = 0;
+    std::uint32_t command_size   = 0;
+    Blob          blob;
+    using ResponsePacket = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
 };
 
 struct ResponsePacket {
-  CommandId command_id = CommandId::CreateDevice;
-  Response response;
+    CommandId command_id = CommandId::CreateDevice;
+    Response  response;
 };
 
 class Command {
 public:
-  using Parameters = vkfwd::generated::commands::vkCreateDevice::Parameters;
-  using Response = vkfwd::generated::commands::vkCreateDevice::Response;
-  using ParameterPacket = vkfwd::generated::commands::vkCreateDevice::ParameterPacket;
-  using ResponsePacket = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
+    using Parameters      = vkfwd::generated::commands::vkCreateDevice::Parameters;
+    using Response        = vkfwd::generated::commands::vkCreateDevice::Response;
+    using ParameterPacket = vkfwd::generated::commands::vkCreateDevice::ParameterPacket;
+    using ResponsePacket  = vkfwd::generated::commands::vkCreateDevice::ResponsePacket;
 
-  static VkResult pack_parameters(const Parameters& parameters,
-                                  ParameterPacket* packet);
-  static VkResult unpack_parameters(const ParameterPacket& packet,
-                                    Parameters* parameters);
-  static VkResult pack_response(const Response& response,
-                                ResponsePacket* packet);
-  static VkResult unpack_response(const ResponsePacket& packet,
-                                  Response* response);
+    static VkResult pack_parameters(const Parameters & parameters, ParameterPacket * packet);
+    static VkResult unpack_parameters(const ParameterPacket & packet, Parameters * parameters);
+    static VkResult pack_response(const Response & response, ResponsePacket * packet);
+    static VkResult unpack_response(const ResponsePacket & packet, Response * response);
 };
 
 } // namespace vkfwd::generated::commands::vkCreateDevice
 
 #if __has_include("hook/vkCreateDeviceHook.hpp")
-#include "hook/vkCreateDeviceHook.hpp"
+    #include "hook/vkCreateDeviceHook.hpp"
 #endif
