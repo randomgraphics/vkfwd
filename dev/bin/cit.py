@@ -56,6 +56,16 @@ def main() -> int:
         args.build_dir if args.build_dir.is_absolute() else root / args.build_dir
     )
 
+    # Keep the internal-test entrypoint aligned with review expectations: code
+    # generators and formatter setup must leave tracked source files in the same
+    # style that CI and developers will check before running behavior tests.
+    format_status = run(
+        [sys.executable, str(root / "dev/bin/format-all-sources.py"), "--check", "-q"],
+        cwd=root,
+    )
+    if format_status != 0:
+        return format_status
+
     # Run the Catch2 executable directly so cit.py reports the internal test
     # process status instead of CTest's wrapper status or output policy.
     test_exe = latest_internal_test_executable(build_dir)

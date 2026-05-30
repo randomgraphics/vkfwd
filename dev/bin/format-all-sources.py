@@ -46,8 +46,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-n",
+        "--check",
+        dest="check",
         action="store_true",
-        help="Dry run. Print format violations to stderr, if any.",
+        help="Do not rewrite files. Report every formatting violation and exit nonzero if any are found.",
     )
     parser.add_argument("-q", action="store_true", help="Quiet mode. Mute stdout.")
     parser.add_argument(
@@ -158,7 +160,7 @@ def require_executable(name: str, description: str) -> str:
 
 def run_formatter(
     command: list[str], root: Path, quiet: bool, lock: threading.Lock
-) -> None:
+) -> bool:
     if not quiet:
         with lock:
             print(" ".join(command))
@@ -167,7 +169,6 @@ def run_formatter(
         cwd=root,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=True,
         text=True,
     )
     if result.stdout.strip() and not quiet:
@@ -177,6 +178,7 @@ def run_formatter(
         with lock:
             sys.stderr.write(result.stderr.strip())
             sys.stderr.write("\n")
+    return result.returncode == 0
 
 
 def format_one_file(
@@ -187,21 +189,24 @@ def format_one_file(
     dry_run: bool,
     quiet: bool,
     lock: threading.Lock,
-) -> None:
+) -> bool:
     if path.endswith(".py"):
         command = [black, "--check" if dry_run else path]
         if dry_run:
             command.append(path)
-        run_black(command, root, quiet, lock)
-        return
+        return run_black(command, root, quiet, lock)
 
-    command = [clang_format, "--dry-run" if dry_run else "-i", path]
-    run_formatter(command, root, quiet, lock)
+    command = (
+        [clang_format, "--dry-run", "--Werror", path]
+        if dry_run
+        else [clang_format, "-i", path]
+    )
+    return run_formatter(command, root, quiet, lock)
 
 
 def run_black(
     command: list[str], root: Path, quiet: bool, lock: threading.Lock
-) -> None:
+) -> bool:
     if not quiet:
         with lock:
             print(" ".join(command))
@@ -210,7 +215,6 @@ def run_black(
         cwd=root,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=True,
         text=True,
     )
     if result.stdout.strip() and not quiet:
@@ -227,6 +231,7 @@ def run_black(
         with lock:
             sys.stderr.write(err)
             sys.stderr.write("\n")
+    return result.returncode == 0
 
 
 def main() -> int:
@@ -251,14 +256,25 @@ def main() -> int:
                 root,
                 clang_format,
                 black,
-                args.n,
+                args.check,
                 args.q,
                 lock,
             ): path
             for path in sources
         }
+        failed_paths = []
         for future in concurrent.futures.as_completed(futures):
-            future.result()
+            if not future.result():
+                failed_paths.append(futures[future])
+
+    if failed_paths:
+        failed_paths.sort()
+        # Report after all workers finish so check mode is useful in CI and for
+        # local cleanup; failing fast would hide later formatting violations.
+        print("Formatting violations found:", file=sys.stderr)
+        for path in failed_paths:
+            print(f"  {path}", file=sys.stderr)
+        return 1
 
     return 0
 
