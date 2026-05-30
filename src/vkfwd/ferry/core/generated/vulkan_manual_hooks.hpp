@@ -8,24 +8,24 @@
 
 namespace vkfwd::manual {
 
-template <vkfwd::generated::CommandId>
+template<vkfwd::generated::CommandId>
 struct CommandHooks {
-  static constexpr bool before_pack_enabled = false;
-  static constexpr bool after_pack_enabled = false;
-  static constexpr bool before_unpack_enabled = false;
-  static constexpr bool after_unpack_enabled = false;
+    static constexpr bool before_pack_enabled   = false;
+    static constexpr bool after_pack_enabled    = false;
+    static constexpr bool before_unpack_enabled = false;
+    static constexpr bool after_unpack_enabled  = false;
 
-  template <class Parameters>
-  static constexpr void before_pack(Parameters&) noexcept {}
+    template<class Parameters>
+    static constexpr void before_pack(Parameters &) noexcept {}
 
-  template <class ParameterPacket>
-  static constexpr void after_pack(ParameterPacket&) noexcept {}
+    template<class ParameterPacket>
+    static constexpr void after_pack(ParameterPacket &) noexcept {}
 
-  template <class ParameterPacket>
-  static constexpr void before_unpack(ParameterPacket&) noexcept {}
+    template<class ParameterPacket>
+    static constexpr void before_unpack(ParameterPacket &) noexcept {}
 
-  template <class Parameters>
-  static constexpr void after_unpack(Parameters&) noexcept {}
+    template<class Parameters>
+    static constexpr void after_unpack(Parameters &) noexcept {}
 };
 
 } // namespace vkfwd::manual

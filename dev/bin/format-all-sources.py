@@ -9,7 +9,6 @@ import sys
 import threading
 from pathlib import Path
 
-
 SOURCE_PATTERNS = [
     "*.h",
     "*.hpp",
@@ -61,16 +60,47 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("BLACK", "black"),
         help="black executable. Defaults to BLACK or 'black'.",
     )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Optional tracked file or directory scopes to format.",
+    )
     return parser.parse_args()
 
 
-def tracked_sources(root: Path, changed_only: bool) -> list[str]:
+def normalize_scope(root: Path, path: str) -> str:
+    candidate = Path(path)
+    absolute = candidate if candidate.is_absolute() else root / candidate
+    try:
+        relative = absolute.resolve().relative_to(root.resolve())
+    except ValueError:
+        raise SystemExit(f"Error: format scope is outside repository: {path}")
+    if relative == Path("."):
+        return ""
+    return relative.as_posix()
+
+
+def tracked_sources(root: Path, changed_only: bool, paths: list[str]) -> list[str]:
+    scopes = [normalize_scope(root, path) for path in paths]
     if changed_only:
         base = diff_base(root)
         command = ["git", "diff", "--name-only", base, "--", *SOURCE_PATTERNS]
     else:
         command = ["git", "ls-files", *SOURCE_PATTERNS]
-    return subprocess.check_output(command, cwd=root).decode("utf-8").splitlines()
+    sources = subprocess.check_output(command, cwd=root).decode("utf-8").splitlines()
+    return [path for path in sources if is_in_scope(path, scopes)]
+
+
+def is_in_scope(path: str, scopes: list[str]) -> bool:
+    if not scopes:
+        return True
+    # Scopes deliberately filter Git's tracked-file result instead of replacing
+    # it, so generators cannot hide newly emitted files from the normal review
+    # and git-add step by formatting untracked output implicitly.
+    return any(
+        not scope or path == scope or path.startswith(f"{scope.rstrip('/')}/")
+        for scope in scopes
+    )
 
 
 def diff_base(root: Path) -> str:
@@ -126,7 +156,9 @@ def require_executable(name: str, description: str) -> str:
     sys.exit(1)
 
 
-def run_formatter(command: list[str], root: Path, quiet: bool, lock: threading.Lock) -> None:
+def run_formatter(
+    command: list[str], root: Path, quiet: bool, lock: threading.Lock
+) -> None:
     if not quiet:
         with lock:
             print(" ".join(command))
@@ -167,7 +199,9 @@ def format_one_file(
     run_formatter(command, root, quiet, lock)
 
 
-def run_black(command: list[str], root: Path, quiet: bool, lock: threading.Lock) -> None:
+def run_black(
+    command: list[str], root: Path, quiet: bool, lock: threading.Lock
+) -> None:
     if not quiet:
         with lock:
             print(" ".join(command))
@@ -186,7 +220,9 @@ def run_black(command: list[str], root: Path, quiet: bool, lock: threading.Lock)
     # Black writes normal summaries to stderr. Keep failure diagnostics visible,
     # but avoid noisy "all done" output when the file is already formatted.
     err = result.stderr.strip()
-    is_informational = err.startswith("All done!") or "file would be left unchanged" in err
+    is_informational = (
+        err.startswith("All done!") or "file would be left unchanged" in err
+    )
     if err and not is_informational:
         with lock:
             sys.stderr.write(err)
@@ -196,9 +232,15 @@ def run_black(command: list[str], root: Path, quiet: bool, lock: threading.Lock)
 def main() -> int:
     args = parse_args()
     root = repo_root()
-    clang_format = find_clang_format(root)
-    black = require_executable(args.black, "black")
-    sources = [path for path in tracked_sources(root, args.d) if is_owned_source(path)]
+    sources = [
+        path
+        for path in tracked_sources(root, args.d, args.paths)
+        if is_owned_source(path)
+    ]
+    has_python = any(path.endswith(".py") for path in sources)
+    has_non_python = any(not path.endswith(".py") for path in sources)
+    clang_format = find_clang_format(root) if has_non_python else ""
+    black = require_executable(args.black, "black") if has_python else ""
     lock = threading.Lock()
 
     with concurrent.futures.ThreadPoolExecutor() as executor:

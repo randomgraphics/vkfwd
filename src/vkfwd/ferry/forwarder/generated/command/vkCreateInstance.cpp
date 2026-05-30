@@ -12,56 +12,41 @@
 #include <cstdint>
 
 #if __has_include("hook/vkCreateInstanceForwarderHook.hpp")
-#include "hook/vkCreateInstanceForwarderHook.hpp"
+    #include "hook/vkCreateInstanceForwarderHook.hpp"
 #endif
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
-    const VkInstanceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkInstance* pInstance) {
-  using Command = ::vkfwd::generated::commands::vkCreateInstance::Command;
-  using Hooks = ::vkfwd::forwarder::manual::CommandHooks<
-      ::vkfwd::generated::CommandId::CreateInstance>;
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator, VkInstance * pInstance) {
+    using Command = ::vkfwd::generated::commands::vkCreateInstance::Command;
+    using Hooks   = ::vkfwd::forwarder::manual::CommandHooks<::vkfwd::generated::CommandId::CreateInstance>;
 
-  if constexpr (Hooks::before_pack_enabled) {
-    Hooks::before_pack(pCreateInfo, pAllocator, pInstance);
-  }
+    if constexpr (Hooks::before_pack_enabled) { Hooks::before_pack(pCreateInfo, pAllocator, pInstance); }
 
-  auto& forwarder = ::vkfwd::Forwarder::instance();
-  Command::Parameters parameters{.pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pInstance = pInstance};
-  Command::ParameterPacket request;
-  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
-  if (status != VK_SUCCESS) [[unlikely]] {
-    return status;
-  }
+    auto &                   forwarder = ::vkfwd::Forwarder::instance();
+    Command::Parameters      parameters {.pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pInstance = pInstance};
+    Command::ParameterPacket request;
+    VkResult                 status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-  Blob response_blob = forwarder.flush();
-  Command::ResponsePacket response_packet;
-  response_packet.command_offset = 0;
-  response_packet.command_size = static_cast<std::uint32_t>(response_blob.size());
+    Blob                    response_blob = forwarder.flush();
+    Command::ResponsePacket response_packet;
+    response_packet.command_offset = 0;
+    response_packet.command_size   = static_cast<std::uint32_t>(response_blob.size());
 
-  Command::Response response;
-  status = Command::unpack_response(response_blob, response_packet, response);
-  if (status != VK_SUCCESS) [[unlikely]] {
-    return status;
-  }
+    Command::Response response;
+    status = Command::unpack_response(response_blob, response_packet, response);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-  if constexpr (Hooks::after_response_unpack_enabled) {
-    Hooks::after_response_unpack(response);
-  }
+    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(response); }
 
-  if (pInstance && response.pInstance &&
-      response.pInstance != pInstance) {
-    *pInstance = *response.pInstance;
-  }
+    if (pInstance && response.pInstance && response.pInstance != pInstance) { *pInstance = *response.pInstance; }
 
-  // Synchronous forwarding flushes this thread's pending request blob and
-  // returns a fresh response blob. Generated code only decodes that blob here;
-  // endpoint implementations own transport, replay, and handle mapping policy.
+    // Synchronous forwarding flushes this thread's pending request blob and
+    // returns a fresh response blob. Generated code only decodes that blob here;
+    // endpoint implementations own transport, replay, and handle mapping policy.
 
-  return response.return_value;
+    return response.return_value;
 }
 
 } // namespace vkfwd::forwarder::generated

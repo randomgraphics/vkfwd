@@ -67,6 +67,18 @@ if (Test-Path -LiteralPath $__vkfwd_activate -PathType Leaf) {
     Write-Warning "Python virtual environment activation script not found: $__vkfwd_activate"
 }
 
+$__vkfwd_requirements = Join-Path $env:VKFWD_ROOT 'dev\env\requirements.txt'
+if (Test-Path -LiteralPath $__vkfwd_requirements -PathType Leaf) {
+    # Keep repo-local Python tools reproducible. The venv is owned by this
+    # checkout, so installing pinned requirements here does not affect the
+    # user's global Python environment.
+    python -m pip install --no-cache-dir -r $__vkfwd_requirements
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to install Python tooling requirements: $__vkfwd_requirements"
+        return
+    }
+}
+
 # Reference a shared RandomGraphics git config when the workspace parent owns
 # one. The include is repository-local so sourcing this file does not mutate the
 # user's global git behavior.
@@ -166,6 +178,7 @@ Remove-Item variable:__vkfwd_path_entries -ErrorAction SilentlyContinue
 Remove-Item variable:__vkfwd_python -ErrorAction SilentlyContinue
 Remove-Item variable:__vkfwd_python_args -ErrorAction SilentlyContinue
 Remove-Item variable:__vkfwd_python_command -ErrorAction SilentlyContinue
+Remove-Item variable:__vkfwd_requirements -ErrorAction SilentlyContinue
 Remove-Item variable:__vkfwd_setup_dir -ErrorAction SilentlyContinue
 Remove-Item variable:__vkfwd_venv -ErrorAction SilentlyContinue
 Remove-Item function:__vkfwd_find_python -ErrorAction SilentlyContinue

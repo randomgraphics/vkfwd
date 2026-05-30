@@ -2,14 +2,33 @@
 set -eu
 
 root="${1:-.}"
-tmpdir="$(mktemp -d)"
+root="$(cd "$root" && pwd)"
+mkdir -p "$root/build"
+tmpdir="$(mktemp -d "$root/build/generated-metadata.XXXXXX")"
 trap 'rm -rf "$tmpdir"' EXIT
 core_tmp="$tmpdir/core"
 forwarder_tmp="$tmpdir/forwarder"
+core_rel="${core_tmp#"$root"/}"
+forwarder_rel="${forwarder_tmp#"$root"/}"
+
+# The generator and formatter deliberately operate on tracked files only. This
+# test validates scratch output by tracking it in a temporary index, preserving
+# the real index while still exercising the same formatting contract.
+GIT_INDEX_FILE="$tmpdir/index"
+GIT_OBJECT_DIRECTORY="$tmpdir/objects"
+GIT_ALTERNATE_OBJECT_DIRECTORIES="$(git -C "$root" rev-parse --absolute-git-dir)/objects"
+export GIT_INDEX_FILE
+export GIT_OBJECT_DIRECTORY
+export GIT_ALTERNATE_OBJECT_DIRECTORIES
+mkdir -p "$GIT_OBJECT_DIRECTORY"
+git -C "$root" read-tree HEAD
 
 "$root/src/vkfwd/ferry/script/generator/vulkan_metadata.py" \
   --output-dir "$core_tmp" \
   --forwarder-output-dir "$forwarder_tmp"
+
+git -C "$root" add -f -- "$core_rel" "$forwarder_rel"
+"$root/dev/bin/format-all-sources.py" -q "$core_tmp" "$forwarder_tmp"
 
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_manifest.json" "$core_tmp/vulkan_manifest.json"
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_coverage.md" "$core_tmp/vulkan_coverage.md"

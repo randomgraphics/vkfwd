@@ -9,7 +9,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 VARIANTS = {
     "d": ("debug", "Debug"),
     "debug": ("debug", "Debug"),
@@ -58,9 +57,15 @@ def submodules() -> list[Submodule]:
     for section in config.sections():
         if not section.startswith("submodule "):
             continue
-        if not config.has_option(section, "path") or not config.has_option(section, "url"):
+        if not config.has_option(section, "path") or not config.has_option(
+            section, "url"
+        ):
             continue
-        branch = config.get(section, "branch") if config.has_option(section, "branch") else None
+        branch = (
+            config.get(section, "branch")
+            if config.has_option(section, "branch")
+            else None
+        )
         result.append(
             Submodule(
                 repo_root() / config.get(section, "path"),
@@ -183,7 +188,9 @@ def build_directory(args: argparse.Namespace, variant_name: str) -> Path:
     return base / leaf
 
 
-def cmake_configure_args(args: argparse.Namespace, build_type: str, build_dir: Path) -> list[str]:
+def cmake_configure_args(
+    args: argparse.Namespace, build_type: str, build_dir: Path
+) -> list[str]:
     root = repo_root()
     command = [
         "cmake",
@@ -219,7 +226,9 @@ def cmake_configure_args(args: argparse.Namespace, build_type: str, build_dir: P
         if platform.system() == "Windows":
             ninja_candidates = list((sdk / "cmake").glob("**/ninja.exe"))
             if not ninja_candidates:
-                fail("ninja.exe not found in Android SDK. Install CMake from Android SDK Manager.")
+                fail(
+                    "ninja.exe not found in Android SDK. Install CMake from Android SDK Manager."
+                )
             command.append(f"-DCMAKE_MAKE_PROGRAM={ninja_candidates[0]}")
     else:
         if args.ninja:
@@ -253,14 +262,34 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Configure and build vkfwd.")
     parser.add_argument("variant", help="d/debug, r/release, p/profiling, or c/clean")
     parser.add_argument("--android", action="store_true", help="build for Android")
-    parser.add_argument("--android-abi", default="arm64-v8a", help="Android ABI, default: arm64-v8a")
-    parser.add_argument("--android-api", default="29", help="Android API level, default: 29")
-    parser.add_argument("--build-root", default="build", help="root folder for build outputs")
-    parser.add_argument("--clang", action="store_true", help="use Clang for host builds")
-    parser.add_argument("--ninja", action="store_true", help="use Ninja for host builds")
-    parser.add_argument("--configure-only", action="store_true", help="run CMake configure but skip build")
-    parser.add_argument("--build-only", action="store_true", help="skip configure and build the existing tree")
-    parser.add_argument("-j", "--jobs", default="8", help="parallel build jobs, default: 8")
+    parser.add_argument(
+        "--android-abi", default="arm64-v8a", help="Android ABI, default: arm64-v8a"
+    )
+    parser.add_argument(
+        "--android-api", default="29", help="Android API level, default: 29"
+    )
+    parser.add_argument(
+        "--build-root", default="build", help="root folder for build outputs"
+    )
+    parser.add_argument(
+        "--clang", action="store_true", help="use Clang for host builds"
+    )
+    parser.add_argument(
+        "--ninja", action="store_true", help="use Ninja for host builds"
+    )
+    parser.add_argument(
+        "--configure-only",
+        action="store_true",
+        help="run CMake configure but skip build",
+    )
+    parser.add_argument(
+        "--build-only",
+        action="store_true",
+        help="skip configure and build the existing tree",
+    )
+    parser.add_argument(
+        "-j", "--jobs", default="8", help="parallel build jobs, default: 8"
+    )
     args, cmake_args = parser.parse_known_args()
     # Unknown options are intentionally forwarded to CMake configure so this
     # wrapper does not need to model every project-specific cache variable.
@@ -290,7 +319,16 @@ def main() -> None:
         fetch_missing_submodules()
         run(cmake_configure_args(args, cmake_build_type, build_dir))
     if not args.configure_only:
-        run(["cmake", "--build", str(build_dir), "--config", cmake_build_type, f"-j{args.jobs}"])
+        run(
+            [
+                "cmake",
+                "--build",
+                str(build_dir),
+                "--config",
+                cmake_build_type,
+                f"-j{args.jobs}",
+            ]
+        )
 
 
 if __name__ == "__main__":

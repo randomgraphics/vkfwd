@@ -15,29 +15,23 @@
 namespace vkfwd::generated::commands::vkDestroyInstance {
 
 struct Parameters {
-  VkInstance instance = {};
-  const VkAllocationCallbacks* pAllocator = {};
+    VkInstance                    instance   = {};
+    const VkAllocationCallbacks * pAllocator = {};
 };
 
 using ParameterPacket = vkfwd::CommandChunk;
 
-
 class Command {
 public:
-  using Parameters = vkfwd::generated::commands::vkDestroyInstance::Parameters;
-  using ParameterPacket = vkfwd::generated::commands::vkDestroyInstance::ParameterPacket;
+    using Parameters      = vkfwd::generated::commands::vkDestroyInstance::Parameters;
+    using ParameterPacket = vkfwd::generated::commands::vkDestroyInstance::ParameterPacket;
 
-  static VkResult pack_parameters(Blob& blob,
-                                  const Parameters& parameters,
-                                  ParameterPacket& packet);
-  static VkResult unpack_parameters(Blob& blob,
-                                    const ParameterPacket& packet,
-                                    Parameters& parameters);
-
+    static VkResult pack_parameters(Blob & blob, const Parameters & parameters, ParameterPacket & packet);
+    static VkResult unpack_parameters(Blob & blob, const ParameterPacket & packet, Parameters & parameters);
 };
 
 } // namespace vkfwd::generated::commands::vkDestroyInstance
 
 #if __has_include("hook/vkDestroyInstanceHook.hpp")
-#include "hook/vkDestroyInstanceHook.hpp"
+    #include "hook/vkDestroyInstanceHook.hpp"
 #endif

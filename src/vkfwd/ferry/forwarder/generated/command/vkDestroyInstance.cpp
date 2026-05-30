@@ -12,36 +12,29 @@
 #include <cstdint>
 
 #if __has_include("hook/vkDestroyInstanceForwarderHook.hpp")
-#include "hook/vkDestroyInstanceForwarderHook.hpp"
+    #include "hook/vkDestroyInstanceForwarderHook.hpp"
 #endif
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
-    VkInstance instance,
-    const VkAllocationCallbacks* pAllocator) {
-  using Command = ::vkfwd::generated::commands::vkDestroyInstance::Command;
-  using Hooks = ::vkfwd::forwarder::manual::CommandHooks<
-      ::vkfwd::generated::CommandId::DestroyInstance>;
+VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks * pAllocator) {
+    using Command = ::vkfwd::generated::commands::vkDestroyInstance::Command;
+    using Hooks   = ::vkfwd::forwarder::manual::CommandHooks<::vkfwd::generated::CommandId::DestroyInstance>;
 
-  if constexpr (Hooks::before_pack_enabled) {
-    Hooks::before_pack(instance, pAllocator);
-  }
+    if constexpr (Hooks::before_pack_enabled) { Hooks::before_pack(instance, pAllocator); }
 
-  auto& forwarder = ::vkfwd::Forwarder::instance();
-  Command::Parameters parameters{.instance = instance, .pAllocator = pAllocator};
-  Command::ParameterPacket request;
-  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
-  if (status != VK_SUCCESS) [[unlikely]] {
+    auto &                   forwarder = ::vkfwd::Forwarder::instance();
+    Command::Parameters      parameters {.instance = instance, .pAllocator = pAllocator};
+    Command::ParameterPacket request;
+    VkResult                 status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+    if (status != VK_SUCCESS) [[unlikely]] { return; }
+
+    // Deferrable commands have no return value or output parameters, so the
+    // entry point only appends to the thread-local request blob. The next
+    // non-deferrable command is responsible for flushing this thread's pending
+    // command sequence through the endpoint.
+
     return;
-  }
-
-  // Deferrable commands have no return value or output parameters, so the
-  // entry point only appends to the thread-local request blob. The next
-  // non-deferrable command is responsible for flushing this thread's pending
-  // command sequence through the endpoint.
-
-  return;
 }
 
 } // namespace vkfwd::forwarder::generated

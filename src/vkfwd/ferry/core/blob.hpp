@@ -85,7 +85,7 @@ public:
     // Grows the arena and returns a bounded view over exactly the new allocation.
     // The returned memory is uninitialized so callers can avoid redundant clears
     // when immediately serializing Vulkan payload bytes into it.
-    SafeArrayView<std::uint8_t> grow(std::size_t size, std::size_t alignment = 1);
+    SafeArrayView<std::uint8_t>       grow(std::size_t size, std::size_t alignment = 1);
     SafeArrayView<const std::uint8_t> data_at(std::size_t offset, std::size_t size) const;
 
     template<TriviallyCopyable T>

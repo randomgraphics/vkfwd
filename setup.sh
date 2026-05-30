@@ -39,6 +39,17 @@ else
     echo "WARNING: Python virtual environment activation script not found: $__vkfwd_venv/bin/activate"
 fi
 
+__vkfwd_requirements="${VKFWD_ROOT}/dev/env/requirements.txt"
+if [ -f "$__vkfwd_requirements" ]; then
+    # Keep repo-local Python tools reproducible. The venv is owned by this
+    # checkout, so installing pinned requirements here does not affect the
+    # user's global Python environment.
+    if ! python -m pip install --no-cache-dir -r "$__vkfwd_requirements"; then
+        echo "ERROR: failed to install Python tooling requirements: $__vkfwd_requirements"
+        return 1
+    fi
+fi
+
 # Reference a shared RandomGraphics git config when the workspace parent owns
 # one. The include is repository-local so sourcing this file does not mutate the
 # user's global git behavior.
@@ -82,5 +93,6 @@ echo
 unset __vkfwd_gitconfig
 unset __vkfwd_git_error
 unset __vkfwd_repo_name
+unset __vkfwd_requirements
 unset __vkfwd_setup_dir
 unset __vkfwd_venv

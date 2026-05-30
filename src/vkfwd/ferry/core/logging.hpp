@@ -38,12 +38,12 @@ spdlog::logger * logger(std::string_view name);
 // Warning and error locations are intentionally injected by the macro instead
 // of the shared formatter: debug/info logs stay compact, while severe messages
 // still name the call site that observed the failure.
-#define VKFWD_LOG_AT_SOURCE(level, method, ...)                                                                              \
-    do {                                                                                                                     \
-        auto * vkfwd_active_logger = VKFWD_ACTIVE_LOGGER();                                                                  \
-        if (vkfwd_active_logger != nullptr && vkfwd_active_logger->should_log(level)) [[unlikely]] {                         \
-            vkfwd_active_logger->method("[" VKFWD_LOG_SOURCE_FILE ":" VKFWD_LOG_STRINGIFY(__LINE__) "] " __VA_ARGS__);     \
-        }                                                                                                                    \
+#define VKFWD_LOG_AT_SOURCE(level, method, ...)                                                                        \
+    do {                                                                                                               \
+        auto * vkfwd_active_logger = VKFWD_ACTIVE_LOGGER();                                                            \
+        if (vkfwd_active_logger != nullptr && vkfwd_active_logger->should_log(level)) [[unlikely]] {                   \
+            vkfwd_active_logger->method("[" VKFWD_LOG_SOURCE_FILE ":" VKFWD_LOG_STRINGIFY(__LINE__) "] " __VA_ARGS__); \
+        }                                                                                                              \
     } while (false)
 
 #define VKFWD_LOG_TRACE(...)    VKFWD_LOG_AT(::spdlog::level::trace, trace, __VA_ARGS__)

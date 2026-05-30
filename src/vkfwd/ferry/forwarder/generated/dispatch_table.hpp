@@ -10,39 +10,29 @@
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
-    const VkInstanceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkInstance* pInstance);
-VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
-    VkInstance instance,
-    const VkAllocationCallbacks* pAllocator);
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
-    VkPhysicalDevice physicalDevice,
-    const VkDeviceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDevice* pDevice);
-VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
-    VkDevice device,
-    const VkAllocationCallbacks* pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator, VkInstance * pInstance);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
+                                              VkDevice * pDevice);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyDevice(VkDevice device, const VkAllocationCallbacks * pAllocator);
 
 struct GlobalDispatchTable {
-  PFN_vkCreateInstance create_instance = vkCreateInstance;
-  PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
-  PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
+    PFN_vkCreateInstance      create_instance        = vkCreateInstance;
+    PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
+    PFN_vkGetDeviceProcAddr   get_device_proc_addr   = nullptr;
 };
 
 struct InstanceDispatchTable {
-  PFN_vkDestroyInstance destroy_instance = vkDestroyInstance;
-  PFN_vkCreateDevice create_device = vkCreateDevice;
+    PFN_vkDestroyInstance destroy_instance = vkDestroyInstance;
+    PFN_vkCreateDevice    create_device    = vkCreateDevice;
 };
 
 struct DeviceDispatchTable {
-  PFN_vkDestroyDevice destroy_device = vkDestroyDevice;
+    PFN_vkDestroyDevice destroy_device = vkDestroyDevice;
 };
 
-const GlobalDispatchTable& global_dispatch_table();
-const InstanceDispatchTable& instance_dispatch_table();
-const DeviceDispatchTable& device_dispatch_table();
+const GlobalDispatchTable &   global_dispatch_table();
+const InstanceDispatchTable & instance_dispatch_table();
+const DeviceDispatchTable &   device_dispatch_table();
 
 } // namespace vkfwd::forwarder::generated

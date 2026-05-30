@@ -37,21 +37,33 @@ def run(command: list[str], cwd: Path | None = None) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the newest built vkfwd internal test binary.")
-    parser.add_argument("--build-dir", default=default_build_dir(), type=Path, help="CMake build directory")
+    parser = argparse.ArgumentParser(
+        description="Run the newest built vkfwd internal test binary."
+    )
+    parser.add_argument(
+        "--build-dir",
+        default=default_build_dir(),
+        type=Path,
+        help="CMake build directory",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     root = repo_root()
-    build_dir = args.build_dir if args.build_dir.is_absolute() else root / args.build_dir
+    build_dir = (
+        args.build_dir if args.build_dir.is_absolute() else root / args.build_dir
+    )
 
     # Run the Catch2 executable directly so cit.py reports the internal test
     # process status instead of CTest's wrapper status or output policy.
     test_exe = latest_internal_test_executable(build_dir)
     if test_exe is None:
-        print(f"ERROR: vkfwd_internal_tests was not found under {build_dir}", file=sys.stderr)
+        print(
+            f"ERROR: vkfwd_internal_tests was not found under {build_dir}",
+            file=sys.stderr,
+        )
         return 1
     return run([str(test_exe)], cwd=root)
 

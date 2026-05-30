@@ -15,29 +15,23 @@
 namespace vkfwd::generated::commands::vkDestroyDevice {
 
 struct Parameters {
-  VkDevice device = {};
-  const VkAllocationCallbacks* pAllocator = {};
+    VkDevice                      device     = {};
+    const VkAllocationCallbacks * pAllocator = {};
 };
 
 using ParameterPacket = vkfwd::CommandChunk;
 
-
 class Command {
 public:
-  using Parameters = vkfwd::generated::commands::vkDestroyDevice::Parameters;
-  using ParameterPacket = vkfwd::generated::commands::vkDestroyDevice::ParameterPacket;
+    using Parameters      = vkfwd::generated::commands::vkDestroyDevice::Parameters;
+    using ParameterPacket = vkfwd::generated::commands::vkDestroyDevice::ParameterPacket;
 
-  static VkResult pack_parameters(Blob& blob,
-                                  const Parameters& parameters,
-                                  ParameterPacket& packet);
-  static VkResult unpack_parameters(Blob& blob,
-                                    const ParameterPacket& packet,
-                                    Parameters& parameters);
-
+    static VkResult pack_parameters(Blob & blob, const Parameters & parameters, ParameterPacket & packet);
+    static VkResult unpack_parameters(Blob & blob, const ParameterPacket & packet, Parameters & parameters);
 };
 
 } // namespace vkfwd::generated::commands::vkDestroyDevice
 
 #if __has_include("hook/vkDestroyDeviceHook.hpp")
-#include "hook/vkDestroyDeviceHook.hpp"
+    #include "hook/vkDestroyDeviceHook.hpp"
 #endif

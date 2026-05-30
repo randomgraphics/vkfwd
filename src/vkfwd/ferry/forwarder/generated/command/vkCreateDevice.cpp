@@ -12,57 +12,42 @@
 #include <cstdint>
 
 #if __has_include("hook/vkCreateDeviceForwarderHook.hpp")
-#include "hook/vkCreateDeviceForwarderHook.hpp"
+    #include "hook/vkCreateDeviceForwarderHook.hpp"
 #endif
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
-    VkPhysicalDevice physicalDevice,
-    const VkDeviceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDevice* pDevice) {
-  using Command = ::vkfwd::generated::commands::vkCreateDevice::Command;
-  using Hooks = ::vkfwd::forwarder::manual::CommandHooks<
-      ::vkfwd::generated::CommandId::CreateDevice>;
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
+                                              VkDevice * pDevice) {
+    using Command = ::vkfwd::generated::commands::vkCreateDevice::Command;
+    using Hooks   = ::vkfwd::forwarder::manual::CommandHooks<::vkfwd::generated::CommandId::CreateDevice>;
 
-  if constexpr (Hooks::before_pack_enabled) {
-    Hooks::before_pack(physicalDevice, pCreateInfo, pAllocator, pDevice);
-  }
+    if constexpr (Hooks::before_pack_enabled) { Hooks::before_pack(physicalDevice, pCreateInfo, pAllocator, pDevice); }
 
-  auto& forwarder = ::vkfwd::Forwarder::instance();
-  Command::Parameters parameters{.physicalDevice = physicalDevice, .pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pDevice = pDevice};
-  Command::ParameterPacket request;
-  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
-  if (status != VK_SUCCESS) [[unlikely]] {
-    return status;
-  }
+    auto &                   forwarder = ::vkfwd::Forwarder::instance();
+    Command::Parameters      parameters {.physicalDevice = physicalDevice, .pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pDevice = pDevice};
+    Command::ParameterPacket request;
+    VkResult                 status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-  Blob response_blob = forwarder.flush();
-  Command::ResponsePacket response_packet;
-  response_packet.command_offset = 0;
-  response_packet.command_size = static_cast<std::uint32_t>(response_blob.size());
+    Blob                    response_blob = forwarder.flush();
+    Command::ResponsePacket response_packet;
+    response_packet.command_offset = 0;
+    response_packet.command_size   = static_cast<std::uint32_t>(response_blob.size());
 
-  Command::Response response;
-  status = Command::unpack_response(response_blob, response_packet, response);
-  if (status != VK_SUCCESS) [[unlikely]] {
-    return status;
-  }
+    Command::Response response;
+    status = Command::unpack_response(response_blob, response_packet, response);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-  if constexpr (Hooks::after_response_unpack_enabled) {
-    Hooks::after_response_unpack(response);
-  }
+    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(response); }
 
-  if (pDevice && response.pDevice &&
-      response.pDevice != pDevice) {
-    *pDevice = *response.pDevice;
-  }
+    if (pDevice && response.pDevice && response.pDevice != pDevice) { *pDevice = *response.pDevice; }
 
-  // Synchronous forwarding flushes this thread's pending request blob and
-  // returns a fresh response blob. Generated code only decodes that blob here;
-  // endpoint implementations own transport, replay, and handle mapping policy.
+    // Synchronous forwarding flushes this thread's pending request blob and
+    // returns a fresh response blob. Generated code only decodes that blob here;
+    // endpoint implementations own transport, replay, and handle mapping policy.
 
-  return response.return_value;
+    return response.return_value;
 }
 
 } // namespace vkfwd::forwarder::generated

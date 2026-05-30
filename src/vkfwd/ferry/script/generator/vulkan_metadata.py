@@ -7,8 +7,9 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
-
 
 TARGET_COMMANDS = (
     "vkCreateInstance",
@@ -121,7 +122,9 @@ def collect_structs(root: ET.Element, wanted: set[str]) -> dict[str, dict[str, o
                     "pointer_depth": pointer_depth(declaration),
                     "const": is_const(declaration),
                     "is_pnext": member_name == "pNext",
-                    "is_string_array": member.get("len", "").endswith("null-terminated"),
+                    "is_string_array": member.get("len", "").endswith(
+                        "null-terminated"
+                    ),
                 }
             )
         structs[name] = {
@@ -212,7 +215,9 @@ def command_metadata(
         "coverage_state": "unclassified",
         "successcodes": split_csv(command.get("successcodes")),
         "errorcodes": split_csv(command.get("errorcodes")),
-        "dispatch_parameter": params[0]["name"] if infer_command_level(params) != "global" else None,
+        "dispatch_parameter": (
+            params[0]["name"] if infer_command_level(params) != "global" else None
+        ),
         "creates_handles": handle_outputs,
         "parameters": params,
     }
@@ -380,7 +385,9 @@ def response_output_fields(command: dict[str, object]) -> str:
 def command_needs_response(command: dict[str, object]) -> bool:
     if str(command["return_type"]) != "void":
         return True
-    return any(parameter["direction"] == "output" for parameter in command["parameters"])
+    return any(
+        parameter["direction"] == "output" for parameter in command["parameters"]
+    )
 
 
 def storage_struct_content(command: dict[str, object]) -> str:
@@ -407,7 +414,9 @@ def response_return_statement(command: dict[str, object]) -> str:
     return "  return response.return_value;"
 
 
-def status_failure_return_statement(command: dict[str, object], status_name: str) -> str:
+def status_failure_return_statement(
+    command: dict[str, object], status_name: str
+) -> str:
     if str(command["return_type"]) == "void":
         return "    return;"
     return f"    return {status_name};"
@@ -449,7 +458,9 @@ struct CommandHooks {{
     path.write_text(content, encoding="utf-8")
 
 
-def command_header_content(metadata: dict[str, object], command: dict[str, object]) -> str:
+def command_header_content(
+    metadata: dict[str, object], command: dict[str, object]
+) -> str:
     if command["name"] in {"vkCreateInstance", "vkCreateDevice"}:
         # The create-command stream layout is being reorganized around Blob and
         # generated structure helpers. Until the general emitter learns that
@@ -617,7 +628,9 @@ def command_pack_body(command: dict[str, object], enum_name: str) -> str:
 """
 
 
-def command_source_content(metadata: dict[str, object], command: dict[str, object]) -> str:
+def command_source_content(
+    metadata: dict[str, object], command: dict[str, object]
+) -> str:
     if command["name"] in {"vkCreateInstance", "vkCreateDevice"}:
         # See command_header_content(): this preserves deterministic generation
         # for the first Blob-backed command slice while the all-command emitter
@@ -755,7 +768,10 @@ and the pinned Vulkan API version. There is intentionally no generated
             command_source_content(metadata, command), encoding="utf-8"
         )
         (commands_dir / f"{command['name']}.metadata.json").write_text(
-            json.dumps(command_metadata_document(metadata, command), indent=2, sort_keys=True) + "\n",
+            json.dumps(
+                command_metadata_document(metadata, command), indent=2, sort_keys=True
+            )
+            + "\n",
             encoding="utf-8",
         )
 
@@ -804,7 +820,9 @@ def write_manifest(metadata: dict[str, object], path: Path) -> None:
             for command in metadata["commands"]
         ],
     }
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def write_vulkan_api_header(metadata: dict[str, object], path: Path) -> None:
@@ -1044,6 +1062,31 @@ def write_forwarder_files(metadata: dict[str, object], forwarder_dir: Path) -> N
         )
 
 
+def format_generated_files(output_dir: Path, forwarder_output_dir: Path) -> None:
+    root_dir = repo_root()
+    root_resolved = root_dir.resolve()
+    scopes = []
+    for output_path in (output_dir, forwarder_output_dir):
+        resolved = output_path.resolve()
+        try:
+            scopes.append(resolved.relative_to(root_resolved).as_posix())
+        except ValueError:
+            continue
+
+    if not scopes:
+        return
+
+    formatter = root_dir / "dev/bin/format-all-sources.py"
+    # The shared formatter intentionally operates on tracked files only. When
+    # generation targets scratch directories, callers still get raw generator
+    # output for comparison instead of silently formatting files Git cannot see.
+    subprocess.run(
+        [sys.executable, str(formatter), "-q", *scopes],
+        cwd=root_dir,
+        check=True,
+    )
+
+
 def generate(output_dir: Path, forwarder_output_dir: Path) -> None:
     root_dir = repo_root()
     xml_path = root_dir / "src/third_party/vulkan/registry/vk.xml"
@@ -1054,8 +1097,7 @@ def generate(output_dir: Path, forwarder_output_dir: Path) -> None:
     vulkan_api = parse_semver(versions.get("vulkan_api_version"))
     handles = collect_handles(root)
     selected_commands = [
-        command_metadata(root, name, handles)
-        for name in TARGET_COMMANDS
+        command_metadata(root, name, handles) for name in TARGET_COMMANDS
     ]
     check_command_id_collisions(selected_commands)
     command_structs = {
@@ -1094,6 +1136,7 @@ def generate(output_dir: Path, forwarder_output_dir: Path) -> None:
     write_command_files(metadata, output_dir)
     write_vulkan_api_header(metadata, output_dir / "vulkan_api.hpp")
     write_forwarder_files(metadata, forwarder_output_dir)
+    format_generated_files(output_dir, forwarder_output_dir)
 
 
 def main() -> None:

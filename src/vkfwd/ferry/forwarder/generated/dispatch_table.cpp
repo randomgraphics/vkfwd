@@ -7,22 +7,16 @@
 namespace vkfwd::forwarder::generated {
 namespace {
 
-const GlobalDispatchTable kGlobalDispatchTable;
+const GlobalDispatchTable   kGlobalDispatchTable;
 const InstanceDispatchTable kInstanceDispatchTable;
-const DeviceDispatchTable kDeviceDispatchTable;
+const DeviceDispatchTable   kDeviceDispatchTable;
 
 } // namespace
 
-const GlobalDispatchTable& global_dispatch_table() {
-  return kGlobalDispatchTable;
-}
+const GlobalDispatchTable & global_dispatch_table() { return kGlobalDispatchTable; }
 
-const InstanceDispatchTable& instance_dispatch_table() {
-  return kInstanceDispatchTable;
-}
+const InstanceDispatchTable & instance_dispatch_table() { return kInstanceDispatchTable; }
 
-const DeviceDispatchTable& device_dispatch_table() {
-  return kDeviceDispatchTable;
-}
+const DeviceDispatchTable & device_dispatch_table() { return kDeviceDispatchTable; }
 
 } // namespace vkfwd::forwarder::generated
