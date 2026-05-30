@@ -25,3 +25,10 @@ target_include_directories(vkfwd_vulkan_headers
 
 add_subdirectory(src/third_party)
 add_subdirectory(src/vkfwd)
+
+if(BUILD_TESTING)
+  # Development-only dependencies and test aggregators stay under dev/ so the
+  # shipping source tree does not grow tool-only third-party policy.
+  add_subdirectory(dev/third_party)
+  add_subdirectory(dev/test)
+endif()

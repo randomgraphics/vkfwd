@@ -56,11 +56,12 @@ target_compile_definitions(vkfwd_receiver
   PRIVATE
     VKFWD_VERSION="${PROJECT_VERSION}")
 
-# The forwarder target should stay small: it exports Vulkan loader entry points
-# and delegates payload handling to vkfwd_core. The forwarder-specific singleton
-# lives here because it represents layer runtime policy, not receiver replay
-# state.
-add_library(vkfwd_forwarder SHARED
+# Forwarder code is compiled once and packaged two ways: a static archive for
+# unit/integration tests that need to drive layer entry points in-process, and
+# the Vulkan loader-facing shared object. The shared object still owns the ABI
+# boundary; the static archive is a test/linking convenience, not a second layer
+# distribution format.
+set(VKFWD_FORWARDER_SOURCES
   forwarder/generated/command/vkCreateDevice.cpp
   forwarder/generated/command/vkCreateInstance.cpp
   forwarder/generated/command/vkDestroyDevice.cpp
@@ -69,20 +70,53 @@ add_library(vkfwd_forwarder SHARED
   forwarder/forwarder.cpp
   forwarder/layer.cpp)
 
-target_include_directories(vkfwd_forwarder
+add_library(vkfwd_forwarder_objects OBJECT
+  ${VKFWD_FORWARDER_SOURCES})
+
+target_include_directories(vkfwd_forwarder_objects
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/forwarder)
 
-target_link_libraries(vkfwd_forwarder
+target_link_libraries(vkfwd_forwarder_objects
   PRIVATE
     # The Vulkan loader loads this layer and provides downstream entry points
     # through the layer chain. Linking libvulkan here would add an unnecessary
     # runtime dependency and could blur the dispatch boundary we are testing.
     vkfwd_core)
 
-target_compile_definitions(vkfwd_forwarder
+target_compile_definitions(vkfwd_forwarder_objects
   PRIVATE
     VKFWD_VERSION="${PROJECT_VERSION}")
+
+set_target_properties(vkfwd_forwarder_objects PROPERTIES
+  # The same objects are linked into the shared layer, so they must be PIC even
+  # when the consumer is the static test archive.
+  POSITION_INDEPENDENT_CODE ON
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN YES)
+
+add_library(vkfwd_forwarder_static STATIC
+  $<TARGET_OBJECTS:vkfwd_forwarder_objects>)
+
+target_link_libraries(vkfwd_forwarder_static
+  PUBLIC
+    vkfwd_core)
+
+add_library(vkfwd_forwarder SHARED
+  $<TARGET_OBJECTS:vkfwd_forwarder_objects>)
+
+target_link_libraries(vkfwd_forwarder
+  PRIVATE
+    vkfwd_core)
+
+if(UNIX AND NOT APPLE)
+  target_link_options(vkfwd_forwarder
+    PRIVATE
+      # The layer ABI is the Vulkan loader entry-point pair below. Static
+      # archive dependencies are implementation detail and must not become
+      # interposable ELF symbols just because they are linked into the .so.
+      LINKER:--exclude-libs,ALL)
+endif()
 
 set_target_properties(vkfwd_forwarder PROPERTIES
   OUTPUT_NAME "VkLayer_VKFWD_forwarder"
@@ -96,7 +130,3 @@ configure_file(
   forwarder/manifest/VK_LAYER_VKFWD_forwarder.json.in
   ${CMAKE_CURRENT_BINARY_DIR}/VK_LAYER_VKFWD_forwarder.json
   @ONLY)
-
-if(BUILD_TESTING)
-  add_subdirectory(test)
-endif()

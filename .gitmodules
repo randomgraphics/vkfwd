@@ -8,6 +8,11 @@
 	url = https://github.com/gabime/spdlog.git
 	branch = v1.17.0
 	shallow = true
+[submodule "dev/third_party/catch2"]
+	path = dev/third_party/catch2
+	url = https://github.com/catchorg/Catch2.git
+	branch = v3.15.0
+	shallow = true
 [submodule "src/third_party/gfxreconstruct"]
 	path = src/third_party/gfxreconstruct
 	url = https://github.com/LunarG/gfxreconstruct.git
