@@ -4,14 +4,7 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
-#if __has_include(<spdlog/spdlog.h>)
-    #include <spdlog/spdlog.h>
-#else
-namespace spdlog {
-template<class... Args>
-void error(const char*, Args&&...) noexcept {}
-} // namespace spdlog
-#endif
+#include "logging.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -34,8 +27,8 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
   // offset inside that range so receivers can safely reinterpret the packed
   // command bytes without depending on host-side append history.
   if constexpr (kCommandSize > std::numeric_limits<std::uint32_t>::max()) {
-    spdlog::error("vkfwd ferry command pack failed: command chunk is too large, command_id={}, command_size={}",
-                  static_cast<std::uint32_t>(command_id), kCommandSize);
+    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: command chunk is too large, command_id={}, command_size={}",
+                    static_cast<std::uint32_t>(command_id), kCommandSize);
     return VK_ERROR_UNKNOWN;
   }
 
@@ -50,15 +43,15 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
 
     if (destination.set(0, sizeof(header), reinterpret_cast<const std::uint8_t*>(&header)) != sizeof(header) ||
         destination.set(kPayloadOffset, sizeof(payload), reinterpret_cast<const std::uint8_t*>(&payload)) != sizeof(payload)) [[unlikely]] {
-      spdlog::error("vkfwd ferry command pack failed: could not copy command chunk, command_id={}, command_size={}",
-                    static_cast<std::uint32_t>(command_id), kCommandSize);
+      VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not copy command chunk, command_id={}, command_size={}",
+                      static_cast<std::uint32_t>(command_id), kCommandSize);
       return VK_ERROR_UNKNOWN;
     }
     chunk.command_offset = destination.offset();
     chunk.command_size = header.size;
   } catch (const std::bad_alloc&) {
-    spdlog::error("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={}, payload_size={}",
-                  static_cast<std::uint32_t>(command_id), sizeof(T));
+    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={}, payload_size={}",
+                    static_cast<std::uint32_t>(command_id), sizeof(T));
     return VK_ERROR_OUT_OF_HOST_MEMORY;
   }
   return VK_SUCCESS;
@@ -76,7 +69,7 @@ VkResult unpack_command_chunk(const Blob& blob, const CommandChunk& chunk, Comma
   const auto* packed_payload = reinterpret_cast<const T*>(payload_view.data());
   if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
       header->size != chunk.command_size || chunk.command_size != kCommandSize) [[unlikely]] {
-    spdlog::error(
+    VKFWD_LOG_ERROR(
         "vkfwd ferry command unpack failed: invalid command chunk, offset={}, size={}, has_header={}, has_payload={}, command_id={}, "
         "expected_command_id={}, revision={}, expected_revision={}, header_size={}, expected_size={}",
         chunk.command_offset, chunk.command_size, header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,

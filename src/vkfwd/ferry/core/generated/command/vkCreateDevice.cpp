@@ -2,14 +2,7 @@
 
 #include "generated/structure/core.hpp"
 
-#if __has_include(<spdlog/spdlog.h>)
-    #include <spdlog/spdlog.h>
-#else
-namespace spdlog {
-template<class... Args>
-void error(const char *, Args &&...) noexcept {}
-} // namespace spdlog
-#endif
+#include "logging.hpp"
 
 #include <cstring>
 #include <limits>
@@ -29,13 +22,13 @@ VkResult pack_allocator(const VkAllocationCallbacks * allocator, Blob & blob, st
     try {
         auto destination = blob.grow<VkAllocationCallbacks>(1);
         if (!destination.set(0, *allocator)) [[unlikely]] {
-            spdlog::error("vkfwd ferry command pack failed: could not copy vkCreateDevice allocator callbacks into blob");
+            VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not copy vkCreateDevice allocator callbacks into blob");
             return VK_ERROR_UNKNOWN;
         }
         const std::size_t target = destination.offset();
         return patch_command_pointer(pointer_slot, command_offset, target);
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry command pack failed: out of host memory while copying vkCreateDevice allocator callbacks");
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while copying vkCreateDevice allocator callbacks");
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 }
@@ -45,15 +38,14 @@ VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t r
     constexpr std::size_t kPayloadAlignment = alignof(T);
     constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
     constexpr std::size_t kCommandSize      = kPayloadOffset + sizeof(T);
-    constexpr std::size_t kChunkAlignment =
-        alignof(CommandChunkHeader) > kPayloadAlignment ? alignof(CommandChunkHeader) : kPayloadAlignment;
+    constexpr std::size_t kChunkAlignment   = alignof(CommandChunkHeader) > kPayloadAlignment ? alignof(CommandChunkHeader) : kPayloadAlignment;
 
     // The chunk is one contiguous serialized range. Payload starts at an aligned
     // offset inside that range so receivers can safely reinterpret the packed
     // command bytes without depending on host-side append history.
     if constexpr (kCommandSize > std::numeric_limits<std::uint32_t>::max()) {
-        spdlog::error("vkfwd ferry command pack failed: command chunk is too large, command_id={}, command_size={}",
-                      static_cast<std::uint32_t>(command_id), kCommandSize);
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: command chunk is too large, command_id={}, command_size={}", static_cast<std::uint32_t>(command_id),
+                        kCommandSize);
         return VK_ERROR_UNKNOWN;
     }
 
@@ -69,16 +61,16 @@ VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t r
 
         if (destination.set(0, sizeof(header), reinterpret_cast<const std::uint8_t *>(&header)) != sizeof(header) ||
             destination.set(kPayloadOffset, sizeof(payload), reinterpret_cast<const std::uint8_t *>(&payload)) != sizeof(payload)) [[unlikely]] {
-            spdlog::error("vkfwd ferry command pack failed: could not copy command chunk, command_id={}, command_size={}",
-                          static_cast<std::uint32_t>(command_id), kCommandSize);
+            VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not copy command chunk, command_id={}, command_size={}",
+                            static_cast<std::uint32_t>(command_id), kCommandSize);
             return VK_ERROR_UNKNOWN;
         }
         chunk.command_offset = destination.offset();
         chunk.command_size   = header.size;
         packed_payload       = reinterpret_cast<T *>(destination.data() + kPayloadOffset);
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={}, payload_size={}",
-                      static_cast<std::uint32_t>(command_id), sizeof(T));
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={}, payload_size={}",
+                        static_cast<std::uint32_t>(command_id), sizeof(T));
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     return VK_SUCCESS;
@@ -95,17 +87,16 @@ VkResult unpack_command_chunk(const Blob & blob, const CommandChunk & chunk, Com
     constexpr std::size_t kPayloadAlignment = alignof(T);
     constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
     constexpr std::size_t kCommandSize      = kPayloadOffset + sizeof(T);
-    const auto header_view    = blob.data_at(chunk.command_offset, sizeof(CommandChunkHeader));
-    const auto payload_view   = blob.data_at(chunk.command_offset + kPayloadOffset, sizeof(T));
-    const auto * header       = reinterpret_cast<const CommandChunkHeader *>(header_view.data());
-    const auto * packed_payload = reinterpret_cast<const T *>(payload_view.data());
+    const auto            header_view       = blob.data_at(chunk.command_offset, sizeof(CommandChunkHeader));
+    const auto            payload_view      = blob.data_at(chunk.command_offset + kPayloadOffset, sizeof(T));
+    const auto *          header            = reinterpret_cast<const CommandChunkHeader *>(header_view.data());
+    const auto *          packed_payload    = reinterpret_cast<const T *>(payload_view.data());
     if (!header || header->command_id != static_cast<std::uint32_t>(command_id) || !packed_payload || header->command_revision != revision ||
         header->size != chunk.command_size || chunk.command_size != kCommandSize) [[unlikely]] {
-        spdlog::error(
-            "vkfwd ferry command unpack failed: invalid command chunk, offset={}, size={}, has_header={}, has_payload={}, command_id={}, "
-            "expected_command_id={}, revision={}, expected_revision={}, header_size={}, expected_size={}",
-            chunk.command_offset, chunk.command_size, header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,
-            static_cast<std::uint32_t>(command_id), header ? header->command_revision : 0, revision, header ? header->size : 0, kCommandSize);
+        VKFWD_LOG_ERROR("vkfwd ferry command unpack failed: invalid command chunk, offset={}, size={}, has_header={}, has_payload={}, command_id={}, "
+                        "expected_command_id={}, revision={}, expected_revision={}, header_size={}, expected_size={}",
+                        chunk.command_offset, chunk.command_size, header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,
+                        static_cast<std::uint32_t>(command_id), header ? header->command_revision : 0, revision, header ? header->size : 0, kCommandSize);
         return VK_ERROR_UNKNOWN;
     }
 
@@ -154,7 +145,7 @@ VkResult Command::unpack_parameters(Blob & blob, const ParameterPacket & packet,
     if constexpr (Hooks::before_unpack_enabled) { Hooks::before_unpack(packet); }
 
     const Parameters * packed_parameters = nullptr;
-    VkResult           status = unpack_command_chunk(blob, packet, CommandId::CreateDevice, kCommandRevision, &packed_parameters);
+    VkResult           status            = unpack_command_chunk(blob, packet, CommandId::CreateDevice, kCommandRevision, &packed_parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     parameters = *packed_parameters;
 
@@ -168,7 +159,7 @@ VkResult Command::pack_response(Blob & blob, const Response & response, Response
 
 VkResult Command::unpack_response(Blob & blob, const ResponsePacket & packet, Response & response) {
     const Response * packed_response = nullptr;
-    VkResult         status = unpack_command_chunk(blob, packet, CommandId::CreateDevice, kCommandRevision, &packed_response);
+    VkResult         status          = unpack_command_chunk(blob, packet, CommandId::CreateDevice, kCommandRevision, &packed_response);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     response = *packed_response;
     return VK_SUCCESS;

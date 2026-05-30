@@ -10,6 +10,7 @@ add_library(vkfwd_core STATIC
   core/generated/command/vkDestroyInstance.cpp
   core/generated/structure/core.cpp
   core/hook/vkCreateDeviceHook.cpp
+  core/logging.cpp
   core/null_api_endpoint.cpp)
 
 set_target_properties(vkfwd_core PROPERTIES

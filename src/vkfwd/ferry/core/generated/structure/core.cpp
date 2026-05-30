@@ -1,13 +1,6 @@
 #include "generated/structure/core.hpp"
 
-#if __has_include(<spdlog/spdlog.h>)
-    #include <spdlog/spdlog.h>
-#else
-namespace spdlog {
-template<class... Args>
-void error(const char *, Args &&...) noexcept {}
-} // namespace spdlog
-#endif
+#include "logging.hpp"
 
 #include <cstring>
 #include <new>
@@ -31,14 +24,13 @@ VkResult append_shallow_struct(const T * value, Blob & blob, PackedStruct & pack
         // pointer-slot patching below.
         auto destination = blob.grow<T>(1);
         if (destination.set(0, *value) == false) [[unlikely]] {
-            spdlog::error("vkfwd ferry structure pack failed: could not copy shallow struct into blob, size={}, align={}", sizeof(T), alignof(T));
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy shallow struct into blob, size={}, align={}", sizeof(T), alignof(T));
             return VK_ERROR_UNKNOWN;
         }
         packed.offset = destination.offset();
         packed_value  = destination.data();
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry structure pack failed: out of host memory while copying shallow struct, size={}, align={}", sizeof(T),
-                      alignof(T));
+        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying shallow struct, size={}, align={}", sizeof(T), alignof(T));
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     return VK_SUCCESS;
@@ -59,14 +51,14 @@ VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, st
     try {
         auto destination = blob.grow<T>(count);
         if (destination.set(0, count, values) != count) [[unlikely]] {
-            spdlog::error("vkfwd ferry structure pack failed: could not copy plain array into blob, count={}, element_size={}", count, sizeof(T));
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy plain array into blob, count={}, element_size={}", count, sizeof(T));
             return VK_ERROR_UNKNOWN;
         }
         const std::size_t target = destination.offset();
         return patch_pointer(pointer_slot, target - structure_offset);
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry structure pack failed: out of host memory while copying plain array, count={}, element_size={}, align={}", count,
-                      sizeof(T), alignof(T));
+        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying plain array, count={}, element_size={}, align={}", count,
+                        sizeof(T), alignof(T));
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 }
@@ -74,54 +66,53 @@ VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, st
 VkResult pack_string(const char * value, Blob & blob, std::size_t structure_offset, const char *& pointer_slot) {
     if (!value) [[unlikely]] { return patch_pointer(pointer_slot, 0u); }
     try {
-        const std::size_t size = std::strlen(value) + 1;
+        const std::size_t size        = std::strlen(value) + 1;
         auto              destination = blob.grow<char>(size);
         if (destination.set(0, size, value) != size) [[unlikely]] {
-            spdlog::error("vkfwd ferry structure pack failed: could not copy string into blob, structure_offset={}", structure_offset);
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string into blob, structure_offset={}", structure_offset);
             return VK_ERROR_UNKNOWN;
         }
         const std::size_t target = destination.offset();
         return patch_pointer(pointer_slot, target - structure_offset);
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry structure pack failed: out of host memory while copying string, structure_offset={}", structure_offset);
+        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying string, structure_offset={}", structure_offset);
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 }
 
-VkResult pack_string_array(const char * const * values, std::uint32_t count, Blob & blob, std::size_t structure_offset,
-                           const char * const *& pointer_slot) {
+VkResult pack_string_array(const char * const * values, std::uint32_t count, Blob & blob, std::size_t structure_offset, const char * const *& pointer_slot) {
     if (count == 0 || !values) [[unlikely]] { return patch_pointer(pointer_slot, 0u); }
 
     try {
-        auto              pointer_slots = blob.grow<std::uintptr_t>(count);
-        const std::size_t array_offset  = pointer_slots.offset();
-        const std::uintptr_t zero       = 0;
+        auto                 pointer_slots = blob.grow<std::uintptr_t>(count);
+        const std::size_t    array_offset  = pointer_slots.offset();
+        const std::uintptr_t zero          = 0;
         for (std::uint32_t i = 0; i < count; ++i) {
             if (!pointer_slots.set(i, zero)) [[unlikely]] {
-                spdlog::error("vkfwd ferry structure pack failed: could not initialize string-array slot, array_offset={}, index={}", array_offset, i);
+                VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not initialize string-array slot, array_offset={}, index={}", array_offset, i);
                 return VK_ERROR_UNKNOWN;
             }
         }
         for (std::uint32_t i = 0; i < count; ++i) {
             if (!values[i]) [[unlikely]] { continue; }
-            const std::size_t    string_size   = std::strlen(values[i]) + 1;
-            auto                 string_view   = blob.grow<char>(string_size);
+            const std::size_t string_size = std::strlen(values[i]) + 1;
+            auto              string_view = blob.grow<char>(string_size);
             if (string_view.set(0, string_size, values[i]) != string_size) [[unlikely]] {
-                spdlog::error("vkfwd ferry structure pack failed: could not copy string-array element, array_offset={}, index={}", array_offset, i);
+                VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string-array element, array_offset={}, index={}", array_offset, i);
                 return VK_ERROR_UNKNOWN;
             }
             const std::size_t    string_offset = string_view.offset();
             const std::uintptr_t encoded       = static_cast<std::uintptr_t>(string_offset - structure_offset);
             if (!pointer_slots.set(i, encoded)) [[unlikely]] {
-                spdlog::error("vkfwd ferry structure pack failed: could not patch string-array element, array_offset={}, index={}, string_offset={}",
-                              array_offset, i, string_offset);
+                VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not patch string-array element, array_offset={}, index={}, string_offset={}",
+                                array_offset, i, string_offset);
                 return VK_ERROR_UNKNOWN;
             }
         }
         return patch_pointer(pointer_slot, array_offset - structure_offset);
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry structure pack failed: out of host memory while copying string array, count={}, structure_offset={}", count,
-                      structure_offset);
+        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying string array, count={}, structure_offset={}", count,
+                        structure_offset);
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 }
@@ -145,21 +136,21 @@ VkResult pack_plain_typed_pnext(const T * value, Blob & blob, PackedStruct & pac
 template<class T>
 VkResult unpack_typed_view(const Blob & blob, std::size_t offset, VkStructureType expected_stype, const T ** value) {
     if (!value) [[unlikely]] {
-        spdlog::error("vkfwd ferry structure unpack failed: output pointer for typed view is null, offset={}, expected_sType={}", offset,
-                      static_cast<int>(expected_stype));
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: output pointer for typed view is null, offset={}, expected_sType={}", offset,
+                        static_cast<int>(expected_stype));
         return VK_ERROR_UNKNOWN;
     }
-    *value             = nullptr;
-    const auto typed_view = blob.data_at(offset, sizeof(T));
-    const auto * typed    = reinterpret_cast<const T *>(typed_view.data());
+    *value                  = nullptr;
+    const auto   typed_view = blob.data_at(offset, sizeof(T));
+    const auto * typed      = reinterpret_cast<const T *>(typed_view.data());
     if (!typed) [[unlikely]] {
-        spdlog::error("vkfwd ferry structure unpack failed: blob does not contain typed view, offset={}, size={}, expected_sType={}", offset,
-                      sizeof(T), static_cast<int>(expected_stype));
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: blob does not contain typed view, offset={}, size={}, expected_sType={}", offset, sizeof(T),
+                        static_cast<int>(expected_stype));
         return VK_ERROR_UNKNOWN;
     }
     if (typed->sType != expected_stype) [[unlikely]] {
-        spdlog::error("vkfwd ferry structure unpack failed: sType mismatch, offset={}, expected_sType={}, actual_sType={}", offset,
-                      static_cast<int>(expected_stype), static_cast<int>(typed->sType));
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: sType mismatch, offset={}, expected_sType={}, actual_sType={}", offset,
+                        static_cast<int>(expected_stype), static_cast<int>(typed->sType));
         return VK_ERROR_UNKNOWN;
     }
     // This first generated unpack entry point validates the typed record and
@@ -201,7 +192,7 @@ const std::unordered_map<VkStructureType, GenericPackFn> & generic_packers() {
 }
 
 VkResult validate_pnext_chain(const void * value) {
-    constexpr std::size_t kMaxPnextDepth = 1000;
+    constexpr std::size_t            kMaxPnextDepth = 1000;
     std::unordered_set<const void *> seen;
 
     try {
@@ -212,24 +203,23 @@ VkResult validate_pnext_chain(const void * value) {
             // partial chain whose ordering, termination, or known-type contract
             // was already suspect at the source boundary.
             if (depth >= kMaxPnextDepth) [[unlikely]] {
-                spdlog::error("vkfwd ferry pNext validation failed: chain depth exceeded limit, limit={}", kMaxPnextDepth);
+                VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: chain depth exceeded limit, limit={}", kMaxPnextDepth);
                 return VK_ERROR_UNKNOWN;
             }
             if (!seen.insert(value).second) [[unlikely]] {
-                spdlog::error("vkfwd ferry pNext validation failed: loop detected at depth={}, node={}", depth, value);
+                VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: loop detected at depth={}, node={}", depth, value);
                 return VK_ERROR_UNKNOWN;
             }
 
             const auto * base = reinterpret_cast<const VkBaseInStructure *>(value);
             if (!packers.contains(base->sType)) [[unlikely]] {
-                spdlog::error("vkfwd ferry pNext validation failed: unsupported sType={}, depth={}, node={}", static_cast<int>(base->sType), depth,
-                              value);
+                VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: unsupported sType={}, depth={}, node={}", static_cast<int>(base->sType), depth, value);
                 return VK_ERROR_UNKNOWN;
             }
             value = base->pNext;
         }
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry pNext validation failed: out of host memory while tracking visited nodes");
+        VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: out of host memory while tracking visited nodes");
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
@@ -314,7 +304,7 @@ VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, Blob & blob, 
 
 VkResult pack_VkDeviceGroupDeviceCreateInfo(const VkDeviceGroupDeviceCreateInfo * value, Blob & blob, PackedStruct & packed) {
     VkDeviceGroupDeviceCreateInfo * packed_value = nullptr;
-    VkResult                         status       = pack_plain_typed_pnext(value, blob, packed, packed_value);
+    VkResult                        status       = pack_plain_typed_pnext(value, blob, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
     return pack_plain_array(value->pPhysicalDevices, value->physicalDeviceCount, blob, packed.offset, packed_value->pPhysicalDevices);
 }
@@ -382,19 +372,19 @@ VkResult pack_struct_by_type(const void * value, Blob & blob, PackedStruct & pac
     if (!value) [[unlikely]] { return VK_SUCCESS; }
 
     try {
-        const auto * base = reinterpret_cast<const VkBaseInStructure *>(value);
+        const auto * base    = reinterpret_cast<const VkBaseInStructure *>(value);
         const auto & packers = generic_packers();
         const auto   found   = packers.find(base->sType);
         if (found == packers.end()) [[unlikely]] {
             // Unknown typed structs are rejected instead of copied opaquely because a
             // shallow unknown struct may contain source pointers, callback functions,
             // or handle references that would be meaningless on the receiver.
-            spdlog::error("vkfwd ferry structure pack failed: no generic packer for sType={}", static_cast<int>(base->sType));
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: no generic packer for sType={}", static_cast<int>(base->sType));
             return VK_ERROR_UNKNOWN;
         }
         return found->second(value, blob, packed);
     } catch (const std::bad_alloc &) {
-        spdlog::error("vkfwd ferry structure pack failed: out of host memory while looking up generic packer");
+        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while looking up generic packer");
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 }
@@ -449,13 +439,13 @@ VkResult unpack_VkDeviceQueueGlobalPriorityCreateInfo(const Blob & blob, std::si
 
 VkResult unpack_pnext_chain(const Blob & blob, std::size_t structure_offset, const void ** value) {
     if (!value) [[unlikely]] {
-        spdlog::error("vkfwd ferry pNext unpack failed: output pointer is null, structure_offset={}", structure_offset);
+        VKFWD_LOG_ERROR("vkfwd ferry pNext unpack failed: output pointer is null, structure_offset={}", structure_offset);
         return VK_ERROR_UNKNOWN;
     }
     const auto node_header = blob.data_at(structure_offset, sizeof(VkStructureType));
     *value                 = node_header.data();
     if (!*value) [[unlikely]] {
-        spdlog::error("vkfwd ferry pNext unpack failed: blob does not contain pNext node header, structure_offset={}", structure_offset);
+        VKFWD_LOG_ERROR("vkfwd ferry pNext unpack failed: blob does not contain pNext node header, structure_offset={}", structure_offset);
         return VK_ERROR_UNKNOWN;
     }
     return VK_SUCCESS;
