@@ -66,10 +66,26 @@ src/vkfwd/ferry/core/hook/<api>Hook.cpp
 ## Blob Stream
 
 `Blob` is the generated packer's output target. It is a logical contiguous byte
-stream even when it stores bytes in multiple internal chunks. `Blob::next_offset`
-returns the effective offset of the next vacant byte from the beginning of the
-logical stream. Command packers use this to remember the command start and patch
-the final command size after all referenced payload bytes are written.
+stream even when it stores bytes in multiple internal chunks. `Blob::size()`
+returns the current logical end offset and is the only public way to ask where
+the next allocation will start.
+
+The public `Blob` interface should stay deliberately small:
+
+- `grow()` is the only append/allocate operation. It returns a bounded
+  `SafeArrayView` over exactly the new bytes. Generated packers copy through
+  that view instead of calling convenience append helpers.
+- `data_at()` is the bounded read operation. It returns
+  `SafeArrayView<const std::uint8_t>`, never a raw pointer, so unpack code keeps
+  the offset and size contract visible until the explicit reinterpret boundary.
+- `reset()`, `size()`, and `chunk_size()` are simple state queries/control.
+- `Blob` must not expose random mutable lookup or overwrite APIs. If generated
+  packing needs to patch a field, it must keep the typed pointer or typed view
+  returned by `grow()` and write through that explicit slot.
+
+This keeps `Blob` an arena plus bounded read view, not a generic mutable byte
+buffer. The packer should know which Vulkan field it is patching at the patch
+site.
 
 Pointers are never serialized as addresses:
 
@@ -94,22 +110,30 @@ Each command chunk starts with a fixed header:
 stable command id
 total command chunk size
 per-command payload revision
+padding required to align the payload
 command argument shallow copy
 referenced argument data
 ```
 
-The stable command id identifies the Vulkan command. The size covers the entire
-chunk from the command id through the last referenced byte. The per-command
+The header and shallow argument payload are allocated as one contiguous range.
+The payload starts at a generated alignment-correct offset inside that range, so
+unpack can safely reinterpret the payload without depending on the history of
+`Blob::grow()` calls. Referenced argument data follows in later `grow()` ranges.
+
+The stable command id identifies the Vulkan command. The size covers the fixed
+command range: header, padding, and shallow argument payload. The per-command
 payload revision selects the generated payload layout for that command under the
-already-negotiated schema version. Size exists at the command layer so a
-receiver can skip unknown/unsupported commands or hand independent command
-chunks to a pool of unpack workers when ordering policy allows it.
+already-negotiated schema version. `CommandChunk` stores the command offset and
+fixed command size; referenced data is reached through patched offsets in the
+payload.
 
 Command argument shallow copies keep scalar values directly. Pointer argument
-slots are patched to command-relative offsets. If a command argument points to a
-typed Vulkan struct, the referenced data is a structure chunk. If it points to a
-plain array, string array, allocation callback table, or non-typed struct, the
-referenced data is stored as a sized blob according to generated metadata.
+slots are patched through explicitly retained typed pointers such as
+`packed_parameters->pCreateInfo`; they are not patched by asking `Blob` to
+overwrite an arbitrary byte offset. If a command argument points to a typed
+Vulkan struct, the referenced data is a structure chunk. If it points to a plain
+array, string array, allocation callback table, or non-typed struct, the
+referenced data is stored according to generated metadata.
 
 ## Structure Chunk
 
@@ -140,6 +164,23 @@ Unsupported `sType` values must be rejected explicitly. Opaque pNext copying is
 not replay-stable unless a command-specific policy proves that the bytes contain
 no process-local pointers and that replay can safely ignore the struct meaning.
 
+Before packing a `pNext` chain, generated code must validate the chain without
+dumping it. Validation rejects loops, unreasonable depth (the current generated
+limit is 1000 nodes), and unknown `sType` values. A failed `pNext` validation
+fails the whole command pack so replay never receives a partial extension chain.
+
+Structure packers must shallow-copy the typed struct into `Blob` with `grow()`
+and retain the returned typed pointer, for example `packed_value`. Every pointer
+member patch must write through the named Vulkan field on that typed pointer:
+`packed_value->pNext`, `packed_value->pApplicationInfo`,
+`packed_value->ppEnabledExtensionNames`, and so on. This rule intentionally
+keeps pointer ownership and patch intent local to the generated code that knows
+the Vulkan field semantics.
+
+String-array payloads follow the same rule at the array level: allocate the
+array of encoded pointer offsets as `SafeArrayView<std::uintptr_t>`, then patch
+individual elements through that typed view after each string is copied.
+
 ## Pack/Unpack Shape
 
 Generated command pack code should stay thin. It owns the command chunk header,
@@ -152,15 +193,16 @@ structure-member walking, `pNext` traversal, or structure-relative offset rules.
 Generated pack code should be shaped like direct hand-written code:
 
 1. Optionally call `before_pack` hooks with `if constexpr`.
-2. Append a placeholder command header to `Blob`.
-3. Append a shallow command argument record.
+2. Allocate one fixed command range with `Blob::grow()` for the command header,
+   alignment padding, and shallow command argument record.
+3. Fill the header and shallow command argument record through the returned
+   view, retaining a typed pointer to the packed argument payload when later
+   pointer patching is required.
 4. Pack simple pointed-to command data into `Blob`, patching command-relative
-   offsets.
+   offsets through explicit typed payload fields.
 5. Delegate typed structures and typed structure arrays to generated structure
    helpers, which own recursive structure packing and `pNext` traversal.
-6. Patch the command header with stable command id, total command chunk size,
-   and per-command payload revision.
-7. Optionally call `after_pack` hooks with `if constexpr`.
+6. Optionally call `after_pack` hooks with `if constexpr`.
 
 Generated unpack mirrors this:
 
@@ -168,7 +210,8 @@ Generated unpack mirrors this:
    header.
 2. Validate the command id against the expected generated command.
 3. Validate the command revision against supported generated layouts.
-4. Read the shallow command argument record.
+4. Read the shallow command argument record through `Blob::data_at()` and unwrap
+   the returned safe view only at the explicit reinterpret boundary.
 5. Resolve command-relative pointer offsets into receiver-owned views or copies.
 6. Resolve structure-relative pointer offsets within each unpacked structure.
 7. Reject unsupported `sType`, invalid offsets, and inconsistent count/pointer
@@ -177,6 +220,35 @@ Generated unpack mirrors this:
 
 Unpack must not mutate receiver Vulkan state before payload validation and
 handle mapping succeed.
+
+## Generated Code Rules
+
+Generated pack/unpack functions take `Blob&` as their first parameter. Packet
+metadata is passed separately as a `CommandChunk&`; packets do not own or embed
+the blob, command id, or copied parameters. Pack functions take the raw
+parameter/response struct as the second argument and the output chunk as the
+third argument. Unpack functions take the blob, the chunk, and the output
+parameter/response struct.
+
+Do not use nullable pointers for required generated outputs. Use references
+when the caller must provide storage. Reserve pointer parameters for Vulkan API
+data whose nullability is part of the Vulkan contract.
+
+Error checks should mark the expected direction with `[[likely]]` or
+`[[unlikely]]` in hot generated paths. The innermost failing function should log
+the detailed root-cause message. Callers that merely propagate a `VkResult`
+returned by another `vkfwd` helper should not log the same failure again.
+
+Generated code must prefer direct typed operations over generic byte mutation:
+
+- Append data with `Blob::grow()` and copy through the returned
+  `SafeArrayView`.
+- Read with `Blob::data_at()` and unwrap the const safe view only where the code
+  validates and reinterprets the expected type.
+- Patch copied pointer fields through explicit typed slots retained from
+  `grow()`, never through a `Blob` overwrite by offset.
+- Keep switch-based dispatch for generated `pNext` fast paths; use generic
+  `sType` lookup only as the fallback for known types not covered by the switch.
 
 ## Compatibility
 

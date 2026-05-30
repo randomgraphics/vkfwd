@@ -543,42 +543,64 @@ def command_source_helpers(command: dict[str, object]) -> str:
     return f"""
 template<class T>
 VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk) {{
-  const std::size_t command_offset = blob.next_offset();
-  chunk = CommandChunk{{.command_offset = command_offset, .command_size = 0}};
+  constexpr std::size_t kPayloadAlignment = alignof(T);
+  constexpr std::size_t kPayloadOffset =
+      (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+  constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
+  constexpr std::size_t kChunkAlignment =
+      alignof(CommandChunkHeader) > kPayloadAlignment ? alignof(CommandChunkHeader) : kPayloadAlignment;
+
+  // The chunk is one contiguous serialized range. Payload starts at an aligned
+  // offset inside that range so receivers can safely reinterpret the packed
+  // command bytes without depending on host-side append history.
+  if constexpr (kCommandSize > std::numeric_limits<std::uint32_t>::max()) {{
+    spdlog::error("vkfwd ferry command pack failed: command chunk is too large, command_id={{}}, command_size={{}}",
+                  static_cast<std::uint32_t>(command_id), kCommandSize);
+    return VK_ERROR_UNKNOWN;
+  }}
+
+  chunk = CommandChunk{{.command_offset = 0, .command_size = 0}};
 
   CommandChunkHeader header{{}};
   try {{
-    blob.append_value(header, alignof(CommandChunkHeader));
-    blob.append_value(payload, alignof(T));
+    auto destination = blob.grow<std::uint8_t>(kCommandSize, kChunkAlignment);
+    header.command_id = static_cast<std::uint32_t>(command_id);
+    header.size = static_cast<std::uint32_t>(kCommandSize);
+    header.command_revision = revision;
+
+    if (destination.set(0, sizeof(header), reinterpret_cast<const std::uint8_t*>(&header)) != sizeof(header) ||
+        destination.set(kPayloadOffset, sizeof(payload), reinterpret_cast<const std::uint8_t*>(&payload)) != sizeof(payload)) [[unlikely]] {{
+      spdlog::error("vkfwd ferry command pack failed: could not copy command chunk, command_id={{}}, command_size={{}}",
+                    static_cast<std::uint32_t>(command_id), kCommandSize);
+      return VK_ERROR_UNKNOWN;
+    }}
+    chunk.command_offset = destination.offset();
+    chunk.command_size = header.size;
   }} catch (const std::bad_alloc&) {{
     spdlog::error("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={{}}, payload_size={{}}",
                   static_cast<std::uint32_t>(command_id), sizeof(T));
     return VK_ERROR_OUT_OF_HOST_MEMORY;
   }}
-
-  header.command_id = static_cast<std::uint32_t>(command_id);
-  header.size = static_cast<std::uint32_t>(blob.next_offset() - command_offset);
-  header.command_revision = revision;
-  if (!blob.overwrite_bytes(command_offset, &header, sizeof(header))) [[unlikely]] {{
-    spdlog::error("vkfwd ferry command pack failed: could not write command chunk header, command_id={{}}, command_offset={{}}, command_size={{}}",
-                  static_cast<std::uint32_t>(command_id), command_offset, header.size);
-    return VK_ERROR_UNKNOWN;
-  }}
-  chunk.command_size = header.size;
   return VK_SUCCESS;
 }}
 
 template<class T>
 VkResult unpack_command_chunk(const Blob& blob, const CommandChunk& chunk, CommandId command_id, std::uint32_t revision, const T** payload) {{
-  const auto* header = reinterpret_cast<const CommandChunkHeader*>(blob.data_at(chunk.command_offset, sizeof(CommandChunkHeader)));
-  const auto* packed_payload = reinterpret_cast<const T*>(blob.data_at(chunk.command_offset + sizeof(CommandChunkHeader), sizeof(T)));
+  constexpr std::size_t kPayloadAlignment = alignof(T);
+  constexpr std::size_t kPayloadOffset =
+      (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+  constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
+  const auto header_view = blob.data_at(chunk.command_offset, sizeof(CommandChunkHeader));
+  const auto payload_view = blob.data_at(chunk.command_offset + kPayloadOffset, sizeof(T));
+  const auto* header = reinterpret_cast<const CommandChunkHeader*>(header_view.data());
+  const auto* packed_payload = reinterpret_cast<const T*>(payload_view.data());
   if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
-      header->size != chunk.command_size) [[unlikely]] {{
+      header->size != chunk.command_size || chunk.command_size != kCommandSize) [[unlikely]] {{
     spdlog::error(
         "vkfwd ferry command unpack failed: invalid command chunk, offset={{}}, size={{}}, has_header={{}}, has_payload={{}}, command_id={{}}, "
-        "expected_command_id={{}}, revision={{}}, expected_revision={{}}, header_size={{}}",
+        "expected_command_id={{}}, revision={{}}, expected_revision={{}}, header_size={{}}, expected_size={{}}",
         chunk.command_offset, chunk.command_size, header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,
-        static_cast<std::uint32_t>(command_id), header ? header->command_revision : 0, revision, header ? header->size : 0);
+        static_cast<std::uint32_t>(command_id), header ? header->command_revision : 0, revision, header ? header->size : 0, kCommandSize);
     return VK_ERROR_UNKNOWN;
   }}
 
@@ -658,6 +680,8 @@ void error(const char*, Args&&...) noexcept {{}}
 }} // namespace spdlog
 #endif
 
+#include <cstdint>
+#include <limits>
 #include <new>
 
 namespace vkfwd::generated::commands::{namespace} {{

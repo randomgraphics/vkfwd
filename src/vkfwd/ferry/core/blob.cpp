@@ -45,41 +45,16 @@ SafeArrayView<std::uint8_t> Blob::grow(std::size_t size, std::size_t alignment) 
     return SafeArrayView<std::uint8_t>(size, reinterpret_cast<std::uint8_t *>(aligned), logical_offset);
 }
 
-std::size_t Blob::append_bytes(const void * data, std::size_t size, std::size_t alignment) {
-    if (size == 0) { return next_offset(); }
-    if (!data) { throw std::bad_alloc(); }
-    auto destination = grow(size, alignment);
-    std::memcpy(destination.data(), data, size);
-    return destination.offset();
-}
-
-bool Blob::overwrite_bytes(std::size_t offset, const void * data, std::size_t size) {
-    if (size == 0) { return true; }
-    if (!data) { return false; }
-    auto * destination = mutable_data_at(offset, size);
-    if (!destination) { return false; }
-    std::memcpy(destination, data, size);
-    return true;
-}
-
-std::uint8_t * Blob::mutable_data_at(std::size_t offset, std::size_t size) {
-    if (size == 0) { return nullptr; }
-    for (auto & chunk : chunks_) {
-        if (offset < chunk.logical_begin) { continue; }
-        const std::size_t local = offset - chunk.logical_begin;
-        if (local <= chunk.used && size <= chunk.used - local) { return reinterpret_cast<std::uint8_t *>(chunk.data.get() + local); }
-    }
-    return nullptr;
-}
-
-const std::uint8_t * Blob::data_at(std::size_t offset, std::size_t size) const {
-    if (size == 0) { return nullptr; }
+SafeArrayView<const std::uint8_t> Blob::data_at(std::size_t offset, std::size_t size) const {
+    if (size == 0) { return {}; }
     for (const auto & chunk : chunks_) {
         if (offset < chunk.logical_begin) { continue; }
         const std::size_t local = offset - chunk.logical_begin;
-        if (local <= chunk.used && size <= chunk.used - local) { return reinterpret_cast<const std::uint8_t *>(chunk.data.get() + local); }
+        if (local <= chunk.used && size <= chunk.used - local) {
+            return SafeArrayView<const std::uint8_t>(size, reinterpret_cast<const std::uint8_t *>(chunk.data.get() + local), offset);
+        }
     }
-    return nullptr;
+    return {};
 }
 
 std::size_t Blob::normalize_alignment(std::size_t alignment) {
