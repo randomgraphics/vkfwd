@@ -1,0 +1,12 @@
+# PowerShell aliases cannot include arguments, so path-changing shortcuts use
+# the "jump" directive and are materialized as functions by setup.ps1.
+alias b build.py
+alias g git
+jump j.root .
+jump j.build build
+jump j.dev dev
+jump j.bin dev\bin
+jump j.env dev\env
+jump j.src src
+jump j.vkfwd src\vkfwd
+jump j.test src\vkfwd\ferry\test
