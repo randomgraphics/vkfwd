@@ -24,6 +24,47 @@ The current `Receiver::receive()` and `ReplayExecutor` are placeholders for this
 boundary. A real receiver run loop should decode transport frames into
 command-specific records, then submit those records to a replay scheduler.
 
+## Endpoint and Generated Adapter Shape
+
+`endpoint` is the better name for the receiver-side request/response boundary.
+An endpoint receives decoded command intent, performs test or replay behavior,
+and produces the response data that will be packed back to the forwarder.
+`executor` should be reserved for a lower-level replay implementation that
+actually invokes destination Vulkan commands after decoding, ordering, and handle
+mapping have already been handled.
+
+The receiver still needs generated per-API adapter code because unpacking
+parameters, constructing typed responses, and packing responses are API-specific.
+That generated adapter should reuse `core/generated/command/<api>` pack/unpack
+functions; it must not duplicate serialization logic.
+
+Avoid replacing an 800-method endpoint interface with duplicated 800-case
+switches in every endpoint implementation. A better shape is:
+
+- One generated command-id dispatch table for the supported API surface.
+- One generated typed adapter per API. The adapter unpacks request parameters,
+  calls the endpoint's typed operation, and packs any response.
+- Endpoint implementations register or expose handler tables for only the APIs
+  they support.
+- Test endpoints can install a small table for a narrow command subset.
+- A real Vulkan replay endpoint may eventually have many API-specific handlers,
+  but it should not duplicate blob dispatch, unpack, or response packing logic.
+
+For the current four-command slice, a generated receiver adapter might have
+handlers for `vkCreateInstance`, `vkDestroyInstance`, `vkCreateDevice`, and
+`vkDestroyDevice`. A test endpoint can provide four typed operations that compare
+parameters and synthesize responses. A real replay endpoint can provide the same
+four typed operations and call destination Vulkan after resolving source handles
+and rehydrating any encoded pointer fields.
+
+This design keeps the generated sets purposeful:
+
+- Core generated code defines wire types and pack/unpack functions.
+- Forwarder generated code implements source-side Vulkan ABI wrappers.
+- Receiver generated code adapts command blobs to endpoint operations.
+- Endpoint/replay implementations own behavior, handle maps, synchronization,
+  and response values.
+
 ## Vulkan Ordering Constraints
 
 Multi-channel transport is necessary for source-side multithreaded Vulkan, but
