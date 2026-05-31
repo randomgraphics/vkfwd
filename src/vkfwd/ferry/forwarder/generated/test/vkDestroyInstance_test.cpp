@@ -41,7 +41,7 @@ Blob handle_flush(Blob & request_blob) {
     CHECK(actual.pAllocator == &expected.allocator);
     check_allocator_callbacks(*actual.pAllocator, expected.allocator);
 
-    // Deferrable generated commands acknowledge successful endpoint processing
+    // Deferrable generated commands acknowledge successful channel processing
     // with an empty response blob; there is no response packet to unpack.
     return Blob {};
 }
@@ -50,12 +50,12 @@ Blob handle_flush(Blob & request_blob) {
 
 TEST_CASE("vkDestroyInstance generated forwarder packs parameters when flushed") {
     auto & expected = scenario();
-    install_pack_unpack_endpoint(handle_flush);
+    install_pack_unpack_channel(handle_flush);
 
     vkfwd::forwarder::generated::vkDestroyInstance(expected.instance, &expected.allocator);
     Blob response_blob = Forwarder::instance().flush();
 
-    CHECK(endpoint_state().processed);
+    CHECK(channel_state().processed);
     CHECK(response_blob.size() == 0);
 }
 

@@ -1,5 +1,5 @@
 # vkfwd_core holds the shared command model, generated pack/unpack code,
-# endpoint contracts, protocol metadata, and small debug implementations. The
+# transport contracts, protocol metadata, and small debug implementations. The
 # Vulkan layer and receiver link this target so generated payload behavior stays
 # identical on both sides of the forwarding boundary.
 add_library(vkfwd_core STATIC
@@ -11,7 +11,7 @@ add_library(vkfwd_core STATIC
   core/generated/structure/core.cpp
   core/hook/vkCreateDeviceHook.cpp
   core/logging.cpp
-  core/null_api_endpoint.cpp)
+  core/null_transport_channel.cpp)
 
 set_target_properties(vkfwd_core PROPERTIES
   # Core is linked into the Vulkan layer shared object, so it must be

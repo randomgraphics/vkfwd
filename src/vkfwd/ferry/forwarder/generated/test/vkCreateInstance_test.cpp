@@ -110,13 +110,13 @@ Blob handle_flush(Blob & request_blob) {
 
 TEST_CASE("vkCreateInstance generated forwarder round trips packed parameters and response") {
     auto & expected = scenario();
-    install_pack_unpack_endpoint(handle_flush);
+    install_pack_unpack_channel(handle_flush);
 
     VkInstance instance      = VK_NULL_HANDLE;
     expected.output_instance = &instance;
     const VkResult result    = vkfwd::forwarder::generated::vkCreateInstance(&expected.create_info, &expected.allocator, &instance);
 
-    CHECK(endpoint_state().processed);
+    CHECK(channel_state().processed);
     CHECK(result == expected.response_result);
     CHECK(instance == expected.response_instance);
 }

@@ -45,7 +45,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 
     // Synchronous forwarding flushes this thread's pending request blob and
     // returns a fresh response blob. Generated code only decodes that blob here;
-    // endpoint implementations own transport, replay, and handle mapping policy.
+    // channel implementations own transport, replay, and handle mapping policy.
 
     return response.return_value;
 }

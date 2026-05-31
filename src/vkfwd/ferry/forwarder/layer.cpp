@@ -48,7 +48,7 @@ VKFWD_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkIn
     if (auto entrypoint = lookup_instance_entrypoint(name)) { return entrypoint; }
 
     // Unknown commands remain unavailable until vkfwd owns their generated pack,
-    // endpoint response, and output-parameter contract.
+    // channel response, and output-parameter contract.
     (void) instance;
     return nullptr;
 }

@@ -29,9 +29,9 @@ loader, dispatch, handle-mapping, and replay-ordering assumptions.
   application. It owns Vulkan loader entry points, dispatch-table chaining,
   source-side capture, and source-visible API completion.
 - **Receiver executable**: a process on the destination machine or destination
-  runtime. It accepts command payloads from an endpoint transport, unpacks them
+  runtime. It accepts command payloads from a transport channel, unpacks them
   into receiver-owned data, replays them against the local Vulkan
-  implementation, and sends required results back through the endpoint path.
+  implementation, and sends required results back through the channel path.
 
 Optional tools should be modeled as variants of those roles rather than as new
 core abstractions:
@@ -39,7 +39,7 @@ core abstractions:
 - **Recorder layer**: an interception-layer variant that calls through to the
   local driver while also writing replayable command payloads to a file.
 - **Replay executable**: a tool that reads a saved command stream and either
-  replays it locally or forwards it to a receiver endpoint.
+  replays it locally or forwards it to a receiver transport channel.
 
 ## Main Components
 
@@ -62,33 +62,33 @@ payloads. Pointer-bearing parameters, counted arrays, strings, `pNext` chains,
 memory ranges, output values, and handle identities need explicit ownership and
 compatibility rules.
 
-### API Endpoint
+### Transport Channel
 
-The API endpoint is the end of an intercepted Vulkan call from the
-application's point of view. Submitting a packed command to a complete endpoint
+The transport channel is the end of an intercepted Vulkan call from the
+application's point of view. Submitting a packed command to a complete channel
 should behave like calling the real driver for the subset of Vulkan that
-endpoint supports: it must return required values, populate output parameters,
+channel supports: it must return required values, populate output parameters,
 preserve ordering, and maintain source-to-receiver handle identity.
 
-Endpoint implementations can serve different purposes:
+Channel implementations can serve different purposes:
 
 - Local debug execution that unpacks and immediately calls the local driver.
 - Remote execution that sends payloads to a receiver and waits for required
   responses.
 - Test doubles that validate pack/unpack behavior deterministically.
-- Dumping or tracking endpoints that log calls, provided they are wrapped by an
-  endpoint that still completes the Vulkan-visible API contract when required.
+- Dumping or tracking channels that log calls, provided they are wrapped by a
+  channel that still completes the Vulkan-visible API contract when required.
 
 Transport, file writing, and logging are implementation details below this
-boundary. A pure queue or file writer is not a complete endpoint unless it also
+boundary. A pure queue or file writer is not a complete channel unless it also
 resolves the caller-visible API result.
 
 ### Transport
 
-The transport layer moves framed bytes and responses between two endpoints. It
-may be in-process, IPC, network, or file-backed depending on the endpoint/tool.
+The transport layer moves framed bytes and responses between two channels. It
+may be in-process, IPC, network, or file-backed depending on the channel/tool.
 It should not know Vulkan command semantics beyond framing, ordering, session
-metadata, and failure propagation needed by the endpoint contract.
+metadata, and failure propagation needed by the channel contract.
 
 ### Common Utilities And State
 
@@ -106,7 +106,7 @@ The current source shape is:
 src/vkfwd/
   ferry/
     core/
-      api_endpoint.*
+      transport_channel.*
       call_record.*
       protocol.*
       ...
@@ -148,12 +148,12 @@ that the extra directory earns its keep.
 
 The build expresses these runtime boundaries:
 
-- `vkfwd_core`: static library containing generated pack/unpack code, endpoint
+- `vkfwd_core`: static library containing generated pack/unpack code, transport
   interfaces, hooks, schema handshake code, and utilities for
   `ferry`.
 - `vkfwd_forwarder`: shared library loaded by the Vulkan loader; links
   `vkfwd_core` and owns `ferry` forwarder-specific generated interception code.
-- `vkfwd_receiver`: receiver library that hosts the receiver endpoint and replay
+- `vkfwd_receiver`: receiver library that hosts receiver channels and replay
   scaffolding; links `vkfwd_core`. It can grow an executable entry point when
   process/runtime policy exists.
 - `vkfwd_recorder`: optional shared library variant; links `vkfwd_core`.
@@ -171,7 +171,7 @@ handling, but it should not accidentally become a hidden global runtime.
    instance/device slice.
 2. Add receiver executable entry points only after receiver process/runtime
    policy is defined.
-3. Add recorder and replay-tool folders when their endpoint behavior is defined
+3. Add recorder and replay-tool folders when their channel behavior is defined
    enough that they cannot be confused with trace-only placeholders.
 
 During that growth, comments should keep calling out placeholder behavior so
