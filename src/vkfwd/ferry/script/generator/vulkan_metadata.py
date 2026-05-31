@@ -991,14 +991,14 @@ def forwarder_command_source_content(
 {output_assignments}
   // Synchronous forwarding flushes this thread's pending request blob and
   // returns a fresh response blob. Generated code only decodes that blob here;
-  // endpoint implementations own transport, replay, and handle mapping policy.
+  // channel implementations own transport, replay, and handle mapping policy.
 """
     else:
         response_flow = f"""
   // Deferrable commands have no return value or output parameters, so the
   // entry point only appends to the thread-local request blob. The next
   // non-deferrable command is responsible for flushing this thread's pending
-  // command sequence through the endpoint.
+  // command sequence through the channel.
 """
     return f"""#include "generated/dispatch_table.hpp"
 
@@ -1069,10 +1069,10 @@ def forwarder_test_support_content(metadata: dict[str, object]) -> str:
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
 // Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
 
-#include "api_endpoint.hpp"
 #include "blob.hpp"
 #include "forwarder.hpp"
 #include "protocol.hpp"
+#include "transport_channel.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1086,38 +1086,38 @@ namespace vkfwd::forwarder::generated::test {{
 
 using FlushHandler = Blob (*)(Blob & request_blob);
 
-struct EndpointState {{
+struct ChannelState {{
     FlushHandler handler   = nullptr;
     bool         processed = false;
 }};
 
-inline EndpointState & endpoint_state() {{
-    static EndpointState state;
+inline ChannelState & channel_state() {{
+    static ChannelState state;
     return state;
 }}
 
-class PackUnpackEndpoint final: public ApiEndpoint {{
+class PackUnpackChannel final: public TransportChannel {{
 public:
-    Blob flush(Blob & request_blob) override {{
-        auto & state   = endpoint_state();
+    Blob send(Blob & request_blob) override {{
+        auto & state   = channel_state();
         state.processed = true;
         REQUIRE(state.handler != nullptr);
         return state.handler(request_blob);
     }}
 }};
 
-inline std::unique_ptr<ApiEndpoint> make_pack_unpack_endpoint() {{ return std::make_unique<PackUnpackEndpoint>(); }}
+inline std::unique_ptr<TransportChannel> make_pack_unpack_channel() {{ return std::make_unique<PackUnpackChannel>(); }}
 
-inline void install_pack_unpack_endpoint(FlushHandler handler) {{
-    auto & state    = endpoint_state();
+inline void install_pack_unpack_channel(FlushHandler handler) {{
+    auto & state    = channel_state();
     state.handler   = handler;
     state.processed = false;
-    Forwarder::set_endpoint_creator(make_pack_unpack_endpoint);
+    Forwarder::set_channel_creator(make_pack_unpack_channel);
     Forwarder::instance().request_blob().reset();
 }}
 
 inline CommandChunk first_command_chunk(const Blob & request_blob) {{
-    // Endpoint tests reconstruct the packet metadata from the stream header
+    // Channel tests reconstruct the packet metadata from the stream header
     // because the forwarding boundary only transports blob bytes, not the
     // caller-side CommandChunk wrapper returned by pack_parameters().
     const auto header_view = request_blob.data_at(0, sizeof(CommandChunkHeader));
@@ -1329,13 +1329,13 @@ Blob handle_flush(Blob & request_blob) {{
 
 TEST_CASE("vkCreateInstance generated forwarder round trips packed parameters and response") {{
     auto & expected = scenario();
-    install_pack_unpack_endpoint(handle_flush);
+    install_pack_unpack_channel(handle_flush);
 
     VkInstance instance = VK_NULL_HANDLE;
     expected.output_instance = &instance;
     const VkResult result = vkfwd::forwarder::generated::vkCreateInstance(&expected.create_info, &expected.allocator, &instance);
 
-    CHECK(endpoint_state().processed);
+    CHECK(channel_state().processed);
     CHECK(result == expected.response_result);
     CHECK(instance == expected.response_instance);
 }}
@@ -1481,13 +1481,13 @@ Blob handle_flush(Blob & request_blob) {{
 
 TEST_CASE("vkCreateDevice generated forwarder round trips packed parameters and response") {{
     auto & expected = scenario();
-    install_pack_unpack_endpoint(handle_flush);
+    install_pack_unpack_channel(handle_flush);
 
     VkDevice device = VK_NULL_HANDLE;
     expected.output_device = &device;
     const VkResult result = vkfwd::forwarder::generated::vkCreateDevice(expected.physical_device, &expected.create_info, &expected.allocator, &device);
 
-    CHECK(endpoint_state().processed);
+    CHECK(channel_state().processed);
     CHECK(result == expected.response_result);
     CHECK(device == expected.response_device);
 }}
@@ -1547,7 +1547,7 @@ Blob handle_flush(Blob & request_blob) {{
     CHECK(actual.pAllocator == &expected.allocator);
     check_allocator_callbacks(*actual.pAllocator, expected.allocator);
 
-    // Deferrable generated commands acknowledge successful endpoint processing
+    // Deferrable generated commands acknowledge successful channel processing
     // with an empty response blob; there is no response packet to unpack.
     return Blob {{}};
 }}
@@ -1556,12 +1556,12 @@ Blob handle_flush(Blob & request_blob) {{
 
 TEST_CASE("{command['name']} generated forwarder packs parameters when flushed") {{
     auto & expected = scenario();
-    install_pack_unpack_endpoint(handle_flush);
+    install_pack_unpack_channel(handle_flush);
 
     vkfwd::forwarder::generated::{command['name']}(expected.{dispatch_name}, &expected.allocator);
     Blob response_blob = Forwarder::instance().flush();
 
-    CHECK(endpoint_state().processed);
+    CHECK(channel_state().processed);
     CHECK(response_blob.size() == 0);
 }}
 
@@ -1599,6 +1599,520 @@ def write_forwarder_test_files(
     (test_dir / "internal-test.cmake").write_text(
         f"""# This generated manifest is consumed by dev/test/internal-test/CMakeLists.txt.
 # Keep entries relative so the generated forwarder tests remain self-contained.
+set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
+{manifest_sources})
+""",
+        encoding="utf-8",
+    )
+
+
+def structure_test_support_content(metadata: dict[str, object]) -> str:
+    return f"""#pragma once
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include "blob.hpp"
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <string_view>
+
+namespace vkfwd::generated::structure::test {{
+
+template<class Pointer>
+std::size_t encoded_offset(Pointer pointer) {{
+    return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
+}}
+
+template<class T>
+const T & object_at(const Blob & blob, std::size_t offset) {{
+    const auto view = blob.data_at(offset, sizeof(T));
+    REQUIRE(view.data() != nullptr);
+    return *reinterpret_cast<const T *>(view.data());
+}}
+
+inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {{
+    REQUIRE(encoded_value != nullptr);
+    const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
+    const auto        view          = blob.data_at(string_offset, expected.size() + 1);
+    REQUIRE(view.data() != nullptr);
+    const auto * value = reinterpret_cast<const char *>(view.data());
+    CHECK(std::string_view(value, expected.size()) == expected);
+    CHECK(value[expected.size()] == '\\0');
+}}
+
+inline void check_relative_string_array(const Blob & blob, std::size_t base_offset, const char * const * encoded_values,
+                                        std::initializer_list<std::string_view> expected) {{
+    if (expected.size() == 0) {{
+        CHECK(encoded_values == nullptr);
+        return;
+    }}
+
+    REQUIRE(encoded_values != nullptr);
+    const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
+    const auto        slots_view   = blob.data_at(array_offset, expected.size() * sizeof(std::uintptr_t));
+    REQUIRE(slots_view.data() != nullptr);
+    const auto * slots = reinterpret_cast<const std::uintptr_t *>(slots_view.data());
+
+    std::size_t index = 0;
+    for (std::string_view expected_value : expected) {{
+        REQUIRE(slots[index] != 0);
+        const auto string_view = blob.data_at(base_offset + static_cast<std::size_t>(slots[index]), expected_value.size() + 1);
+        REQUIRE(string_view.data() != nullptr);
+        const auto * actual_value = reinterpret_cast<const char *>(string_view.data());
+        CHECK(std::string_view(actual_value, expected_value.size()) == expected_value);
+        CHECK(actual_value[expected_value.size()] == '\\0');
+        ++index;
+    }}
+}}
+
+template<class T>
+void check_relative_plain_array(const Blob & blob, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {{
+    if (expected.size() == 0) {{
+        CHECK(encoded_values == nullptr);
+        return;
+    }}
+
+    REQUIRE(encoded_values != nullptr);
+    const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
+    const auto        view         = blob.data_at(array_offset, expected.size() * sizeof(T));
+    REQUIRE(view.data() != nullptr);
+    const auto * actual_values = reinterpret_cast<const T *>(view.data());
+
+    std::size_t index = 0;
+    for (const T & expected_value : expected) {{
+        CHECK(actual_values[index] == expected_value);
+        ++index;
+    }}
+}}
+
+template<class Handle>
+Handle test_handle(std::uintptr_t value) {{
+    return reinterpret_cast<Handle>(value);
+}}
+
+}} // namespace vkfwd::generated::structure::test
+"""
+
+
+def application_instance_structure_test_content(metadata: dict[str, object]) -> str:
+    return f"""#include "support.hpp"
+
+#include "generated/structure/core.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <array>
+#include <cstdint>
+
+namespace vkfwd::generated::structure::test {{
+namespace {{
+
+TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied strings") {{
+    Blob blob;
+    PackedStruct packed;
+    VkApplicationInfo value {{
+        .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext              = nullptr,
+        .pApplicationName   = "vkfwd-structure-app",
+        .applicationVersion = 3,
+        .pEngineName        = "vkfwd-structure-engine",
+        .engineVersion      = 5,
+        .apiVersion         = VK_MAKE_API_VERSION(0, 1, 4, 0),
+    }};
+
+    REQUIRE(pack_VkApplicationInfo(&value, blob, packed) == VK_SUCCESS);
+    const VkApplicationInfo * actual = nullptr;
+    REQUIRE(unpack_VkApplicationInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->applicationVersion == value.applicationVersion);
+    CHECK(actual->engineVersion == value.engineVersion);
+    CHECK(actual->apiVersion == value.apiVersion);
+    check_relative_string(blob, packed.offset, actual->pApplicationName, value.pApplicationName);
+    check_relative_string(blob, packed.offset, actual->pEngineName, value.pEngineName);
+}}
+
+TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested application info and name arrays") {{
+    Blob blob;
+    PackedStruct packed;
+    VkApplicationInfo app {{
+        .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext              = nullptr,
+        .pApplicationName   = "vkfwd-instance-app",
+        .applicationVersion = 7,
+        .pEngineName        = "vkfwd-instance-engine",
+        .engineVersion      = 11,
+        .apiVersion         = VK_MAKE_API_VERSION(0, 1, 3, 0),
+    }};
+    std::array<const char *, 2> layers {{"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"}};
+    std::array<const char *, 2> extensions {{"VK_EXT_debug_utils", "VK_KHR_surface"}};
+    VkInstanceCreateInfo value {{
+        .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pNext                   = nullptr,
+        .flags                   = VkInstanceCreateFlags {{0x4}},
+        .pApplicationInfo        = &app,
+        .enabledLayerCount       = static_cast<std::uint32_t>(layers.size()),
+        .ppEnabledLayerNames     = layers.data(),
+        .enabledExtensionCount   = static_cast<std::uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data(),
+    }};
+
+    REQUIRE(pack_VkInstanceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    const VkInstanceCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkInstanceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->flags == value.flags);
+    CHECK(actual->enabledLayerCount == value.enabledLayerCount);
+    CHECK(actual->enabledExtensionCount == value.enabledExtensionCount);
+    check_relative_string_array(blob, packed.offset, actual->ppEnabledLayerNames, {{"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"}});
+    check_relative_string_array(blob, packed.offset, actual->ppEnabledExtensionNames, {{"VK_EXT_debug_utils", "VK_KHR_surface"}});
+
+    REQUIRE(actual->pApplicationInfo != nullptr);
+    const auto app_offset = packed.offset + encoded_offset(actual->pApplicationInfo);
+    const VkApplicationInfo * actual_app = nullptr;
+    REQUIRE(unpack_VkApplicationInfo(blob, app_offset, &actual_app) == VK_SUCCESS);
+    REQUIRE(actual_app != nullptr);
+    CHECK(actual_app->applicationVersion == app.applicationVersion);
+    CHECK(actual_app->engineVersion == app.engineVersion);
+    check_relative_string(blob, app_offset, actual_app->pApplicationName, app.pApplicationName);
+    check_relative_string(blob, app_offset, actual_app->pEngineName, app.pEngineName);
+}}
+
+}} // namespace
+}} // namespace vkfwd::generated::structure::test
+"""
+
+
+def device_structure_test_content(metadata: dict[str, object]) -> str:
+    return f"""#include "support.hpp"
+
+#include "generated/structure/core.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <array>
+#include <cstdint>
+
+namespace vkfwd::generated::structure::test {{
+namespace {{
+
+TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves priority arrays") {{
+    Blob blob;
+    PackedStruct packed;
+    std::array<float, 2> priorities {{0.25f, 0.75f}};
+    VkDeviceQueueCreateInfo value {{
+        .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext            = nullptr,
+        .flags            = VkDeviceQueueCreateFlags {{0x2}},
+        .queueFamilyIndex = 3,
+        .queueCount       = static_cast<std::uint32_t>(priorities.size()),
+        .pQueuePriorities = priorities.data(),
+    }};
+
+    REQUIRE(pack_VkDeviceQueueCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    const VkDeviceQueueCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkDeviceQueueCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->flags == value.flags);
+    CHECK(actual->queueFamilyIndex == value.queueFamilyIndex);
+    CHECK(actual->queueCount == value.queueCount);
+    check_relative_plain_array(blob, packed.offset, actual->pQueuePriorities, {{0.25f, 0.75f}});
+}}
+
+TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested queue info, names, and features") {{
+    Blob blob;
+    PackedStruct packed;
+    std::array<float, 2> priorities {{0.5f, 1.0f}};
+    VkDeviceQueueCreateInfo queue {{
+        .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext            = nullptr,
+        .flags            = VkDeviceQueueCreateFlags {{0x1}},
+        .queueFamilyIndex = 9,
+        .queueCount       = static_cast<std::uint32_t>(priorities.size()),
+        .pQueuePriorities = priorities.data(),
+    }};
+    std::array<const char *, 1> layers {{"VK_LAYER_VKFWD_device"}};
+    std::array<const char *, 2> extensions {{"VK_KHR_swapchain", "VK_EXT_private_data"}};
+    VkPhysicalDeviceFeatures features {{}};
+    features.robustBufferAccess = VK_TRUE;
+    features.samplerAnisotropy  = VK_TRUE;
+    VkDeviceCreateInfo value {{
+        .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext                   = nullptr,
+        .flags                   = VkDeviceCreateFlags {{0x8}},
+        .queueCreateInfoCount    = 1,
+        .pQueueCreateInfos       = &queue,
+        .enabledLayerCount       = static_cast<std::uint32_t>(layers.size()),
+        .ppEnabledLayerNames     = layers.data(),
+        .enabledExtensionCount   = static_cast<std::uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data(),
+        .pEnabledFeatures        = &features,
+    }};
+
+    REQUIRE(pack_VkDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    const VkDeviceCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkDeviceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->flags == value.flags);
+    CHECK(actual->queueCreateInfoCount == value.queueCreateInfoCount);
+    CHECK(actual->enabledLayerCount == value.enabledLayerCount);
+    CHECK(actual->enabledExtensionCount == value.enabledExtensionCount);
+    check_relative_string_array(blob, packed.offset, actual->ppEnabledLayerNames, {{"VK_LAYER_VKFWD_device"}});
+    check_relative_string_array(blob, packed.offset, actual->ppEnabledExtensionNames, {{"VK_KHR_swapchain", "VK_EXT_private_data"}});
+
+    REQUIRE(actual->pQueueCreateInfos != nullptr);
+    const auto queue_offset = packed.offset + encoded_offset(actual->pQueueCreateInfos);
+    const VkDeviceQueueCreateInfo * actual_queue = nullptr;
+    REQUIRE(unpack_VkDeviceQueueCreateInfo(blob, queue_offset, &actual_queue) == VK_SUCCESS);
+    REQUIRE(actual_queue != nullptr);
+    CHECK(actual_queue->queueFamilyIndex == queue.queueFamilyIndex);
+    CHECK(actual_queue->queueCount == queue.queueCount);
+    check_relative_plain_array(blob, queue_offset, actual_queue->pQueuePriorities, {{0.5f, 1.0f}});
+
+    REQUIRE(actual->pEnabledFeatures != nullptr);
+    const auto & actual_features = object_at<VkPhysicalDeviceFeatures>(blob, packed.offset + encoded_offset(actual->pEnabledFeatures));
+    CHECK(actual_features.robustBufferAccess == VK_TRUE);
+    CHECK(actual_features.samplerAnisotropy == VK_TRUE);
+}}
+
+TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserves physical device arrays") {{
+    Blob blob;
+    PackedStruct packed;
+    std::array<VkPhysicalDevice, 2> devices {{
+        test_handle<VkPhysicalDevice>(0x101),
+        test_handle<VkPhysicalDevice>(0x202),
+    }};
+    VkDeviceGroupDeviceCreateInfo value {{
+        .sType               = VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO,
+        .pNext               = nullptr,
+        .physicalDeviceCount = static_cast<std::uint32_t>(devices.size()),
+        .pPhysicalDevices    = devices.data(),
+    }};
+
+    REQUIRE(pack_VkDeviceGroupDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    const VkDeviceGroupDeviceCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkDeviceGroupDeviceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->physicalDeviceCount == value.physicalDeviceCount);
+    check_relative_plain_array(blob, packed.offset, actual->pPhysicalDevices,
+                               {{test_handle<VkPhysicalDevice>(0x101), test_handle<VkPhysicalDevice>(0x202)}});
+}}
+
+TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack preserves global priority") {{
+    Blob blob;
+    PackedStruct packed;
+    VkDeviceQueueGlobalPriorityCreateInfo value {{
+        .sType          = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO,
+        .pNext          = nullptr,
+        .globalPriority = VK_QUEUE_GLOBAL_PRIORITY_HIGH,
+    }};
+
+    REQUIRE(pack_VkDeviceQueueGlobalPriorityCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    const VkDeviceQueueGlobalPriorityCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkDeviceQueueGlobalPriorityCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->globalPriority == value.globalPriority);
+}}
+
+}} // namespace
+}} // namespace vkfwd::generated::structure::test
+"""
+
+
+def physical_device_features_structure_test_content(metadata: dict[str, object]) -> str:
+    return f"""#include "support.hpp"
+
+#include "generated/structure/core.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include <catch2/catch_test_macros.hpp>
+
+namespace vkfwd::generated::structure::test {{
+namespace {{
+
+TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves feature bits") {{
+    Blob blob;
+    PackedStruct packed;
+    VkPhysicalDeviceFeatures2 value {{
+        .sType    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext    = nullptr,
+        .features = {{}},
+    }};
+    value.features.robustBufferAccess = VK_TRUE;
+    value.features.geometryShader     = VK_TRUE;
+
+    REQUIRE(pack_VkPhysicalDeviceFeatures2(&value, blob, packed) == VK_SUCCESS);
+    const VkPhysicalDeviceFeatures2 * actual = nullptr;
+    REQUIRE(unpack_VkPhysicalDeviceFeatures2(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->features.robustBufferAccess == VK_TRUE);
+    CHECK(actual->features.geometryShader == VK_TRUE);
+}}
+
+TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack preserves selected feature bits") {{
+    Blob blob;
+    PackedStruct packed;
+    VkPhysicalDeviceVulkan11Features value {{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .pNext = nullptr,
+    }};
+    value.storageBuffer16BitAccess = VK_TRUE;
+    value.shaderDrawParameters     = VK_TRUE;
+
+    REQUIRE(pack_VkPhysicalDeviceVulkan11Features(&value, blob, packed) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan11Features * actual = nullptr;
+    REQUIRE(unpack_VkPhysicalDeviceVulkan11Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->storageBuffer16BitAccess == VK_TRUE);
+    CHECK(actual->shaderDrawParameters == VK_TRUE);
+}}
+
+TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack preserves selected feature bits") {{
+    Blob blob;
+    PackedStruct packed;
+    VkPhysicalDeviceVulkan12Features value {{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = nullptr,
+    }};
+    value.descriptorIndexing = VK_TRUE;
+    value.timelineSemaphore  = VK_TRUE;
+
+    REQUIRE(pack_VkPhysicalDeviceVulkan12Features(&value, blob, packed) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan12Features * actual = nullptr;
+    REQUIRE(unpack_VkPhysicalDeviceVulkan12Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->descriptorIndexing == VK_TRUE);
+    CHECK(actual->timelineSemaphore == VK_TRUE);
+}}
+
+TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack preserves selected feature bits") {{
+    Blob blob;
+    PackedStruct packed;
+    VkPhysicalDeviceVulkan13Features value {{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        .pNext = nullptr,
+    }};
+    value.synchronization2  = VK_TRUE;
+    value.dynamicRendering = VK_TRUE;
+
+    REQUIRE(pack_VkPhysicalDeviceVulkan13Features(&value, blob, packed) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan13Features * actual = nullptr;
+    REQUIRE(unpack_VkPhysicalDeviceVulkan13Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->synchronization2 == VK_TRUE);
+    CHECK(actual->dynamicRendering == VK_TRUE);
+}}
+
+TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack preserves selected feature bits") {{
+    Blob blob;
+    PackedStruct packed;
+    VkPhysicalDeviceVulkan14Features value {{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
+        .pNext = nullptr,
+    }};
+    value.globalPriorityQuery = VK_TRUE;
+    value.maintenance6        = VK_TRUE;
+
+    REQUIRE(pack_VkPhysicalDeviceVulkan14Features(&value, blob, packed) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan14Features * actual = nullptr;
+    REQUIRE(unpack_VkPhysicalDeviceVulkan14Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->globalPriorityQuery == VK_TRUE);
+    CHECK(actual->maintenance6 == VK_TRUE);
+}}
+
+TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/unpack preserves selected feature bits") {{
+    Blob blob;
+    PackedStruct packed;
+    VkPhysicalDeviceDescriptorIndexingFeatures value {{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+        .pNext = nullptr,
+    }};
+    value.descriptorBindingPartiallyBound        = VK_TRUE;
+    value.descriptorBindingVariableDescriptorCount = VK_TRUE;
+
+    REQUIRE(pack_VkPhysicalDeviceDescriptorIndexingFeatures(&value, blob, packed) == VK_SUCCESS);
+    const VkPhysicalDeviceDescriptorIndexingFeatures * actual = nullptr;
+    REQUIRE(unpack_VkPhysicalDeviceDescriptorIndexingFeatures(blob, packed.offset, &actual) == VK_SUCCESS);
+    REQUIRE(actual != nullptr);
+    CHECK(actual->sType == value.sType);
+    CHECK(actual->pNext == nullptr);
+    CHECK(actual->descriptorBindingPartiallyBound == VK_TRUE);
+    CHECK(actual->descriptorBindingVariableDescriptorCount == VK_TRUE);
+}}
+
+}} // namespace
+}} // namespace vkfwd::generated::structure::test
+"""
+
+
+def write_structure_test_files(metadata: dict[str, object], output_dir: Path) -> None:
+    test_dir = output_dir / "structure" / "test"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    (test_dir / "support.hpp").write_text(
+        structure_test_support_content(metadata), encoding="utf-8"
+    )
+
+    sources = {
+        "application_instance_structure_test.cpp": application_instance_structure_test_content(
+            metadata
+        ),
+        "device_structure_test.cpp": device_structure_test_content(metadata),
+        "physical_device_features_structure_test.cpp": physical_device_features_structure_test_content(
+            metadata
+        ),
+    }
+    for file_name, content in sources.items():
+        (test_dir / file_name).write_text(content, encoding="utf-8")
+
+    manifest_sources = "\n".join(f"  {source}" for source in sorted(sources))
+    (test_dir / "internal-test.cmake").write_text(
+        f"""# This generated manifest is consumed by dev/test/internal-test/CMakeLists.txt.
+# Keep entries relative so generated structure tests stay beside their helpers.
 set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
 {manifest_sources})
 """,
@@ -1679,6 +2193,7 @@ def generate(output_dir: Path, forwarder_output_dir: Path) -> None:
     write_manual_hooks_header(metadata, output_dir / "vulkan_manual_hooks.hpp")
     write_command_files(metadata, output_dir)
     write_vulkan_api_header(metadata, output_dir / "vulkan_api.hpp")
+    write_structure_test_files(metadata, output_dir)
     write_forwarder_files(metadata, forwarder_output_dir)
     write_forwarder_test_files(metadata, forwarder_output_dir)
     format_generated_files(output_dir, forwarder_output_dir)

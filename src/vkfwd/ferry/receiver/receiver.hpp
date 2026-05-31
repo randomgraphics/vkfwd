@@ -16,7 +16,8 @@ public:
     void set_executor(std::unique_ptr<ReplayExecutor> executor);
 
     // receive() owns the receiver-side replay boundary. Transport and schema
-    // decoding live below ApiEndpoint, so the framework only sees captured calls.
+    // decoding live below TransportChannel, so the framework only sees captured
+    // calls.
     void receive(const InterceptedCall & call);
 
 private:

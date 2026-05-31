@@ -1,19 +1,19 @@
 #include "forwarder.hpp"
 
-#include "null_api_endpoint.hpp"
+#include "null_transport_channel.hpp"
 
 #include <memory>
 
 namespace vkfwd {
 namespace {
 
-std::unique_ptr<ApiEndpoint> make_null_endpoint() { return std::make_unique<NullApiEndpoint>(); }
+std::unique_ptr<TransportChannel> make_null_channel() { return std::make_unique<NullTransportChannel>(); }
 
-Forwarder::EndpointCreator & endpoint_creator_slot() {
+Forwarder::ChannelCreator & channel_creator_slot() {
     // This process-level creator is configuration, not the hot forwarding state.
     // It should be set during layer/test startup before application threads begin
     // calling Vulkan entry points.
-    static Forwarder::EndpointCreator creator = make_null_endpoint;
+    static Forwarder::ChannelCreator creator = make_null_channel;
     return creator;
 }
 
@@ -24,18 +24,18 @@ Forwarder & Forwarder::instance() {
     return forwarder;
 }
 
-void Forwarder::set_endpoint_creator(EndpointCreator creator) { endpoint_creator_slot() = creator ? creator : make_null_endpoint; }
+void Forwarder::set_channel_creator(ChannelCreator creator) { channel_creator_slot() = creator ? creator : make_null_channel; }
 
-Forwarder::Forwarder(): endpoint_(endpoint_creator_slot()()) {
-    if (!endpoint_) { endpoint_ = make_null_endpoint(); }
+Forwarder::Forwarder(): channel_(channel_creator_slot()()) {
+    if (!channel_) { channel_ = make_null_channel(); }
 }
 
 Blob Forwarder::flush() {
-    Blob response_blob = endpoint().flush(request_blob_);
+    Blob response_blob = channel().send(request_blob_);
     request_blob_.reset();
     return response_blob;
 }
 
-ApiEndpoint & Forwarder::endpoint() { return *endpoint_; }
+TransportChannel & Forwarder::channel() { return *channel_; }
 
 } // namespace vkfwd

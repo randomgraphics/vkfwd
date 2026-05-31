@@ -4,10 +4,10 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
-#include "api_endpoint.hpp"
 #include "blob.hpp"
 #include "forwarder.hpp"
 #include "protocol.hpp"
+#include "transport_channel.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,38 +21,38 @@ namespace vkfwd::forwarder::generated::test {
 
 using FlushHandler = Blob (*)(Blob & request_blob);
 
-struct EndpointState {
+struct ChannelState {
     FlushHandler handler   = nullptr;
     bool         processed = false;
 };
 
-inline EndpointState & endpoint_state() {
-    static EndpointState state;
+inline ChannelState & channel_state() {
+    static ChannelState state;
     return state;
 }
 
-class PackUnpackEndpoint final : public ApiEndpoint {
+class PackUnpackChannel final : public TransportChannel {
 public:
-    Blob flush(Blob & request_blob) override {
-        auto & state    = endpoint_state();
+    Blob send(Blob & request_blob) override {
+        auto & state    = channel_state();
         state.processed = true;
         REQUIRE(state.handler != nullptr);
         return state.handler(request_blob);
     }
 };
 
-inline std::unique_ptr<ApiEndpoint> make_pack_unpack_endpoint() { return std::make_unique<PackUnpackEndpoint>(); }
+inline std::unique_ptr<TransportChannel> make_pack_unpack_channel() { return std::make_unique<PackUnpackChannel>(); }
 
-inline void install_pack_unpack_endpoint(FlushHandler handler) {
-    auto & state    = endpoint_state();
+inline void install_pack_unpack_channel(FlushHandler handler) {
+    auto & state    = channel_state();
     state.handler   = handler;
     state.processed = false;
-    Forwarder::set_endpoint_creator(make_pack_unpack_endpoint);
+    Forwarder::set_channel_creator(make_pack_unpack_channel);
     Forwarder::instance().request_blob().reset();
 }
 
 inline CommandChunk first_command_chunk(const Blob & request_blob) {
-    // Endpoint tests reconstruct the packet metadata from the stream header
+    // Channel tests reconstruct the packet metadata from the stream header
     // because the forwarding boundary only transports blob bytes, not the
     // caller-side CommandChunk wrapper returned by pack_parameters().
     const auto header_view = request_blob.data_at(0, sizeof(CommandChunkHeader));

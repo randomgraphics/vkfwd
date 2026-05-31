@@ -133,13 +133,13 @@ Blob handle_flush(Blob & request_blob) {
 
 TEST_CASE("vkCreateDevice generated forwarder round trips packed parameters and response") {
     auto & expected = scenario();
-    install_pack_unpack_endpoint(handle_flush);
+    install_pack_unpack_channel(handle_flush);
 
     VkDevice device        = VK_NULL_HANDLE;
     expected.output_device = &device;
     const VkResult result  = vkfwd::forwarder::generated::vkCreateDevice(expected.physical_device, &expected.create_info, &expected.allocator, &device);
 
-    CHECK(endpoint_state().processed);
+    CHECK(channel_state().processed);
     CHECK(result == expected.response_result);
     CHECK(device == expected.response_device);
 }

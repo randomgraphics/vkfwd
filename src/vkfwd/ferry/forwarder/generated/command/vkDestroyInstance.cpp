@@ -32,7 +32,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance instance, const VkAlloca
     // Deferrable commands have no return value or output parameters, so the
     // entry point only appends to the thread-local request blob. The next
     // non-deferrable command is responsible for flushing this thread's pending
-    // command sequence through the endpoint.
+    // command sequence through the channel.
 
     return;
 }
