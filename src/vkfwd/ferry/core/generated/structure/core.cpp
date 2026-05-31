@@ -2,10 +2,15 @@
 
 #include "logging.hpp"
 
+#include <csetjmp>
+#include <csignal>
+#include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <new>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace vkfwd::generated::structure {
 namespace {
@@ -172,6 +177,115 @@ VkResult pack_device_group_device_create_info_as(const void * value, Blob & blob
     return pack_VkDeviceGroupDeviceCreateInfo(reinterpret_cast<const VkDeviceGroupDeviceCreateInfo *>(value), blob, packed);
 }
 
+#if defined(__unix__) || defined(__APPLE__)
+thread_local sigjmp_buf * g_active_fault_probe = nullptr;
+
+std::mutex & fault_probe_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+void handle_fault_probe_signal(int signum, siginfo_t *, void *) {
+    if (g_active_fault_probe) { siglongjmp(*g_active_fault_probe, 1); }
+    std::_Exit(128 + signum);
+}
+
+bool copy_from_application_memory(const void * source, void * destination, std::size_t size) {
+    if (!source || !destination || size == 0) [[unlikely]] { return false; }
+
+    std::lock_guard lock(fault_probe_mutex());
+
+    struct sigaction action {};
+    action.sa_sigaction = handle_fault_probe_signal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_SIGINFO;
+
+    struct sigaction previous_segv {};
+    struct sigaction previous_bus {};
+    if (sigaction(SIGSEGV, &action, &previous_segv) != 0) [[unlikely]] { return false; }
+    if (sigaction(SIGBUS, &action, &previous_bus) != 0) [[unlikely]] {
+        sigaction(SIGSEGV, &previous_segv, nullptr);
+        return false;
+    }
+
+    sigjmp_buf jump_buffer;
+    g_active_fault_probe            = &jump_buffer;
+    volatile sig_atomic_t did_copy  = 0;
+    volatile sig_atomic_t did_fault = 0;
+    if (sigsetjmp(jump_buffer, 1) == 0) {
+        std::memcpy(destination, source, size);
+        did_copy = 1;
+    } else {
+        did_fault = 1;
+    }
+    g_active_fault_probe = nullptr;
+
+    sigaction(SIGBUS, &previous_bus, nullptr);
+    sigaction(SIGSEGV, &previous_segv, nullptr);
+    return did_copy != 0 && did_fault == 0;
+}
+#else
+bool copy_from_application_memory(const void * source, void * destination, std::size_t size) {
+    if (!source || !destination || size == 0) [[unlikely]] { return false; }
+    std::memcpy(destination, source, size);
+    return true;
+}
+#endif
+
+template<class T>
+bool copy_from_application_memory(const void * source, T & destination) {
+    return copy_from_application_memory(source, &destination, sizeof(T));
+}
+
+std::size_t pnext_node_size(VkStructureType type) {
+    switch (type) {
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO:
+        return sizeof(VkDeviceGroupDeviceCreateInfo);
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
+        return sizeof(VkPhysicalDeviceFeatures2);
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
+        return sizeof(VkPhysicalDeviceVulkan11Features);
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES:
+        return sizeof(VkPhysicalDeviceVulkan12Features);
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES:
+        return sizeof(VkPhysicalDeviceVulkan13Features);
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES:
+        return sizeof(VkPhysicalDeviceVulkan14Features);
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES:
+        return sizeof(VkPhysicalDeviceDescriptorIndexingFeatures);
+    case VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO:
+        return sizeof(VkDeviceQueueGlobalPriorityCreateInfo);
+    default:
+        return 0;
+    }
+}
+
+VkResult validate_pnext_node_readable(const void * value, VkStructureType type, std::size_t depth) {
+    const std::size_t node_size = pnext_node_size(type);
+    if (node_size == 0) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: no size for sType={}, depth={}, node={}", static_cast<int>(type), depth, value);
+        return VK_ERROR_UNKNOWN;
+    }
+
+    try {
+        // pNext nodes are borrowed application memory. Probing the whole known
+        // node before any generated packer copies it keeps corrupt chains from
+        // turning a validation failure into a process fault.
+        std::vector<std::byte> scratch(node_size);
+        if (!copy_from_application_memory(value, scratch.data(), scratch.size())) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: unreadable node memory, sType={}, depth={}, node={}, size={}", static_cast<int>(type), depth,
+                            value, node_size);
+            return VK_ERROR_UNKNOWN;
+        }
+    } catch (const std::bad_alloc &) {
+        VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: out of host memory while probing node, sType={}, depth={}, node={}", static_cast<int>(type),
+                        depth, value);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    return VK_SUCCESS;
+}
+
 const std::unordered_map<VkStructureType, GenericPackFn> & generic_packers() {
     // The fallback map is intentionally local: switch dispatch remains the fast
     // path for currently generated pNext structs, while this table keeps type
@@ -211,12 +325,18 @@ VkResult validate_pnext_chain(const void * value) {
                 return VK_ERROR_UNKNOWN;
             }
 
-            const auto * base = reinterpret_cast<const VkBaseInStructure *>(value);
-            if (!packers.contains(base->sType)) [[unlikely]] {
-                VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: unsupported sType={}, depth={}, node={}", static_cast<int>(base->sType), depth, value);
+            VkBaseInStructure base {};
+            if (!copy_from_application_memory(value, base)) [[unlikely]] {
+                VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: unreadable node header, depth={}, node={}", depth, value);
                 return VK_ERROR_UNKNOWN;
             }
-            value = base->pNext;
+            if (!packers.contains(base.sType)) [[unlikely]] {
+                VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: unsupported sType={}, depth={}, node={}", static_cast<int>(base.sType), depth, value);
+                return VK_ERROR_UNKNOWN;
+            }
+            VkResult status = validate_pnext_node_readable(value, base.sType, depth);
+            if (status != VK_SUCCESS) [[unlikely]] { return status; }
+            value = base.pNext;
         }
     } catch (const std::bad_alloc &) {
         VKFWD_LOG_ERROR("vkfwd ferry pNext validation failed: out of host memory while tracking visited nodes");
