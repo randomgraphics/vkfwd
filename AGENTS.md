@@ -25,3 +25,22 @@ explicitly document the reasoning around:
 This rule applies to agent-generated code and reviews as well as human-written
 code. Keep comments concise, but bias toward preserving the engineering
 rationale that would otherwise be lost.
+
+## Ferry Module Guidance
+
+Before editing `src/vkfwd/ferry/`, read `src/vkfwd/ferry/README.md`. For
+module-specific changes, also read the local README for the area you touch:
+
+- `src/vkfwd/ferry/core/README.md` for protocol, blob, transport, generated
+  command/structure serialization, hooks, and shared tests.
+- `src/vkfwd/ferry/forwarder/README.md` for Vulkan layer entry points,
+  generated forwarding wrappers, dispatch-table exposure, and transport-channel
+  flushing behavior.
+
+Keep new code aligned with those module contracts. If the contract has changed,
+update the relevant README in the same change as the code.
+
+Periodically refresh documentation so it matches the code, especially after
+major design or module-boundary changes. When a change alters forwarding,
+serialization, transport, replay, generated-code layout, or testing policy,
+review the nearby README files and update stale guidance before finishing.
