@@ -98,6 +98,13 @@ set_target_properties(vkfwd_forwarder_objects PROPERTIES
 add_library(vkfwd_forwarder_static STATIC
   $<TARGET_OBJECTS:vkfwd_forwarder_objects>)
 
+target_include_directories(vkfwd_forwarder_static
+  PUBLIC
+    # The static forwarder archive is the in-process test surface for generated
+    # layer entry points, so consumers need the forwarder include root. The
+    # loader-facing shared object still keeps that include policy private.
+    ${CMAKE_CURRENT_SOURCE_DIR}/forwarder)
+
 target_link_libraries(vkfwd_forwarder_static
   PUBLIC
     vkfwd_core)
