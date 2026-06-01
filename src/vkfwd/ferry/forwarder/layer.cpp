@@ -14,8 +14,6 @@ VKFWD_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevi
 
 namespace {
 
-PFN_vkVoidFunction lookup_global_entrypoint(const char * name) { return vkfwd::forwarder::generated::global_dispatch_table().getProcByName(name); }
-
 PFN_vkVoidFunction lookup_instance_entrypoint(const char * name) { return vkfwd::forwarder::generated::instance_dispatch_table().getProcByName(name); }
 
 PFN_vkVoidFunction lookup_device_entrypoint(const char * name) { return vkfwd::forwarder::generated::device_dispatch_table().getProcByName(name); }
@@ -25,10 +23,10 @@ PFN_vkVoidFunction lookup_device_entrypoint(const char * name) { return vkfwd::f
 VKFWD_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char * name) {
     if (!name) { return nullptr; }
 
-    // The source forwarder has one shared dispatch table per command level. The
-    // table is independent of instance identity because every entry points to a
-    // generated pack/forward wrapper, never to a local driver or lower layer.
-    if (auto entrypoint = lookup_global_entrypoint(name)) { return entrypoint; }
+    // The source forwarder has one shared instance lookup table that includes
+    // loader-global commands such as vkCreateInstance. The table is independent
+    // of instance identity because every entry points to a generated
+    // pack/forward wrapper, never to a local driver or lower layer.
     if (auto entrypoint = lookup_instance_entrypoint(name)) { return entrypoint; }
 
     // Unknown commands remain unavailable until vkfwd owns their generated pack,
@@ -40,7 +38,6 @@ VKFWD_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkIn
 VKFWD_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char * name) {
     if (!name) { return nullptr; }
 
-    if (auto entrypoint = lookup_global_entrypoint(name)) { return entrypoint; }
     if (auto entrypoint = lookup_device_entrypoint(name)) { return entrypoint; }
 
     // Device lookup follows the same forwarder invariant: no command pointer is

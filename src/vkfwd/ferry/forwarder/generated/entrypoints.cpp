@@ -10,24 +10,19 @@ extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice
 namespace vkfwd::forwarder::generated {
 namespace {
 
-const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {
-    .create_instance = vkCreateInstance_entry,
-};
-
 const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {
     .get_instance_proc_addr = vkGetInstanceProcAddr,
+    .get_device_proc_addr   = vkGetDeviceProcAddr,
+    .create_instance        = vkCreateInstance_entry,
     .destroy_instance       = vkDestroyInstance_entry,
     .create_device          = vkCreateDevice_entry,
 };
 
 const ::vkfwd::generated::DeviceDispatchTable kDeviceDispatchTable {
-    .get_device_proc_addr = vkGetDeviceProcAddr,
-    .destroy_device       = vkDestroyDevice_entry,
+    .destroy_device = vkDestroyDevice_entry,
 };
 
 } // namespace
-
-const ::vkfwd::generated::GlobalDispatchTable & global_dispatch_table() { return kGlobalDispatchTable; }
 
 const ::vkfwd::generated::InstanceDispatchTable & instance_dispatch_table() { return kInstanceDispatchTable; }
 

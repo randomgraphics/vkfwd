@@ -923,14 +923,10 @@ namespace vkfwd::generated {{
 
 using PointerToFunctionPointer = PFN_vkVoidFunction*;
 
-struct GlobalDispatchTable {{
-  PFN_vkCreateInstance create_instance = nullptr;
-
-  PFN_vkVoidFunction getProcByName(const char* name) const;
-}};
-
 struct InstanceDispatchTable {{
   PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
+  PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
+  PFN_vkCreateInstance create_instance = nullptr;
   PFN_vkDestroyInstance destroy_instance = nullptr;
   PFN_vkCreateDevice create_device = nullptr;
 
@@ -938,14 +934,12 @@ struct InstanceDispatchTable {{
 }};
 
 struct DeviceDispatchTable {{
-  PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
   PFN_vkDestroyDevice destroy_device = nullptr;
 
   PFN_vkVoidFunction getProcByName(const char* name) const;
 }};
 
 struct DistributionTable {{
-  GlobalDispatchTable global {{}};
   InstanceDispatchTable instance {{}};
   DeviceDispatchTable device {{}};
 
@@ -964,10 +958,7 @@ struct DistributionTable {{
 
 
 def dispatch_table_group(command: dict[str, object]) -> str:
-    name = str(command["name"])
     parameters = list(command["parameters"])
-    if name == "vkCreateInstance":
-        return "global"
     if parameters and parameters[0]["type"] == "VkDevice":
         return "device"
     return "instance"
@@ -976,8 +967,6 @@ def dispatch_table_group(command: dict[str, object]) -> str:
 def dispatch_table_member_access(command: dict[str, object]) -> str:
     level = dispatch_table_group(command)
     field = command_field_name(str(command["name"]))
-    if level == "global":
-        return f"global.{field}"
     if level == "instance":
         return f"instance.{field}"
     if level == "device":
@@ -1013,18 +1002,16 @@ DistributionTable::DistributionTable()
 {pointer_map_entries}
       }} {{}}
 
-PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char* name) const {{
-  if (!name) {{ return nullptr; }}
-  if (std::strcmp(name, "vkCreateInstance") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(create_instance);
-  }}
-  return nullptr;
-}}
-
 PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char* name) const {{
   if (!name) {{ return nullptr; }}
   if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(get_instance_proc_addr);
+  }}
+  if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) {{
+    return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr);
+  }}
+  if (std::strcmp(name, "vkCreateInstance") == 0) {{
+    return reinterpret_cast<PFN_vkVoidFunction>(create_instance);
   }}
   if (std::strcmp(name, "vkDestroyInstance") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(destroy_instance);
@@ -1037,9 +1024,6 @@ PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char* name) const 
 
 PFN_vkVoidFunction DeviceDispatchTable::getProcByName(const char* name) const {{
   if (!name) {{ return nullptr; }}
-  if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr);
-  }}
   if (std::strcmp(name, "vkDestroyDevice") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(destroy_device);
   }}
@@ -1047,7 +1031,6 @@ PFN_vkVoidFunction DeviceDispatchTable::getProcByName(const char* name) const {{
 }}
 
 PFN_vkVoidFunction DistributionTable::getProcByName(const char* name) const {{
-  if (auto entrypoint = global.getProcByName(name)) {{ return entrypoint; }}
   if (auto entrypoint = instance.getProcByName(name)) {{ return entrypoint; }}
   return device.getProcByName(name);
 }}
@@ -1083,7 +1066,6 @@ namespace vkfwd::forwarder::generated {{
 
 {declarations}
 
-const ::vkfwd::generated::GlobalDispatchTable& global_dispatch_table();
 const ::vkfwd::generated::InstanceDispatchTable& instance_dispatch_table();
 const ::vkfwd::generated::DeviceDispatchTable& device_dispatch_table();
 
@@ -1104,26 +1086,19 @@ extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice
 namespace vkfwd::forwarder::generated {{
 namespace {{
 
-const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {{
-  .create_instance = {forwarder_entrypoint_name("vkCreateInstance")},
-}};
-
 const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {{
   .get_instance_proc_addr = vkGetInstanceProcAddr,
+  .get_device_proc_addr = vkGetDeviceProcAddr,
+  .create_instance = {forwarder_entrypoint_name("vkCreateInstance")},
   .destroy_instance = {forwarder_entrypoint_name("vkDestroyInstance")},
   .create_device = {forwarder_entrypoint_name("vkCreateDevice")},
 }};
 
 const ::vkfwd::generated::DeviceDispatchTable kDeviceDispatchTable {{
-  .get_device_proc_addr = vkGetDeviceProcAddr,
   .destroy_device = {forwarder_entrypoint_name("vkDestroyDevice")},
 }};
 
 }} // namespace
-
-const ::vkfwd::generated::GlobalDispatchTable& global_dispatch_table() {{
-  return kGlobalDispatchTable;
-}}
 
 const ::vkfwd::generated::InstanceDispatchTable& instance_dispatch_table() {{
   return kInstanceDispatchTable;

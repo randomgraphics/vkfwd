@@ -10,21 +10,17 @@ namespace vkfwd::generated {
 
 DistributionTable::DistributionTable()
     : commands {
-          {static_cast<std::uint32_t>(CommandId::CreateInstance), reinterpret_cast<PointerToFunctionPointer>(&global.create_instance)},
+          {static_cast<std::uint32_t>(CommandId::CreateInstance), reinterpret_cast<PointerToFunctionPointer>(&instance.create_instance)},
           {static_cast<std::uint32_t>(CommandId::DestroyInstance), reinterpret_cast<PointerToFunctionPointer>(&instance.destroy_instance)},
           {static_cast<std::uint32_t>(CommandId::CreateDevice), reinterpret_cast<PointerToFunctionPointer>(&instance.create_device)},
           {static_cast<std::uint32_t>(CommandId::DestroyDevice), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_device)},
       } {}
 
-PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char * name) const {
-    if (!name) { return nullptr; }
-    if (std::strcmp(name, "vkCreateInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_instance); }
-    return nullptr;
-}
-
 PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char * name) const {
     if (!name) { return nullptr; }
     if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_instance_proc_addr); }
+    if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr); }
+    if (std::strcmp(name, "vkCreateInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_instance); }
     if (std::strcmp(name, "vkDestroyInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_instance); }
     if (std::strcmp(name, "vkCreateDevice") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_device); }
     return nullptr;
@@ -32,13 +28,11 @@ PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char * name) const
 
 PFN_vkVoidFunction DeviceDispatchTable::getProcByName(const char * name) const {
     if (!name) { return nullptr; }
-    if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr); }
     if (std::strcmp(name, "vkDestroyDevice") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_device); }
     return nullptr;
 }
 
 PFN_vkVoidFunction DistributionTable::getProcByName(const char * name) const {
-    if (auto entrypoint = global.getProcByName(name)) { return entrypoint; }
     if (auto entrypoint = instance.getProcByName(name)) { return entrypoint; }
     return device.getProcByName(name);
 }

@@ -18,7 +18,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_entry(VkPhysicalDevice physicalDev
                                                     const VkAllocationCallbacks * pAllocator, VkDevice * pDevice);
 VKAPI_ATTR void VKAPI_CALL     vkDestroyDevice_entry(VkDevice device, const VkAllocationCallbacks * pAllocator);
 
-const ::vkfwd::generated::GlobalDispatchTable &   global_dispatch_table();
 const ::vkfwd::generated::InstanceDispatchTable & instance_dispatch_table();
 const ::vkfwd::generated::DeviceDispatchTable &   device_dispatch_table();
 

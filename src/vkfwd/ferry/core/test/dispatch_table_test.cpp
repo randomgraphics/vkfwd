@@ -26,11 +26,11 @@ PFN_vkVoidFunction as_void_function(T function) {
 
 TEST_CASE("distribution table looks up forwarded commands by generated command id") {
     DistributionTable table;
-    table.global.create_instance          = fake_create_instance;
     table.instance.get_instance_proc_addr = fake_get_instance_proc_addr;
+    table.instance.get_device_proc_addr   = fake_get_device_proc_addr;
+    table.instance.create_instance        = fake_create_instance;
     table.instance.destroy_instance       = fake_destroy_instance;
     table.instance.create_device          = fake_create_device;
-    table.device.get_device_proc_addr     = fake_get_device_proc_addr;
     table.device.destroy_device           = fake_destroy_device;
 
     CHECK(table.getProcByCommandId(CommandId::CreateInstance) == as_void_function(fake_create_instance));
@@ -42,7 +42,7 @@ TEST_CASE("distribution table looks up forwarded commands by generated command i
 TEST_CASE("distribution table keeps loader get-address hooks out of command-id lookup") {
     DistributionTable table;
     table.instance.get_instance_proc_addr = fake_get_instance_proc_addr;
-    table.device.get_device_proc_addr     = fake_get_device_proc_addr;
+    table.instance.get_device_proc_addr   = fake_get_device_proc_addr;
 
     // Command ids model serialized Vulkan commands. Loader discovery hooks still
     // participate in name lookup but are not commands and therefore have no
