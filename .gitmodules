@@ -17,3 +17,8 @@
 	path = src/third_party/gfxreconstruct
 	url = https://github.com/LunarG/gfxreconstruct.git
 	shallow = true
+[submodule "src/third_party/rapid-vulkan"]
+	path = src/third_party/rapid-vulkan
+	url = ../rapid-vulkan.git
+	shallow = true
+	branch = main

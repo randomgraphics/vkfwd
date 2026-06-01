@@ -11,6 +11,9 @@ Current shallow submodules:
 
 - `fmt`: fmtlib/fmt `12.1.0`
 - `spdlog`: gabime/spdlog `v1.17.0`
+- `rapid-vulkan`: randomgraphics/rapid-vulkan, a header-only C++17 Vulkan
+  wrapper imported as source but not wired into the build until vkfwd code
+  needs it.
 - `vulkan`: Khronos Vulkan-Headers snapshot recorded in `vulkan/VERSION`
 
 Reference-only submodules:
@@ -25,7 +28,7 @@ Reference-only submodules:
 Initialize with:
 
 ```sh
-git submodule update --init --depth 1 src/third_party/fmt src/third_party/spdlog
+git submodule update --init --depth 1 src/third_party/fmt src/third_party/spdlog src/third_party/rapid-vulkan
 ```
 
 Fetch the reference-only submodule separately when it is useful:
