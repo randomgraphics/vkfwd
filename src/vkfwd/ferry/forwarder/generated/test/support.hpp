@@ -7,7 +7,7 @@
 #include "blob.hpp"
 #include "forwarder.hpp"
 #include "protocol.hpp"
-#include "transport_channel.hpp"
+#include "transport_session.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,44 +21,53 @@ namespace vkfwd::forwarder::generated::test {
 
 using FlushHandler = Blob (*)(Blob & request_blob);
 
-struct ChannelState {
+struct TransportState {
     FlushHandler handler   = nullptr;
     bool         processed = false;
 };
 
-inline ChannelState & channel_state() {
-    static ChannelState state;
+inline TransportState & transport_state() {
+    static TransportState state;
     return state;
 }
 
-class PackUnpackChannel final : public TransportChannel {
+inline TransportSessionInfo & pack_unpack_session_info() {
+    static TransportSessionInfo info;
+    return info;
+}
+
+class PackUnpackTransportSession final : public TransportSession {
 public:
-    Blob send(Blob & request_blob) override {
-        auto & state    = channel_state();
+    const TransportSessionInfo & info() const override { return pack_unpack_session_info(); }
+
+    Blob send_accumulated_api_calls(Blob & request_blob) override {
+        auto & state    = transport_state();
         state.processed = true;
         REQUIRE(state.handler != nullptr);
         return state.handler(request_blob);
     }
 };
 
-inline std::unique_ptr<TransportChannel> make_pack_unpack_channel() { return std::make_unique<PackUnpackChannel>(); }
+inline std::shared_ptr<TransportSession> make_pack_unpack_transport_session() { return std::make_shared<PackUnpackTransportSession>(); }
 
-inline void install_pack_unpack_channel(FlushHandler handler) {
-    auto & state    = channel_state();
+inline void install_pack_unpack_transport(FlushHandler handler) {
+    auto & state    = transport_state();
     state.handler   = handler;
     state.processed = false;
-    Forwarder::set_channel_creator(make_pack_unpack_channel);
+    Forwarder::set_transport_creator(make_pack_unpack_transport_session);
     Forwarder::instance().request_blob().reset();
 }
 
 inline CommandChunk first_command_chunk(const Blob & request_blob) {
-    // Channel tests reconstruct the packet metadata from the stream header
+    // Transport tests reconstruct the packet metadata from the stream header
     // because the forwarding boundary only transports blob bytes, not the
-    // caller-side CommandChunk wrapper returned by pack_parameters().
-    const auto header_view = request_blob.data_at(0, sizeof(CommandChunkHeader));
-    REQUIRE(header_view.data() != nullptr);
-    const auto * header = reinterpret_cast<const CommandChunkHeader *>(header_view.data());
-    return CommandChunk {.command_offset = 0, .command_size = header->size};
+    // caller-side CommandChunk wrapper returned by pack_parameters(). The first
+    // 64 bits are reserved for source-thread routing, so command chunks begin
+    // after that prefix.
+    const auto header_view = request_blob.at(kSourceThreadIdSize, sizeof(CommandChunkHeader));
+    REQUIRE(!header_view.empty());
+    const auto * header = reinterpret_cast<const CommandChunkHeader *>(&header_view.at(0));
+    return CommandChunk {.command_offset = kSourceThreadIdSize, .command_size = header->size};
 }
 
 template<class Pointer>
@@ -66,19 +75,27 @@ std::size_t encoded_offset(Pointer pointer) {
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }
 
+template<class Pointer>
+std::size_t command_relative_offset(const CommandChunk & packet, Pointer pointer) {
+    // Command parameter pointer slots are encoded relative to the command chunk
+    // base. The request stream now has a source-thread prefix, so tests must
+    // rebase those slots through the packet metadata before inspecting payloads.
+    return packet.command_offset + encoded_offset(pointer);
+}
+
 template<class T>
 const T & object_at(const Blob & blob, std::size_t offset) {
-    const auto view = blob.data_at(offset, sizeof(T));
-    REQUIRE(view.data() != nullptr);
-    return *reinterpret_cast<const T *>(view.data());
+    const auto view = blob.at(offset, sizeof(T));
+    REQUIRE(!view.empty());
+    return *reinterpret_cast<const T *>(&view.at(0));
 }
 
 inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {
     REQUIRE(encoded_value != nullptr);
     const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
-    const auto        view          = blob.data_at(string_offset, expected.size() + 1);
-    REQUIRE(view.data() != nullptr);
-    const auto * value = reinterpret_cast<const char *>(view.data());
+    const auto        view          = blob.at(string_offset, expected.size() + 1);
+    REQUIRE(!view.empty());
+    const auto * value = reinterpret_cast<const char *>(&view.at(0));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\0');
 }
@@ -92,16 +109,16 @@ inline void check_relative_string_array(const Blob & blob, std::size_t base_offs
 
     REQUIRE(encoded_values != nullptr);
     const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        slots_view   = blob.data_at(array_offset, expected.size() * sizeof(std::uintptr_t));
-    REQUIRE(slots_view.data() != nullptr);
-    const auto * slots = reinterpret_cast<const std::uintptr_t *>(slots_view.data());
+    const auto        slots_view   = blob.at(array_offset, expected.size() * sizeof(std::uintptr_t));
+    REQUIRE(!slots_view.empty());
+    const auto * slots = reinterpret_cast<const std::uintptr_t *>(&slots_view.at(0));
 
     std::size_t index = 0;
     for (std::string_view value : expected) {
         REQUIRE(slots[index] != 0);
-        const auto string_view = blob.data_at(base_offset + static_cast<std::size_t>(slots[index]), value.size() + 1);
-        REQUIRE(string_view.data() != nullptr);
-        const auto * string = reinterpret_cast<const char *>(string_view.data());
+        const auto string_view = blob.at(base_offset + static_cast<std::size_t>(slots[index]), value.size() + 1);
+        REQUIRE(!string_view.empty());
+        const auto * string = reinterpret_cast<const char *>(&string_view.at(0));
         CHECK(std::string_view(string, value.size()) == value);
         CHECK(string[value.size()] == '\0');
         ++index;

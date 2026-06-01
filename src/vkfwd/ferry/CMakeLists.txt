@@ -10,8 +10,7 @@ add_library(vkfwd_core STATIC
   core/generated/command/vkDestroyInstance.cpp
   core/generated/structure/core.cpp
   core/hook/vkCreateDeviceHook.cpp
-  core/logging.cpp
-  core/null_transport_channel.cpp)
+  core/logging.cpp)
 
 set_target_properties(vkfwd_core PROPERTIES
   # Core is linked into the Vulkan layer shared object, so it must be

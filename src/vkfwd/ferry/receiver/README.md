@@ -1,18 +1,19 @@
 # vkfwd ferry receiver
 
 The receiver is the destination-side runtime for forwarded Vulkan calls. It owns
-per-channel request handling, source-to-receiver handle mapping, and replay
+per-source-thread request handling, source-to-receiver handle mapping, and replay
 against the local Vulkan implementation.
 
-Core transport concepts such as connection ownership, session handshake, channel
-establishment, framing, and response correlation are documented in
+Core transport concepts such as connection ownership, session handshake,
+framing, source-thread-token routing, and response correlation are documented in
 `../core/README.md`. Receiver code should consume those contracts rather than
 defining transport policy locally.
 
 ## Receiver Replay Boundary
 
-Transport delivers bytes and preserves channel semantics. It must not own Vulkan
-replay decisions. Receiver replay needs a separate backend that can own:
+Transport delivers bytes and preserves source-thread stream semantics. It must
+not own Vulkan replay decisions. Receiver replay needs a separate backend that
+can own:
 
 - Destination Vulkan dispatch tables.
 - Source-to-receiver handle maps.
@@ -67,22 +68,23 @@ This design keeps the generated sets purposeful:
 
 ## Vulkan Ordering Constraints
 
-Multi-channel transport is necessary for source-side multithreaded Vulkan, but
-it is not enough by itself. The receiver must not blindly replay every channel in
-parallel.
+Multi-thread transport is necessary for source-side multithreaded Vulkan, but it
+is not enough by itself. The receiver must not blindly replay every source-thread
+stream in parallel.
 
 The replay scheduler must preserve:
 
-- FIFO ordering within each source thread/channel.
-- Visibility of handles created on one channel before use on another channel.
+- FIFO ordering within each source thread.
+- Visibility of handles created by one source thread before use by another
+  source thread.
 - Correct lifetime ordering for instance, device, queue, command pool, command
   buffer, memory, image, buffer, and synchronization objects.
 - Vulkan externally synchronized object rules.
 - Host-side synchronization implied by blocking commands and explicit barriers.
 
 The conservative first implementation can serialize all replay globally after
-the transport layer has demultiplexed channels. That leaves performance on the
-table, but it is easier to validate. Later scheduling can relax global
+the transport layer has demultiplexed source-thread streams. That leaves
+performance on the table, but it is easier to validate. Later scheduling can relax global
 serialization by locking or ordering around Vulkan objects that are externally
 synchronized.
 
@@ -101,8 +103,8 @@ source handle/token <-> receiver native Vulkan handle
 
 Responses should return source-visible handle tokens or wrapper-compatible
 values, not raw receiver pointers. Any command that creates or destroys handles
-must update the map in an order visible to all channels that may reference those
-handles.
+must update the map in an order visible to all source threads that may reference
+those handles.
 
 ## Open Implementation Questions
 

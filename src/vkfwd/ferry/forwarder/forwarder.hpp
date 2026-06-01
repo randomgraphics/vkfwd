@@ -1,39 +1,51 @@
 #pragma once
 
 #include "blob.hpp"
-#include "transport_channel.hpp"
+#include "transport_session.hpp"
 
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 namespace vkfwd {
 
 class Forwarder {
 public:
-    using ChannelCreator = std::unique_ptr<TransportChannel> (*)();
-
+    /// Return a thread-local forwarder instance.
     static Forwarder & instance();
 
-    // Configure this before worker threads enter Vulkan. Each thread-local
-    // Forwarder calls the creator from its constructor and owns the channel it
-    // receives. A real channel may hold a reference to a shared transport session,
-    // but Forwarder only relies on this per-thread send boundary.
-    static void set_channel_creator(ChannelCreator creator);
+    using TransportCreator = std::function<std::shared_ptr<TransportSession>()>;
 
-    Blob & request_blob() { return request_blob_; }
-    Blob   flush();
+    // Configure this before worker threads enter Vulkan. Each thread-local
+    // Forwarder calls the creator from its constructor and reuses the process
+    // transport session. The first 64 bits of each request stream carry this
+    // forwarder's source-thread token, so Forwarder does not allocate per-thread
+    // transport objects.
+    static void set_transport_creator(TransportCreator creator);
+
+    Blob & request_blob() {
+        if (request_blob_.size() == 0) { begin_request_stream(); }
+        return request_blob_;
+    }
+
+    /// Flush the accumulated request blob to the transport session, then reset
+    /// it with the same source-thread prefix. Returns the receiver response blob.
+    Blob flush();
 
 private:
     Forwarder();
-    TransportChannel & channel();
+    void begin_request_stream();
 
     // The Forwarder itself is thread-local, so this blob is already per-thread
     // state. Deferrable commands append here until a synchronous command flushes
-    // it through the thread's transport channel.
-    Blob                              request_blob_;
-    std::unique_ptr<TransportChannel> channel_;
+    // it through the shared transport session.
+    Blob request_blob_;
+
+    std::shared_ptr<TransportSession> transport_;
+
+    SourceThreadId thread_id_ = 0;
 };
 
 } // namespace vkfwd

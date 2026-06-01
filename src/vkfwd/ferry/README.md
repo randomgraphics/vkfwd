@@ -7,7 +7,7 @@ internal tests for this approach.
 
 All implementation-specific logic stays here for now: loader-chain setup,
 instance/device dispatch tables, layer hooks, generated interceptors,
-schema-versioned command chunks, copied parameter storage, transport-channel
+schema-versioned command chunks, copied parameter storage, transport-session
 policy, and receiver replay helpers. Common code should move out only after
 another implementation has the same invariants.
 
@@ -38,23 +38,25 @@ The generated forwarder body shape is:
 2. construct generated `Command::Parameters`
 3. pack into this thread's `Forwarder::request_blob()`
 4. for response-bearing commands, flush the request blob through the transport
-   channel
+   session
 5. unpack the response blob and copy output parameters back to the caller
 6. optional manual post-response hook
 
 Commands without return values or output parameters are currently treated as
 deferrable: they append a command chunk to the thread-local request blob and rely
 on a later response-bearing command, or an explicit test flush, to send that
-stream to the transport channel.
+stream to the transport session.
 
 ## Design Bias
 
 The implementation bias is to generate most Vulkan API handling and submit
-intercepted calls to a `TransportChannel`. The forwarder does not call a local
-Vulkan driver and does not keep per-instance or per-device dispatch state beyond
-shared generated dispatch tables. Local replay, remote transport, response
-synthesis, source-to-receiver handle mapping, and synchronization policy belong
-below the transport/receiver boundary.
+intercepted accumulated request streams to a `TransportSession`. The first 64
+bits of each request stream identify the source thread, so per-thread routing is
+part of the byte stream instead of a separate transport object. The forwarder
+does not call a local Vulkan driver and does not keep per-instance or per-device
+dispatch state beyond shared generated dispatch tables. Local replay, remote
+transport, response synthesis, source-to-receiver handle mapping, and
+synchronization policy belong below the transport/receiver boundary.
 
 ## Generated Code Policy
 

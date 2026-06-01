@@ -1,5 +1,7 @@
 #pragma once
 
+#include "logging.hpp"
+
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
@@ -20,12 +22,25 @@ template<TriviallyCopyable T>
 class SafeArrayView {
 public:
     SafeArrayView() = default;
-    SafeArrayView(std::size_t count, T * ptr, std::size_t offset = 0): count_(count), ptr_(ptr), offset_(offset) {}
+    SafeArrayView(std::size_t count, T * ptr): count_(count), ptr_(ptr) {}
 
     bool        empty() const { return count_ == 0; }
-    T *         data() const { return ptr_; }
     std::size_t size() const { return count_; }
-    std::size_t offset() const { return offset_; }
+
+    T * begin() const { return ptr_; }
+    T * end() const { return ptr_ ? ptr_ + count_ : nullptr; }
+
+    // Views intentionally expose element access through at() instead of a raw
+    // base pointer. Callers that need to reinterpret a complete Blob range must
+    // first hold a non-empty view and then take the address of a checked element.
+    T & at(std::size_t index) const {
+        static std::remove_const_t<T> dummy {};
+        if (!ptr_ || index >= count_) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd blob view access out of range, index={}, count={}", index, count_);
+            return dummy;
+        }
+        return ptr_[index];
+    }
 
     bool set(std::size_t index, const T & value)
         requires(!std::is_const_v<T>)
@@ -55,13 +70,12 @@ public:
     SafeArrayView<T2> cast() const {
         static_assert(!std::is_const_v<T> || std::is_const_v<T2>, "cannot cast a const SafeArrayView to a mutable view");
         const std::size_t byte_count = count_ * sizeof(T);
-        return SafeArrayView<T2>(byte_count / sizeof(T2), reinterpret_cast<T2 *>(ptr_), offset_);
+        return SafeArrayView<T2>(byte_count / sizeof(T2), reinterpret_cast<T2 *>(ptr_));
     }
 
 private:
     std::size_t count_  = 0;
     T *         ptr_    = nullptr;
-    std::size_t offset_ = 0;
 };
 
 // A growable logical byte stream that owns copied payload bytes in stable
@@ -80,18 +94,35 @@ public:
 
     void        reset();
     std::size_t size() const { return size_; }
-    std::size_t chunk_size() const { return chunk_size_; }
+    // Reports whether the current logical byte stream lives in a single backing
+    // allocation. Consumers may use this to decide whether one whole-blob range
+    // can be inspected without stitching chunks together; it is not an allocation
+    // policy knob.
+    bool        is_contiguous() const { return chunks_.size() <= 1; }
 
     // Grows the arena and returns a bounded view over exactly the new allocation.
-    // The returned memory is uninitialized so callers can avoid redundant clears
-    // when immediately serializing Vulkan payload bytes into it.
-    SafeArrayView<std::uint8_t>       grow(std::size_t size, std::size_t alignment = 1);
-    SafeArrayView<const std::uint8_t> data_at(std::size_t offset, std::size_t size) const;
+    // If requested, offset receives the logical Blob offset after alignment
+    // padding is applied. The returned memory is uninitialized so callers can
+    // avoid redundant clears when immediately serializing Vulkan payload bytes.
+    SafeArrayView<std::uint8_t>       grow(std::size_t size, std::size_t alignment = 1, std::size_t * offset = nullptr);
 
     template<TriviallyCopyable T>
-    SafeArrayView<T> grow(std::size_t count, std::size_t alignment = alignof(T)) {
+    SafeArrayView<T> grow(std::size_t count, std::size_t alignment = 1, std::size_t * offset = nullptr) {
         if (count > std::numeric_limits<std::size_t>::max() / sizeof(T)) { throw std::bad_array_new_length(); }
-        return grow(count * sizeof(T), std::max(alignment, alignof(T))).template cast<T>();
+        return grow(count * sizeof(T), std::max(alignment, alignof(T)), offset).template cast<T>();
+    }
+
+    template<TriviallyCopyable T>
+    T & grow() {
+        auto v = grow<T>(1, alignof(T));
+        return v.at(0);
+    }
+
+    SafeArrayView<const std::uint8_t> at(std::size_t offset, std::size_t size) const;
+
+    template<TriviallyCopyable T>
+    SafeArrayView<const T> at(std::size_t index_in_unit_of_T, std::size_t count_in_unit_of_T) const {
+        return at(index_in_unit_of_T * sizeof(T), count_in_unit_of_T * sizeof(T)).cast<const T>();
     }
 
 private:

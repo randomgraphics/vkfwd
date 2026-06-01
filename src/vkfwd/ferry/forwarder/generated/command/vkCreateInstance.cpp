@@ -44,7 +44,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo * pCr
 
     // Synchronous forwarding flushes this thread's pending request blob and
     // returns a fresh response blob. Generated code only decodes that blob here;
-    // channel implementations own transport, replay, and handle mapping policy.
+    // transport implementations own delivery, replay, and handle mapping policy.
 
     return response.return_value;
 }

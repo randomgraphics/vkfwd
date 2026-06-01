@@ -30,8 +30,9 @@ public:
 
     // Replay is the point where source-side handles and receiver-side handles
     // must be reconciled. The executor contract is intentionally separate from
-    // channel transport so tests can exercise ordering without requiring a
-    // Vulkan device, and replay backends can own Vulkan dispatch state directly.
+    // transport-session delivery so tests can exercise ordering without
+    // requiring a Vulkan device, and replay backends can own Vulkan dispatch
+    // state directly.
     virtual void replay(const InterceptedCall & call) = 0;
 };
 

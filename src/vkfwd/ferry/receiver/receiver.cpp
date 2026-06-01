@@ -6,10 +6,9 @@
 
 namespace vkfwd {
 
-Receiver::Receiver()
-    // The default executor is trace-only; it should not be confused with
-    // complete Vulkan replay or receiver-side handle restoration.
-    : executor_(std::make_unique<TraceReplayExecutor>()) {}
+// The default executor is trace-only; it should not be confused with
+// complete Vulkan replay or receiver-side handle restoration.
+Receiver::Receiver(): executor_(std::make_unique<TraceReplayExecutor>()) {}
 
 void Receiver::set_executor(std::unique_ptr<ReplayExecutor> executor) { executor_ = std::move(executor); }
 

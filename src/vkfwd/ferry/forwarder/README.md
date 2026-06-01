@@ -2,14 +2,14 @@
 
 `forwarder` is the source-process Vulkan layer. It exposes generated Vulkan
 entry points to the loader, packs source API calls into core command blobs, and
-sends flushed streams through a per-thread `TransportChannel`.
+sends flushed streams through a shared `TransportSession`.
 
 ## Responsibilities
 
 - `layer.cpp`: exported `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`
   implementation for the Vulkan loader.
 - `forwarder.hpp` and `forwarder.cpp`: thread-local request blob and
-  transport-channel ownership.
+  transport-session ownership.
 - `generated/dispatch_table.*`: generated function-pointer tables for commands
   that vkfwd currently supports.
 - `generated/command/*.cpp`: generated Vulkan entry-point wrappers.
@@ -40,11 +40,13 @@ Receiver-side replay is responsible for destination dispatch.
 `Forwarder::instance()` is thread-local. Each thread owns:
 
 - one request `Blob`
-- one `TransportChannel` created from the process-wide channel creator
+- one stable 64-bit source-thread token embedded at the start of each request
+  blob
+- one shared `TransportSession` created from the process-wide transport creator
 
-Configure the channel creator before application worker threads enter Vulkan.
-Concrete channels may share a session internally, but `Forwarder` only depends
-on the per-thread `send()` boundary.
+Configure the transport creator before application worker threads enter Vulkan.
+Concrete transports may multiplex internally, but `Forwarder` only depends on
+the synchronous `send_accumulated_api_calls()` boundary.
 
 ## Generated Entry-Point Flow
 
@@ -52,9 +54,10 @@ Response-bearing commands follow this shape:
 
 1. run an optional manual pre-pack hook
 2. copy function arguments into generated `Command::Parameters`
-3. append a command chunk to `Forwarder::request_blob()`
-4. call `Forwarder::flush()`, which sends the thread's blob through the channel
-   and resets it
+3. append a command chunk to `Forwarder::request_blob()` after the source-thread
+   prefix
+4. call `Forwarder::flush()`, which sends the thread's blob through the transport
+   session and resets it with the same prefix
 5. unpack the returned response blob
 6. copy response-owned output parameter values back to the caller
 7. run an optional manual post-response hook
@@ -66,8 +69,9 @@ response-bearing command or an explicit test flush sends the pending stream.
 
 ## Transport Boundary
 
-`TransportChannel::send()` receives a blob that may contain multiple command
-chunks. The channel owns framing, remote or local transport, replay
+`TransportSession::send_accumulated_api_calls()` receives a blob whose first 64
+bits are the source-thread token and whose remaining bytes may contain multiple
+command chunks. The transport owns framing, remote or local delivery, replay
 coordination, response correlation, and handle mapping below this boundary. The
 generated forwarder wrapper only knows how to decode the response blob for the
 last response-bearing command in the flushed stream.
@@ -88,8 +92,8 @@ command-specific and document why it is needed.
 
 ## Testing Guidance
 
-Generated forwarder tests install a test transport channel, call the generated
-Vulkan entry point, validate the received request blob inside the channel, and
+Generated forwarder tests install a test transport session, call the generated
+Vulkan entry point, validate the received request blob inside the transport, and
 return a generated response blob when the command requires one. This tests the
 entry-point logic, not just command pack/unpack helpers.
 

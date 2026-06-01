@@ -28,7 +28,7 @@ void Blob::reset() {
     size_ = 0;
 }
 
-SafeArrayView<std::uint8_t> Blob::grow(std::size_t size, std::size_t alignment) {
+SafeArrayView<std::uint8_t> Blob::grow(std::size_t size, std::size_t alignment, std::size_t * offset) {
     alignment = normalize_alignment(alignment);
     if (size == 0) { return {}; }
 
@@ -42,16 +42,17 @@ SafeArrayView<std::uint8_t> Blob::grow(std::size_t size, std::size_t alignment) 
     const std::size_t logical_offset  = checked_add(chunk.logical_begin, physical_offset);
     chunk.used                        = checked_add(physical_offset, size);
     size_                             = checked_add(chunk.logical_begin, chunk.used);
-    return SafeArrayView<std::uint8_t>(size, reinterpret_cast<std::uint8_t *>(aligned), logical_offset);
+    if (offset) { *offset = logical_offset; }
+    return SafeArrayView<std::uint8_t>(size, reinterpret_cast<std::uint8_t *>(aligned));
 }
 
-SafeArrayView<const std::uint8_t> Blob::data_at(std::size_t offset, std::size_t size) const {
+SafeArrayView<const std::uint8_t> Blob::at(std::size_t offset, std::size_t size) const {
     if (size == 0) { return {}; }
     for (const auto & chunk : chunks_) {
         if (offset < chunk.logical_begin) { continue; }
         const std::size_t local = offset - chunk.logical_begin;
         if (local <= chunk.used && size <= chunk.used - local) {
-            return SafeArrayView<const std::uint8_t>(size, reinterpret_cast<const std::uint8_t *>(chunk.data.get() + local), offset);
+            return SafeArrayView<const std::uint8_t>(size, reinterpret_cast<const std::uint8_t *>(chunk.data.get() + local));
         }
     }
     return {};

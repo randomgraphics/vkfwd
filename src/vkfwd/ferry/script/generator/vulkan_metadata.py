@@ -574,7 +574,8 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
 
   CommandChunkHeader header{{}};
   try {{
-    auto destination = blob.grow<std::uint8_t>(kCommandSize, kChunkAlignment);
+    std::size_t command_offset = 0;
+    auto destination = blob.grow<std::uint8_t>(kCommandSize, kChunkAlignment, &command_offset);
     header.command_id = static_cast<std::uint32_t>(command_id);
     header.size = static_cast<std::uint32_t>(kCommandSize);
     header.command_revision = revision;
@@ -585,7 +586,7 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
                       static_cast<std::uint32_t>(command_id), kCommandSize);
       return VK_ERROR_UNKNOWN;
     }}
-    chunk.command_offset = destination.offset();
+    chunk.command_offset = command_offset;
     chunk.command_size = header.size;
   }} catch (const std::bad_alloc&) {{
     VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={{}}, payload_size={{}}",
@@ -601,10 +602,10 @@ VkResult unpack_command_chunk(const Blob& blob, const CommandChunk& chunk, Comma
   constexpr std::size_t kPayloadOffset =
       (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
   constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
-  const auto header_view = blob.data_at(chunk.command_offset, sizeof(CommandChunkHeader));
-  const auto payload_view = blob.data_at(chunk.command_offset + kPayloadOffset, sizeof(T));
-  const auto* header = reinterpret_cast<const CommandChunkHeader*>(header_view.data());
-  const auto* packed_payload = reinterpret_cast<const T*>(payload_view.data());
+  const auto header_view = blob.at(chunk.command_offset, sizeof(CommandChunkHeader));
+  const auto payload_view = blob.at(chunk.command_offset + kPayloadOffset, sizeof(T));
+  const auto* header = header_view.empty() ? nullptr : reinterpret_cast<const CommandChunkHeader*>(&header_view.at(0));
+  const auto* packed_payload = payload_view.empty() ? nullptr : reinterpret_cast<const T*>(&payload_view.at(0));
   if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
       header->size != chunk.command_size || chunk.command_size != kCommandSize) [[unlikely]] {{
     VKFWD_LOG_ERROR(
@@ -991,14 +992,14 @@ def forwarder_command_source_content(
 {output_assignments}
   // Synchronous forwarding flushes this thread's pending request blob and
   // returns a fresh response blob. Generated code only decodes that blob here;
-  // channel implementations own transport, replay, and handle mapping policy.
+  // transport implementations own delivery, replay, and handle mapping policy.
 """
     else:
         response_flow = f"""
   // Deferrable commands have no return value or output parameters, so the
   // entry point only appends to the thread-local request blob. The next
   // non-deferrable command is responsible for flushing this thread's pending
-  // command sequence through the channel.
+  // command sequence through the transport session.
 """
     return f"""#include "generated/dispatch_table.hpp"
 
@@ -1072,7 +1073,7 @@ def forwarder_test_support_content(metadata: dict[str, object]) -> str:
 #include "blob.hpp"
 #include "forwarder.hpp"
 #include "protocol.hpp"
-#include "transport_channel.hpp"
+#include "transport_session.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1086,44 +1087,53 @@ namespace vkfwd::forwarder::generated::test {{
 
 using FlushHandler = Blob (*)(Blob & request_blob);
 
-struct ChannelState {{
+struct TransportState {{
     FlushHandler handler   = nullptr;
     bool         processed = false;
 }};
 
-inline ChannelState & channel_state() {{
-    static ChannelState state;
+inline TransportState & transport_state() {{
+    static TransportState state;
     return state;
 }}
 
-class PackUnpackChannel final: public TransportChannel {{
+inline TransportSessionInfo & pack_unpack_session_info() {{
+    static TransportSessionInfo info;
+    return info;
+}}
+
+class PackUnpackTransportSession final: public TransportSession {{
 public:
-    Blob send(Blob & request_blob) override {{
-        auto & state   = channel_state();
+    const TransportSessionInfo & info() const override {{ return pack_unpack_session_info(); }}
+
+    Blob send_accumulated_api_calls(Blob & request_blob) override {{
+        auto & state   = transport_state();
         state.processed = true;
         REQUIRE(state.handler != nullptr);
         return state.handler(request_blob);
     }}
 }};
 
-inline std::unique_ptr<TransportChannel> make_pack_unpack_channel() {{ return std::make_unique<PackUnpackChannel>(); }}
+inline std::shared_ptr<TransportSession> make_pack_unpack_transport_session() {{ return std::make_shared<PackUnpackTransportSession>(); }}
 
-inline void install_pack_unpack_channel(FlushHandler handler) {{
-    auto & state    = channel_state();
+inline void install_pack_unpack_transport(FlushHandler handler) {{
+    auto & state    = transport_state();
     state.handler   = handler;
     state.processed = false;
-    Forwarder::set_channel_creator(make_pack_unpack_channel);
+    Forwarder::set_transport_creator(make_pack_unpack_transport_session);
     Forwarder::instance().request_blob().reset();
 }}
 
 inline CommandChunk first_command_chunk(const Blob & request_blob) {{
-    // Channel tests reconstruct the packet metadata from the stream header
+    // Transport tests reconstruct the packet metadata from the stream header
     // because the forwarding boundary only transports blob bytes, not the
-    // caller-side CommandChunk wrapper returned by pack_parameters().
-    const auto header_view = request_blob.data_at(0, sizeof(CommandChunkHeader));
-    REQUIRE(header_view.data() != nullptr);
-    const auto * header = reinterpret_cast<const CommandChunkHeader *>(header_view.data());
-    return CommandChunk {{.command_offset = 0, .command_size = header->size}};
+    // caller-side CommandChunk wrapper returned by pack_parameters(). The first
+    // 64 bits are reserved for source-thread routing, so command chunks begin
+    // after that prefix.
+    const auto header_view = request_blob.at(kSourceThreadIdSize, sizeof(CommandChunkHeader));
+    REQUIRE(!header_view.empty());
+    const auto * header = reinterpret_cast<const CommandChunkHeader *>(&header_view.at(0));
+    return CommandChunk {{.command_offset = kSourceThreadIdSize, .command_size = header->size}};
 }}
 
 template<class Pointer>
@@ -1131,19 +1141,27 @@ std::size_t encoded_offset(Pointer pointer) {{
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }}
 
+template<class Pointer>
+std::size_t command_relative_offset(const CommandChunk & packet, Pointer pointer) {{
+    // Command parameter pointer slots are encoded relative to the command chunk
+    // base. The request stream now has a source-thread prefix, so tests must
+    // rebase those slots through the packet metadata before inspecting payloads.
+    return packet.command_offset + encoded_offset(pointer);
+}}
+
 template<class T>
 const T & object_at(const Blob & blob, std::size_t offset) {{
-    const auto view = blob.data_at(offset, sizeof(T));
-    REQUIRE(view.data() != nullptr);
-    return *reinterpret_cast<const T *>(view.data());
+    const auto view = blob.at(offset, sizeof(T));
+    REQUIRE(!view.empty());
+    return *reinterpret_cast<const T *>(&view.at(0));
 }}
 
 inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {{
     REQUIRE(encoded_value != nullptr);
     const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
-    const auto        view          = blob.data_at(string_offset, expected.size() + 1);
-    REQUIRE(view.data() != nullptr);
-    const auto * value = reinterpret_cast<const char *>(view.data());
+    const auto        view          = blob.at(string_offset, expected.size() + 1);
+    REQUIRE(!view.empty());
+    const auto * value = reinterpret_cast<const char *>(&view.at(0));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\\0');
 }}
@@ -1159,16 +1177,16 @@ inline void check_relative_string_array(const Blob & blob,
 
     REQUIRE(encoded_values != nullptr);
     const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        slots_view   = blob.data_at(array_offset, expected.size() * sizeof(std::uintptr_t));
-    REQUIRE(slots_view.data() != nullptr);
-    const auto * slots = reinterpret_cast<const std::uintptr_t *>(slots_view.data());
+    const auto        slots_view   = blob.at(array_offset, expected.size() * sizeof(std::uintptr_t));
+    REQUIRE(!slots_view.empty());
+    const auto * slots = reinterpret_cast<const std::uintptr_t *>(&slots_view.at(0));
 
     std::size_t index = 0;
     for (std::string_view value : expected) {{
         REQUIRE(slots[index] != 0);
-        const auto string_view = blob.data_at(base_offset + static_cast<std::size_t>(slots[index]), value.size() + 1);
-        REQUIRE(string_view.data() != nullptr);
-        const auto * string = reinterpret_cast<const char *>(string_view.data());
+        const auto string_view = blob.at(base_offset + static_cast<std::size_t>(slots[index]), value.size() + 1);
+        REQUIRE(!string_view.empty());
+        const auto * string = reinterpret_cast<const char *>(&string_view.at(0));
         CHECK(std::string_view(string, value.size()) == value);
         CHECK(string[value.size()] == '\\0');
         ++index;
@@ -1289,7 +1307,7 @@ Blob handle_flush(Blob & request_blob) {{
     CHECK(actual.pInstance == expected.output_instance);
 
     REQUIRE(actual.pCreateInfo != nullptr);
-    const auto create_info_offset = encoded_offset(actual.pCreateInfo);
+    const auto create_info_offset = command_relative_offset(packet, actual.pCreateInfo);
     const VkInstanceCreateInfo * packed_create_info = nullptr;
     REQUIRE(::vkfwd::generated::structure::unpack_VkInstanceCreateInfo(request_blob, create_info_offset, &packed_create_info) == VK_SUCCESS);
     REQUIRE(packed_create_info != nullptr);
@@ -1315,7 +1333,7 @@ Blob handle_flush(Blob & request_blob) {{
                                 {{"VK_EXT_debug_utils", "VK_KHR_surface"}});
 
     REQUIRE(actual.pAllocator != nullptr);
-    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, encoded_offset(actual.pAllocator));
+    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, command_relative_offset(packet, actual.pAllocator));
     check_allocator_callbacks(packed_allocator, expected.allocator);
 
     Blob response_blob;
@@ -1329,13 +1347,13 @@ Blob handle_flush(Blob & request_blob) {{
 
 TEST_CASE("vkCreateInstance generated forwarder round trips packed parameters and response") {{
     auto & expected = scenario();
-    install_pack_unpack_channel(handle_flush);
+    install_pack_unpack_transport(handle_flush);
 
     VkInstance instance = VK_NULL_HANDLE;
     expected.output_instance = &instance;
     const VkResult result = vkfwd::forwarder::generated::vkCreateInstance(&expected.create_info, &expected.allocator, &instance);
 
-    CHECK(channel_state().processed);
+    CHECK(transport_state().processed);
     CHECK(result == expected.response_result);
     CHECK(instance == expected.response_instance);
 }}
@@ -1428,7 +1446,7 @@ Blob handle_flush(Blob & request_blob) {{
     CHECK(actual.pDevice == expected.output_device);
 
     REQUIRE(actual.pCreateInfo != nullptr);
-    const auto create_info_offset = encoded_offset(actual.pCreateInfo);
+    const auto create_info_offset = command_relative_offset(packet, actual.pCreateInfo);
     const VkDeviceCreateInfo * packed_create_info = nullptr;
     REQUIRE(::vkfwd::generated::structure::unpack_VkDeviceCreateInfo(request_blob, create_info_offset, &packed_create_info) == VK_SUCCESS);
     REQUIRE(packed_create_info != nullptr);
@@ -1450,9 +1468,9 @@ Blob handle_flush(Blob & request_blob) {{
 
     REQUIRE(packed_queue_info->pQueuePriorities != nullptr);
     const auto priorities_offset = queue_info_offset + encoded_offset(packed_queue_info->pQueuePriorities);
-    const auto priorities_view = request_blob.data_at(priorities_offset, expected.queue_priorities.size() * sizeof(float));
-    REQUIRE(priorities_view.data() != nullptr);
-    const auto * priorities = reinterpret_cast<const float *>(priorities_view.data());
+    const auto priorities_view = request_blob.at(priorities_offset, expected.queue_priorities.size() * sizeof(float));
+    REQUIRE(!priorities_view.empty());
+    const auto * priorities = reinterpret_cast<const float *>(&priorities_view.at(0));
     CHECK(priorities[0] == expected.queue_priorities[0]);
     CHECK(priorities[1] == expected.queue_priorities[1]);
 
@@ -1467,7 +1485,7 @@ Blob handle_flush(Blob & request_blob) {{
     CHECK(packed_features.samplerAnisotropy == VK_TRUE);
 
     REQUIRE(actual.pAllocator != nullptr);
-    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, encoded_offset(actual.pAllocator));
+    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, command_relative_offset(packet, actual.pAllocator));
     check_allocator_callbacks(packed_allocator, expected.allocator);
 
     Blob response_blob;
@@ -1481,13 +1499,13 @@ Blob handle_flush(Blob & request_blob) {{
 
 TEST_CASE("vkCreateDevice generated forwarder round trips packed parameters and response") {{
     auto & expected = scenario();
-    install_pack_unpack_channel(handle_flush);
+    install_pack_unpack_transport(handle_flush);
 
     VkDevice device = VK_NULL_HANDLE;
     expected.output_device = &device;
     const VkResult result = vkfwd::forwarder::generated::vkCreateDevice(expected.physical_device, &expected.create_info, &expected.allocator, &device);
 
-    CHECK(channel_state().processed);
+    CHECK(transport_state().processed);
     CHECK(result == expected.response_result);
     CHECK(device == expected.response_device);
 }}
@@ -1547,7 +1565,7 @@ Blob handle_flush(Blob & request_blob) {{
     CHECK(actual.pAllocator == &expected.allocator);
     check_allocator_callbacks(*actual.pAllocator, expected.allocator);
 
-    // Deferrable generated commands acknowledge successful channel processing
+    // Deferrable generated commands acknowledge successful transport processing
     // with an empty response blob; there is no response packet to unpack.
     return Blob {{}};
 }}
@@ -1556,12 +1574,12 @@ Blob handle_flush(Blob & request_blob) {{
 
 TEST_CASE("{command['name']} generated forwarder packs parameters when flushed") {{
     auto & expected = scenario();
-    install_pack_unpack_channel(handle_flush);
+    install_pack_unpack_transport(handle_flush);
 
     vkfwd::forwarder::generated::{command['name']}(expected.{dispatch_name}, &expected.allocator);
     Blob response_blob = Forwarder::instance().flush();
 
-    CHECK(channel_state().processed);
+    CHECK(transport_state().processed);
     CHECK(response_blob.size() == 0);
 }}
 
@@ -1631,17 +1649,17 @@ std::size_t encoded_offset(Pointer pointer) {{
 
 template<class T>
 const T & object_at(const Blob & blob, std::size_t offset) {{
-    const auto view = blob.data_at(offset, sizeof(T));
-    REQUIRE(view.data() != nullptr);
-    return *reinterpret_cast<const T *>(view.data());
+    const auto view = blob.at(offset, sizeof(T));
+    REQUIRE(!view.empty());
+    return *reinterpret_cast<const T *>(&view.at(0));
 }}
 
 inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {{
     REQUIRE(encoded_value != nullptr);
     const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
-    const auto        view          = blob.data_at(string_offset, expected.size() + 1);
-    REQUIRE(view.data() != nullptr);
-    const auto * value = reinterpret_cast<const char *>(view.data());
+    const auto        view          = blob.at(string_offset, expected.size() + 1);
+    REQUIRE(!view.empty());
+    const auto * value = reinterpret_cast<const char *>(&view.at(0));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\\0');
 }}
@@ -1655,16 +1673,16 @@ inline void check_relative_string_array(const Blob & blob, std::size_t base_offs
 
     REQUIRE(encoded_values != nullptr);
     const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        slots_view   = blob.data_at(array_offset, expected.size() * sizeof(std::uintptr_t));
-    REQUIRE(slots_view.data() != nullptr);
-    const auto * slots = reinterpret_cast<const std::uintptr_t *>(slots_view.data());
+    const auto        slots_view   = blob.at(array_offset, expected.size() * sizeof(std::uintptr_t));
+    REQUIRE(!slots_view.empty());
+    const auto * slots = reinterpret_cast<const std::uintptr_t *>(&slots_view.at(0));
 
     std::size_t index = 0;
     for (std::string_view expected_value : expected) {{
         REQUIRE(slots[index] != 0);
-        const auto string_view = blob.data_at(base_offset + static_cast<std::size_t>(slots[index]), expected_value.size() + 1);
-        REQUIRE(string_view.data() != nullptr);
-        const auto * actual_value = reinterpret_cast<const char *>(string_view.data());
+        const auto string_view = blob.at(base_offset + static_cast<std::size_t>(slots[index]), expected_value.size() + 1);
+        REQUIRE(!string_view.empty());
+        const auto * actual_value = reinterpret_cast<const char *>(&string_view.at(0));
         CHECK(std::string_view(actual_value, expected_value.size()) == expected_value);
         CHECK(actual_value[expected_value.size()] == '\\0');
         ++index;
@@ -1680,9 +1698,9 @@ void check_relative_plain_array(const Blob & blob, std::size_t base_offset, cons
 
     REQUIRE(encoded_values != nullptr);
     const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        view         = blob.data_at(array_offset, expected.size() * sizeof(T));
-    REQUIRE(view.data() != nullptr);
-    const auto * actual_values = reinterpret_cast<const T *>(view.data());
+    const auto        view         = blob.at(array_offset, expected.size() * sizeof(T));
+    REQUIRE(!view.empty());
+    const auto * actual_values = reinterpret_cast<const T *>(&view.at(0));
 
     std::size_t index = 0;
     for (const T & expected_value : expected) {{

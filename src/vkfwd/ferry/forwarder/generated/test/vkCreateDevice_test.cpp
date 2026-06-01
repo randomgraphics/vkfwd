@@ -81,7 +81,7 @@ Blob handle_flush(Blob & request_blob) {
     CHECK(actual.pDevice == expected.output_device);
 
     REQUIRE(actual.pCreateInfo != nullptr);
-    const auto                 create_info_offset = encoded_offset(actual.pCreateInfo);
+    const auto                 create_info_offset = command_relative_offset(packet, actual.pCreateInfo);
     const VkDeviceCreateInfo * packed_create_info = nullptr;
     REQUIRE(::vkfwd::generated::structure::unpack_VkDeviceCreateInfo(request_blob, create_info_offset, &packed_create_info) == VK_SUCCESS);
     REQUIRE(packed_create_info != nullptr);
@@ -103,9 +103,9 @@ Blob handle_flush(Blob & request_blob) {
 
     REQUIRE(packed_queue_info->pQueuePriorities != nullptr);
     const auto priorities_offset = queue_info_offset + encoded_offset(packed_queue_info->pQueuePriorities);
-    const auto priorities_view   = request_blob.data_at(priorities_offset, expected.queue_priorities.size() * sizeof(float));
-    REQUIRE(priorities_view.data() != nullptr);
-    const auto * priorities = reinterpret_cast<const float *>(priorities_view.data());
+    const auto priorities_view   = request_blob.at(priorities_offset, expected.queue_priorities.size() * sizeof(float));
+    REQUIRE(!priorities_view.empty());
+    const auto * priorities = reinterpret_cast<const float *>(&priorities_view.at(0));
     CHECK(priorities[0] == expected.queue_priorities[0]);
     CHECK(priorities[1] == expected.queue_priorities[1]);
 
@@ -119,7 +119,7 @@ Blob handle_flush(Blob & request_blob) {
     CHECK(packed_features.samplerAnisotropy == VK_TRUE);
 
     REQUIRE(actual.pAllocator != nullptr);
-    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, encoded_offset(actual.pAllocator));
+    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, command_relative_offset(packet, actual.pAllocator));
     check_allocator_callbacks(packed_allocator, expected.allocator);
 
     Blob                    response_blob;
@@ -133,13 +133,13 @@ Blob handle_flush(Blob & request_blob) {
 
 TEST_CASE("vkCreateDevice generated forwarder round trips packed parameters and response") {
     auto & expected = scenario();
-    install_pack_unpack_channel(handle_flush);
+    install_pack_unpack_transport(handle_flush);
 
     VkDevice device        = VK_NULL_HANDLE;
     expected.output_device = &device;
     const VkResult result  = vkfwd::forwarder::generated::vkCreateDevice(expected.physical_device, &expected.create_info, &expected.allocator, &device);
 
-    CHECK(channel_state().processed);
+    CHECK(transport_state().processed);
     CHECK(result == expected.response_result);
     CHECK(device == expected.response_device);
 }

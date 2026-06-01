@@ -72,7 +72,7 @@ Blob handle_flush(Blob & request_blob) {
     CHECK(actual.pInstance == expected.output_instance);
 
     REQUIRE(actual.pCreateInfo != nullptr);
-    const auto                   create_info_offset = encoded_offset(actual.pCreateInfo);
+    const auto                   create_info_offset = command_relative_offset(packet, actual.pCreateInfo);
     const VkInstanceCreateInfo * packed_create_info = nullptr;
     REQUIRE(::vkfwd::generated::structure::unpack_VkInstanceCreateInfo(request_blob, create_info_offset, &packed_create_info) == VK_SUCCESS);
     REQUIRE(packed_create_info != nullptr);
@@ -96,7 +96,7 @@ Blob handle_flush(Blob & request_blob) {
     check_relative_string_array(request_blob, create_info_offset, packed_create_info->ppEnabledExtensionNames, {"VK_EXT_debug_utils", "VK_KHR_surface"});
 
     REQUIRE(actual.pAllocator != nullptr);
-    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, encoded_offset(actual.pAllocator));
+    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, command_relative_offset(packet, actual.pAllocator));
     check_allocator_callbacks(packed_allocator, expected.allocator);
 
     Blob                    response_blob;
@@ -110,13 +110,13 @@ Blob handle_flush(Blob & request_blob) {
 
 TEST_CASE("vkCreateInstance generated forwarder round trips packed parameters and response") {
     auto & expected = scenario();
-    install_pack_unpack_channel(handle_flush);
+    install_pack_unpack_transport(handle_flush);
 
     VkInstance instance      = VK_NULL_HANDLE;
     expected.output_instance = &instance;
     const VkResult result    = vkfwd::forwarder::generated::vkCreateInstance(&expected.create_info, &expected.allocator, &instance);
 
-    CHECK(channel_state().processed);
+    CHECK(transport_state().processed);
     CHECK(result == expected.response_result);
     CHECK(instance == expected.response_instance);
 }

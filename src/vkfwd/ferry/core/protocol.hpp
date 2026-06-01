@@ -8,6 +8,11 @@ namespace vkfwd {
 constexpr std::uint32_t kStreamMagic            = 0x564b4657; // "VKFW"
 constexpr std::uint32_t kSupportedSchemaVersion = 1;
 
+using SourceThreadId = std::uint64_t;
+
+constexpr std::size_t kSourceThreadIdOffset = 0;
+constexpr std::size_t kSourceThreadIdSize   = sizeof(SourceThreadId);
+
 struct VulkanApiVersion {
     std::uint16_t major = 0;
     std::uint16_t minor = 0;

@@ -10,12 +10,13 @@ on both sides of the forwarding boundary.
   version negotiation, command chunk headers, and command chunk ranges.
 - Blob storage in `blob.hpp` and `blob.cpp`: grow-only copied payload storage
   with stable logical offsets and bounded views.
-- Transport contracts in `transport_channel.hpp` and `transport_session.hpp`:
-  session-scoped handshake and per-thread logical channels for command streams.
+- Transport contracts in `transport_session.hpp` and `receiver_session.hpp`:
+  session-scoped handshake and source-thread-token routing for accumulated
+  command streams.
 - Generated command pack/unpack code in `generated/command/`.
 - Generated structure pack/unpack code in `generated/structure/`.
 - Manual command hooks in `hook/`.
-- Small placeholder/debug implementations such as `NullTransportChannel`.
+- Small placeholder/debug implementations used during forwarder bring-up.
 
 ## Serialization Model
 
@@ -43,9 +44,16 @@ wire representation.
 When changing `Blob`, preserve these properties:
 
 - `grow()` returns an aligned, bounded view over exactly the newly allocated
-  range.
-- `data_at()` returns a bounded view only when the entire requested range is
+  range; callers that need the logical Blob offset request it from `grow()`
+  separately because `SafeArrayView` is only an accessor.
+- `at()` returns a bounded view only when the entire requested range is
   present in one chunk.
+- `is_contiguous()` reports whether the current logical stream is backed by a
+  single allocation; use it for whole-blob inspection decisions, not allocation
+  tuning.
+- `SafeArrayView` callers access storage through `at()`; code that needs a
+  typed pointer must first validate the view and then take the address of a
+  checked element.
 - Failed or inconsistent count/pointer pairs must not expose out-of-bounds
   writable storage.
 
@@ -65,11 +73,12 @@ test is specifically about structure `pNext` behavior.
 
 ## Transport Contracts
 
-`TransportSession` owns compatibility negotiation. A session may open multiple
-logical `TransportChannel`s, one per source thread. A channel `send()` call is
-the synchronous forwarding boundary for a single thread's packed stream. The
-request blob may contain zero or more deferrable commands followed by the command
-that needs a response.
+`TransportSession` owns compatibility negotiation and the synchronous forwarding
+boundary. `TransportSession::send_accumulated_api_calls()` sends one source
+thread's accumulated request stream and returns the response blob for the command
+that forced the flush. The request blob begins with a 64-bit source-thread token,
+then contains zero or more deferrable commands followed by the command that needs
+a response.
 
 The transportation layer's goal is to carry already-packed vkfwd command bytes
 from a source thread to a receiver replay context, then return the response blob
@@ -81,20 +90,22 @@ Required transportation-layer behavior:
 
 - Negotiate `HandshakeRequest` compatibility once per `TransportSession` before
   any command bytes are exchanged.
-- Provide one logical `TransportChannel` per source thread so deferrable command
-  ordering remains per-thread and does not require locks in `Forwarder`.
+- Preserve the leading source-thread token so deferrable command ordering remains
+  per thread and does not require locks in `Forwarder`.
 - Preserve byte-for-byte blob contents and command-chunk order inside each
-  channel send.
-- Correlate every synchronous `send()` with exactly one returned response blob
-  for the last response-bearing command in that flushed stream.
-- Keep channel identity stable enough for receiver-side routing, logging, and
-  future diagnostics.
+  accumulated stream.
+- Correlate every synchronous `send_accumulated_api_calls()` with exactly one
+  returned response blob for the last response-bearing command in that flushed
+  stream.
+- Keep source-thread identity stable enough for receiver-side routing, logging,
+  and future diagnostics.
 - Own framing, multiplexing, flow control, retry/shutdown policy, and any
   transport-specific backpressure without leaking those details into generated
   command code.
 - Define clear ownership of request and response blobs: callers retain the
-  request blob object, while channel implementations may copy, move from, or
-  synchronously inspect its bytes only within the documented `send()` contract.
+  request blob object, while transport implementations may copy, move from, or
+  synchronously inspect its bytes only within the documented
+  `send_accumulated_api_calls()` contract.
 
 The transportation layer must not reinterpret Vulkan command payloads beyond the
 framing needed to route requests and responses. Vulkan replay ordering,
@@ -112,13 +123,13 @@ receiver code.
 The default remote deployment should make the receiver listen and the forwarder
 connect. A receiver process starts on the destination device, binds a configured
 address, accepts a transport connection, completes the session handshake, and
-then accepts logical channels.
+then accepts accumulated request streams.
 
 For USB4 or Thunderbolt cable use, prefer OS-provided USB4/TB networking first,
 then run the same process transport over that IP link. The core transport
 contract must not depend on whether the physical link is USB4, Ethernet, local
 IPC, or loopback. A later raw USB bulk backend can reuse the same session and
-channel contracts if USB networking is not viable.
+stream contracts if USB networking is not viable.
 
 Expected backend progression:
 
@@ -135,41 +146,45 @@ Session creation sequence:
 4. Receiver validates schema version, Vulkan major version, and Vulkan minor
    compatibility before accepting command traffic.
 5. The session records local and remote handshake data in `TransportSessionInfo`.
-6. Only after compatibility succeeds can the forwarder open channels.
+6. Only after compatibility succeeds can the forwarder send accumulated request
+   streams.
 
-Handshake is session-scoped, not channel-scoped. The intent is to let many
-thread-local channels share one negotiated remote-device connection without
-rechecking schema compatibility on every Vulkan call.
+Handshake is session-scoped. The intent is to let many thread-local forwarders
+share one negotiated remote-device connection without rechecking schema
+compatibility on every Vulkan call.
 
-### Channel Lifecycle
+### Source-Thread Stream Lifecycle
 
 Each source application thread owns a `thread_local Forwarder`, and each
-`Forwarder` owns one `TransportChannel`. A concrete remote channel may hold a
-reference to the shared `TransportSession`; `Forwarder` must not know about
-session pooling, multiplexing, sockets, QUIC connections, or USB details.
+`Forwarder` prefixes its request blob with one stable 64-bit source-thread token.
+`Forwarder` must not know about session pooling, multiplexing, sockets, QUIC
+connections, or USB details.
 
-Forwarder-side channel flow:
+Forwarder-side stream flow:
 
 1. `Forwarder` is constructed on first Vulkan call from a source thread.
-2. Its configured channel creator obtains a good shared session, creating and
+2. Its configured transport creator obtains a good shared session, creating and
    handshaking one if needed.
-3. The channel creator calls `TransportSession::open_channel()`.
-4. The returned channel becomes this thread's dedicated transport path.
-5. `Forwarder::flush()` sends this thread's packed request blob through
-   `TransportChannel::send()` and receives the response blob.
+3. The forwarder writes its source-thread token as the first 64 bits of the
+   request blob.
+4. `Forwarder::flush()` sends this thread's packed request blob through
+   `TransportSession::send_accumulated_api_calls()` and receives the response
+   blob.
 
-Receiver-side channel flow:
+Receiver-side stream flow:
 
 1. Receiver owns one accepted `TransportSession`.
-2. Receiver waits on `TransportSession::accept_channel()`.
-3. Each accepted channel gets a receiver-side channel context on demand.
-4. The channel context owns per-channel request sequencing and replay state.
+2. Receiver reads each accumulated request stream from the transport.
+3. `ReceiverSession` reads the leading source-thread token and creates or reuses
+   a responder for that token.
+4. The responder owns per-source-thread request sequencing and replay state.
 5. Requests are decoded into receiver-owned command records before replay.
-6. Responses are sent back on the same logical channel and correlated with the
-   originating request.
+6. Responses are returned through the same transport session and correlated with
+   the originating request.
 
-Per-channel order is FIFO. Different channels may be processed concurrently only
-when Vulkan object synchronization and handle-map dependencies allow it.
+Per-source-thread order is FIFO. Different source-thread streams may be processed
+concurrently only when Vulkan object synchronization and handle-map dependencies
+allow it.
 
 ### Framing And Correlation
 
@@ -181,15 +196,15 @@ The frame metadata should include at least:
 
 - Session or protocol magic.
 - Schema or frame version.
-- Channel id.
+- Source-thread id.
 - Request sequence id.
 - Message type: open, request, response, error, close, control.
 - Flags: needs response, barrier, replay failure, transport failure.
 - Payload byte size.
 
-For `TransportChannel::send()`, the request sequence id is what lets the
-forwarder block one source thread for its response while other channels continue
-to make progress.
+For `TransportSession::send_accumulated_api_calls()`, the source-thread id plus a
+request sequence id is what lets the forwarder block one source thread for its
+response while other source-thread streams continue to make progress.
 
 ## Generated Core Code
 

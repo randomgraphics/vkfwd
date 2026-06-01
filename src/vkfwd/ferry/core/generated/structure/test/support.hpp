@@ -22,17 +22,17 @@ std::size_t encoded_offset(Pointer pointer) {
 
 template<class T>
 const T & object_at(const Blob & blob, std::size_t offset) {
-    const auto view = blob.data_at(offset, sizeof(T));
-    REQUIRE(view.data() != nullptr);
-    return *reinterpret_cast<const T *>(view.data());
+    const auto view = blob.at(offset, sizeof(T));
+    REQUIRE(!view.empty());
+    return *reinterpret_cast<const T *>(&view.at(0));
 }
 
 inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {
     REQUIRE(encoded_value != nullptr);
     const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
-    const auto        view          = blob.data_at(string_offset, expected.size() + 1);
-    REQUIRE(view.data() != nullptr);
-    const auto * value = reinterpret_cast<const char *>(view.data());
+    const auto        view          = blob.at(string_offset, expected.size() + 1);
+    REQUIRE(!view.empty());
+    const auto * value = reinterpret_cast<const char *>(&view.at(0));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\0');
 }
@@ -46,16 +46,16 @@ inline void check_relative_string_array(const Blob & blob, std::size_t base_offs
 
     REQUIRE(encoded_values != nullptr);
     const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        slots_view   = blob.data_at(array_offset, expected.size() * sizeof(std::uintptr_t));
-    REQUIRE(slots_view.data() != nullptr);
-    const auto * slots = reinterpret_cast<const std::uintptr_t *>(slots_view.data());
+    const auto        slots_view   = blob.at(array_offset, expected.size() * sizeof(std::uintptr_t));
+    REQUIRE(!slots_view.empty());
+    const auto * slots = reinterpret_cast<const std::uintptr_t *>(&slots_view.at(0));
 
     std::size_t index = 0;
     for (std::string_view expected_value : expected) {
         REQUIRE(slots[index] != 0);
-        const auto string_view = blob.data_at(base_offset + static_cast<std::size_t>(slots[index]), expected_value.size() + 1);
-        REQUIRE(string_view.data() != nullptr);
-        const auto * actual_value = reinterpret_cast<const char *>(string_view.data());
+        const auto string_view = blob.at(base_offset + static_cast<std::size_t>(slots[index]), expected_value.size() + 1);
+        REQUIRE(!string_view.empty());
+        const auto * actual_value = reinterpret_cast<const char *>(&string_view.at(0));
         CHECK(std::string_view(actual_value, expected_value.size()) == expected_value);
         CHECK(actual_value[expected_value.size()] == '\0');
         ++index;
@@ -71,9 +71,9 @@ void check_relative_plain_array(const Blob & blob, std::size_t base_offset, cons
 
     REQUIRE(encoded_values != nullptr);
     const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        view         = blob.data_at(array_offset, expected.size() * sizeof(T));
-    REQUIRE(view.data() != nullptr);
-    const auto * actual_values = reinterpret_cast<const T *>(view.data());
+    const auto        view         = blob.at(array_offset, expected.size() * sizeof(T));
+    REQUIRE(!view.empty());
+    const auto * actual_values = reinterpret_cast<const T *>(&view.at(0));
 
     std::size_t index = 0;
     for (const T & expected_value : expected) {
