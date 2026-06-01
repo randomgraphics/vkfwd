@@ -240,7 +240,7 @@ def main() -> int:
     sources = [
         path
         for path in tracked_sources(root, args.d, args.paths)
-        if is_owned_source(path)
+        if is_owned_source(path) and (root / path).exists()
     ]
     has_python = any(path.endswith(".py") for path in sources)
     has_non_python = any(not path.endswith(".py") for path in sources)

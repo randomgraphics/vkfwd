@@ -13,13 +13,16 @@ another implementation has the same invariants.
 
 ## Layout
 
-- `core/`: shared wire-format and serialization code linked by the forwarder and
-  receiver. See `core/README.md` before changing protocol, blob, transport, or
-  generated pack/unpack behavior.
+- `core/`: shared wire-format, generated dispatch-table metadata, and
+  serialization code linked by the forwarder and receiver. See `core/README.md`
+  before changing protocol, blob, transport, or generated pack/unpack behavior.
 - `forwarder/`: Vulkan loader-facing layer entry points and generated wrappers
   that pack source calls into per-thread request blobs. See
   `forwarder/README.md` before changing layer lookup, dispatch tables, or flush
   behavior.
+- `loopback/`: in-process simulation app and transport session that bind the
+  real forwarder to a flattened local byte-stream response. It intentionally
+  skips receiver replay until the receiver contract is ready for end-to-end use.
 - `receiver/`: replay-side scaffolding. It will own destination dispatch,
   source-to-destination handle maps, replay ordering, and copied command
   lifetimes as the receiver becomes complete.

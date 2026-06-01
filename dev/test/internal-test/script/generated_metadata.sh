@@ -35,8 +35,10 @@ cmp "$root/src/vkfwd/ferry/core/generated/vulkan_coverage.md" "$core_tmp/vulkan_
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_api.hpp" "$core_tmp/vulkan_api.hpp"
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_manual_hooks.hpp" "$core_tmp/vulkan_manual_hooks.hpp"
 cmp "$root/src/vkfwd/ferry/core/generated/README.md" "$core_tmp/README.md"
-cmp "$root/src/vkfwd/ferry/forwarder/generated/dispatch_table.hpp" "$forwarder_tmp/dispatch_table.hpp"
-cmp "$root/src/vkfwd/ferry/forwarder/generated/dispatch_table.cpp" "$forwarder_tmp/dispatch_table.cpp"
+cmp "$root/src/vkfwd/ferry/core/generated/dispatch_table.hpp" "$core_tmp/dispatch_table.hpp"
+cmp "$root/src/vkfwd/ferry/core/generated/dispatch_table.cpp" "$core_tmp/dispatch_table.cpp"
+cmp "$root/src/vkfwd/ferry/forwarder/generated/entrypoints.hpp" "$forwarder_tmp/entrypoints.hpp"
+cmp "$root/src/vkfwd/ferry/forwarder/generated/entrypoints.cpp" "$forwarder_tmp/entrypoints.cpp"
 cmp "$root/src/vkfwd/ferry/forwarder/generated/vulkan_forwarder_hooks.hpp" "$forwarder_tmp/vulkan_forwarder_hooks.hpp"
 
 for command in \

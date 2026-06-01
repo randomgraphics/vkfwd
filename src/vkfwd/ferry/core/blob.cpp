@@ -58,6 +58,23 @@ SafeArrayView<const std::uint8_t> Blob::at(std::size_t offset, std::size_t size)
     return {};
 }
 
+Blob Blob::flatten() const {
+    Blob flattened(size_ == 0 ? kMinimumChunkSize : size_);
+    if (size_ == 0) { return flattened; }
+
+    auto destination = flattened.grow(size_, 1);
+    for (const auto & chunk : chunks_) {
+        if (chunk.used == 0) { continue; }
+        const auto * source = reinterpret_cast<const std::uint8_t *>(chunk.data.get());
+        if (destination.set(chunk.logical_begin, chunk.used, source) != chunk.used) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd blob flatten failed: could not copy chunk, logical_begin={}, used={}, blob_size={}", chunk.logical_begin, chunk.used,
+                            size_);
+            return {};
+        }
+    }
+    return flattened;
+}
+
 std::size_t Blob::normalize_alignment(std::size_t alignment) {
     if (alignment <= 1) { return 1; }
     if (std::has_single_bit(alignment)) { return alignment; }

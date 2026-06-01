@@ -1,14 +1,12 @@
 #pragma once
 
-#include "call_record.hpp"
-
-#include <memory>
+#include "receiver_session.hpp"
 
 namespace vkfwd {
 
 class Receiver {
 public:
-    Receiver();
+    Receiver(ReceiverSession & s);
 
     // Receiver replay is injectable so tests can validate dispatch ordering
     // without requiring a Vulkan device, while real backends can own receiver-side
@@ -21,6 +19,8 @@ public:
     void receive(const InterceptedCall & call);
 
 private:
+    ReceiverSession & session_;
+
     std::unique_ptr<ReplayExecutor> executor_;
 };
 

@@ -14,6 +14,8 @@ on both sides of the forwarding boundary.
   session-scoped handshake and source-thread-token routing for accumulated
   command streams.
 - Generated command pack/unpack code in `generated/command/`.
+- Generated dispatch-table types and command-name lookup helpers in
+  `generated/dispatch_table.*`.
 - Generated structure pack/unpack code in `generated/structure/`.
 - Manual command hooks in `hook/`.
 - Small placeholder/debug implementations used during forwarder bring-up.
@@ -51,6 +53,9 @@ When changing `Blob`, preserve these properties:
 - `is_contiguous()` reports whether the current logical stream is backed by a
   single allocation; use it for whole-blob inspection decisions, not allocation
   tuning.
+- `flatten()` returns a new Blob whose logical stream is copied into one backing
+  allocation so transports that need a contiguous byte span do not have to know
+  about chunk internals.
 - `SafeArrayView` callers access storage through `at()`; code that needs a
   typed pointer must first validate the view and then take the address of a
   checked element.
@@ -175,8 +180,8 @@ Receiver-side stream flow:
 
 1. Receiver owns one accepted `TransportSession`.
 2. Receiver reads each accumulated request stream from the transport.
-3. `ReceiverSession` reads the leading source-thread token and creates or reuses
-   a responder for that token.
+3. A concrete `ReceiverSession` reads the leading source-thread token and
+   creates or reuses implementation-owned replay state for that token.
 4. The responder owns per-source-thread request sequencing and replay state.
 5. Requests are decoded into receiver-owned command records before replay.
 6. Responses are returned through the same transport session and correlated with

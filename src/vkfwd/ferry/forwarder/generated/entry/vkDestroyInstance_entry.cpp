@@ -1,4 +1,4 @@
-#include "generated/dispatch_table.hpp"
+#include "generated/entrypoints.hpp"
 
 #include "forwarder.hpp"
 #include "generated/command/vkDestroyInstance.hpp"
@@ -17,7 +17,7 @@
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks * pAllocator) {
+VKAPI_ATTR void VKAPI_CALL vkDestroyInstance_entry(VkInstance instance, const VkAllocationCallbacks * pAllocator) {
     using Command = ::vkfwd::generated::commands::vkDestroyInstance::Command;
     using Hooks   = ::vkfwd::forwarder::manual::CommandHooks<::vkfwd::generated::CommandId::DestroyInstance>;
 

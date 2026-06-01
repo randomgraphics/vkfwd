@@ -69,10 +69,11 @@ Everything under a `generated/` source tree is produced by
 generator entry point and may be replaced by regeneration. Manual code belongs
 outside generated trees.
 Generated pack/unpack command code and per-command metadata live under
-`src/vkfwd/ferry/core/generated/command/`. Forwarder-specific generated loader,
-dispatch, and interceptor glue should live under
-`src/vkfwd/ferry/forwarder/generated/`. Generated roots may contain small manifests
-for provenance and versioning, but not one centralized all-API metadata blob.
+`src/vkfwd/ferry/core/generated/command/`, and shared generated dispatch table
+types live under `src/vkfwd/ferry/core/generated/`. Forwarder-specific generated
+loader entry-point glue should live under `src/vkfwd/ferry/forwarder/generated/`.
+Generated roots may contain small manifests for provenance and versioning, but
+not one centralized all-API metadata blob.
 Per-command manual hooks live under `src/vkfwd/ferry/core/hook/<api>Hook.hpp`;
 generated command code conditionally includes those files when present. Hook
 implementations that need out-of-line bodies may add a matching `.cpp` file and

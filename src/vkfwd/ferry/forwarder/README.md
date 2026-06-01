@@ -10,8 +10,13 @@ sends flushed streams through a shared `TransportSession`.
   implementation for the Vulkan loader.
 - `forwarder.hpp` and `forwarder.cpp`: thread-local request blob and
   transport-session ownership.
-- `generated/dispatch_table.*`: generated function-pointer tables for commands
-  that vkfwd currently supports.
+- `../core/generated/dispatch_table.*`: generated function-pointer table types
+  and name-lookup methods for commands that vkfwd currently supports. The table
+  code intentionally does not declare API entry points so table shape stays
+  separate from wrapper linkage.
+- `generated/entrypoints.*`: generated declarations and populated dispatch-table
+  instances for the Vulkan layer entry point wrappers. Wrapper symbols use a
+  `_entry` suffix so they cannot collide with loader/exported Vulkan names.
 - `generated/entry/*_entry.cpp`: generated Vulkan layer entry-point functions
   stored in the generated dispatch tables and called by application code through
   the Vulkan loader.
@@ -27,10 +32,9 @@ their generated pack, response, and output-parameter contract.
 
 The generated dispatch tables are shared by command level:
 
-- global: `vkCreateInstance`, `vkGetInstanceProcAddr`,
-  `vkGetDeviceProcAddr`
-- instance: instance-level generated entry points
-- device: device-level generated entry points
+- global: `vkCreateInstance`
+- instance: `vkGetInstanceProcAddr` and instance-level generated entry points
+- device: `vkGetDeviceProcAddr` and device-level generated entry points
 
 These tables point to vkfwd wrappers, never to the local Vulkan driver or a
 downstream loader-chain dispatch table. The current forwarder does not call a

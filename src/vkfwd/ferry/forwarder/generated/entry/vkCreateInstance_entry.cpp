@@ -1,4 +1,4 @@
-#include "generated/dispatch_table.hpp"
+#include "generated/entrypoints.hpp"
 
 #include "forwarder.hpp"
 #include "generated/command/vkCreateInstance.hpp"
@@ -17,7 +17,8 @@
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator, VkInstance * pInstance) {
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance_entry(const VkInstanceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
+                                                      VkInstance * pInstance) {
     using Command = ::vkfwd::generated::commands::vkCreateInstance::Command;
     using Hooks   = ::vkfwd::forwarder::manual::CommandHooks<::vkfwd::generated::CommandId::CreateInstance>;
 

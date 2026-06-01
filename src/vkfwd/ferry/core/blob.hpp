@@ -100,6 +100,11 @@ public:
     // policy knob.
     bool        is_contiguous() const { return chunks_.size() <= 1; }
 
+    // Copies the current logical stream into one backing allocation. Transport
+    // implementations use this when their framing layer needs a single byte span
+    // but command packers are still free to grow this blob in multiple chunks.
+    Blob        flatten() const;
+
     // Grows the arena and returns a bounded view over exactly the new allocation.
     // If requested, offset receives the logical Blob offset after alignment
     // padding is applied. The returned memory is uninitialized so callers can

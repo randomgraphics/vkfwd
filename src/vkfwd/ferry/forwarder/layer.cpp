@@ -1,8 +1,7 @@
 #include "generated/dispatch_table.hpp"
+#include "generated/entrypoints.hpp"
 
 #include <vulkan/vulkan.h>
-
-#include <cstring>
 
 #if defined(_WIN32)
     #define VKFWD_EXPORT extern "C" __declspec(dllexport)
@@ -15,26 +14,11 @@ VKFWD_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevi
 
 namespace {
 
-PFN_vkVoidFunction lookup_global_entrypoint(const char * name) {
-    const auto & table = vkfwd::forwarder::generated::global_dispatch_table();
-    if (std::strcmp(name, "vkCreateInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(table.create_instance); }
-    if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(vkGetInstanceProcAddr); }
-    if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(vkGetDeviceProcAddr); }
-    return nullptr;
-}
+PFN_vkVoidFunction lookup_global_entrypoint(const char * name) { return vkfwd::forwarder::generated::global_dispatch_table().getProcByName(name); }
 
-PFN_vkVoidFunction lookup_instance_entrypoint(const char * name) {
-    const auto & table = vkfwd::forwarder::generated::instance_dispatch_table();
-    if (std::strcmp(name, "vkDestroyInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(table.destroy_instance); }
-    if (std::strcmp(name, "vkCreateDevice") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(table.create_device); }
-    return nullptr;
-}
+PFN_vkVoidFunction lookup_instance_entrypoint(const char * name) { return vkfwd::forwarder::generated::instance_dispatch_table().getProcByName(name); }
 
-PFN_vkVoidFunction lookup_device_entrypoint(const char * name) {
-    const auto & table = vkfwd::forwarder::generated::device_dispatch_table();
-    if (std::strcmp(name, "vkDestroyDevice") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(table.destroy_device); }
-    return nullptr;
-}
+PFN_vkVoidFunction lookup_device_entrypoint(const char * name) { return vkfwd::forwarder::generated::device_dispatch_table().getProcByName(name); }
 
 } // namespace
 

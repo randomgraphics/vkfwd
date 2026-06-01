@@ -8,5 +8,8 @@ Per-command generated code and per-command generated metadata live under
 `command/`. Human-written hook code belongs under
 `src/vkfwd/ferry/core/hook/<api>Hook.hpp` and optional matching `.cpp` files.
 `vulkan_api.hpp` contains shared generated API facts such as stable command ids
-and the pinned Vulkan API version. There is intentionally no generated
-`vulkan_api.cpp`; command metadata and behavior stay per-command.
+and the pinned Vulkan API version. `dispatch_table.hpp` and
+`dispatch_table.cpp` contain shared generated Vulkan function-pointer table
+types and name lookup helpers. There is intentionally no generated
+`vulkan_api.cpp`; command metadata stays per-command, while table lookup stays
+with the shared generated API surface.

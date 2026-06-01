@@ -1,4 +1,4 @@
-#include "generated/dispatch_table.hpp"
+#include "generated/entrypoints.hpp"
 
 #include "forwarder.hpp"
 #include "generated/command/vkCreateDevice.hpp"
@@ -17,8 +17,8 @@
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
-                                              VkDevice * pDevice) {
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_entry(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo * pCreateInfo,
+                                                    const VkAllocationCallbacks * pAllocator, VkDevice * pDevice) {
     using Command = ::vkfwd::generated::commands::vkCreateDevice::Command;
     using Hooks   = ::vkfwd::forwarder::manual::CommandHooks<::vkfwd::generated::CommandId::CreateDevice>;
 
