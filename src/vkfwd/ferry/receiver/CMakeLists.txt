@@ -2,8 +2,8 @@
 # destination Vulkan dispatch, source-to-destination handle maps, and copied
 # command lifetimes.
 add_library(vkfwd_receiver STATIC
-  receiver.cpp
-  trace_replay_executor.cpp)
+  generated/endpoints.cpp
+  receiver.cpp)
 
 set_target_properties(vkfwd_receiver PROPERTIES
   # Keep this PIC as well so the receiver can later be embedded into a daemon,

@@ -2,22 +2,32 @@
 
 #include "blob.hpp"
 
+#include <functional>
+#include <memory>
+
 namespace vkfwd {
 
-struct ReceiverSession {
+class ReceiverSession {
+public:
     virtual ~ReceiverSession() = default;
 
-    struct ApiResponder {
+    class ApiResponder {
+    public:
         virtual ~ApiResponder() = default;
 
-        // A receiver session is only the transport-to-replay boundary: it accepts one
-        // accumulated source-thread stream and returns the matching response blob.
-        virtual Blob receive_accumulated_api_calls(Blob && request_blob) = 0;
+        // A receiver session is only the transport-to-replay boundary: it
+        // inspects one accumulated source-thread stream and returns the matching
+        // response blob. The request remains transport-owned so responders must
+        // copy anything they need after this call returns.
+        virtual Blob receive_accumulated_api_calls(const Blob & request_blob) = 0;
     };
 
-    typedef std::function<std::unique_ptr<ApiResponder>()> ApiResponder;
+    using ApiResponderFactory = std::function<std::unique_ptr<ApiResponder>()>;
 
-    virtual void register_api_responder_factory(...) = 0;
+    // The session owns source-thread routing and responder lifetime. Receiver
+    // registers a factory so each source-thread stream can get isolated replay
+    // state without exposing the session's demultiplexing internals.
+    virtual void register_api_responder_factory(ApiResponderFactory factory) = 0;
 };
 
 } // namespace vkfwd

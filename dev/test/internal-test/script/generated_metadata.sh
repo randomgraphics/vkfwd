@@ -8,8 +8,10 @@ tmpdir="$(mktemp -d "$root/build/generated-metadata.XXXXXX")"
 trap 'rm -rf "$tmpdir"' EXIT
 core_tmp="$tmpdir/core"
 forwarder_tmp="$tmpdir/forwarder"
+receiver_tmp="$tmpdir/receiver"
 core_rel="${core_tmp#"$root"/}"
 forwarder_rel="${forwarder_tmp#"$root"/}"
+receiver_rel="${receiver_tmp#"$root"/}"
 
 # The generator and formatter deliberately operate on tracked files only. This
 # test validates scratch output by tracking it in a temporary index, preserving
@@ -25,10 +27,11 @@ git -C "$root" read-tree HEAD
 
 "$root/src/vkfwd/ferry/script/generator/vulkan_metadata.py" \
   --output-dir "$core_tmp" \
-  --forwarder-output-dir "$forwarder_tmp"
+  --forwarder-output-dir "$forwarder_tmp" \
+  --receiver-output-dir "$receiver_tmp"
 
-git -C "$root" add -f -- "$core_rel" "$forwarder_rel"
-"$root/dev/bin/format-all-sources.py" -q "$core_tmp" "$forwarder_tmp"
+git -C "$root" add -f -- "$core_rel" "$forwarder_rel" "$receiver_rel"
+"$root/dev/bin/format-all-sources.py" -q "$core_tmp" "$forwarder_tmp" "$receiver_tmp"
 
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_manifest.json" "$core_tmp/vulkan_manifest.json"
 cmp "$root/src/vkfwd/ferry/core/generated/vulkan_coverage.md" "$core_tmp/vulkan_coverage.md"
@@ -40,6 +43,8 @@ cmp "$root/src/vkfwd/ferry/core/generated/dispatch_table.cpp" "$core_tmp/dispatc
 cmp "$root/src/vkfwd/ferry/forwarder/generated/entrypoints.hpp" "$forwarder_tmp/entrypoints.hpp"
 cmp "$root/src/vkfwd/ferry/forwarder/generated/entrypoints.cpp" "$forwarder_tmp/entrypoints.cpp"
 cmp "$root/src/vkfwd/ferry/forwarder/generated/vulkan_forwarder_hooks.hpp" "$forwarder_tmp/vulkan_forwarder_hooks.hpp"
+cmp "$root/src/vkfwd/ferry/receiver/generated/endpoints.hpp" "$receiver_tmp/endpoints.hpp"
+cmp "$root/src/vkfwd/ferry/receiver/generated/endpoints.cpp" "$receiver_tmp/endpoints.cpp"
 
 for command in \
   vkCreateInstance \

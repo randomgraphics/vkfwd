@@ -21,18 +21,25 @@ can own:
 - Replay ordering and synchronization policy.
 - Response payload construction.
 
-The current `Receiver::receive()` and `ReplayExecutor` are placeholders for this
-boundary. A real receiver run loop should decode transport frames into
-command-specific records, then submit those records to a replay scheduler.
+`Receiver` is intentionally thin: it is constructed with a `ReceiverSession` and
+an API `DistributionTable`, then registers an API-responder factory with the
+session. The session owns source-thread demultiplexing and responder lifetime.
+The concrete responder validates accumulated request blobs, decodes command
+chunk headers, resolves each generated command id through the distribution
+table, and returns the response blob for the flushed stream.
+
+The current responder stops at generic command-id dispatch. Command-specific
+generated receiver adapters still need to own typed parameter unpacking, Vulkan
+invocation, source-to-receiver handle mapping, and response payload packing.
 
 ## Endpoint and Generated Adapter Shape
 
-`endpoint` is the better name for the receiver-side request/response boundary.
-An endpoint receives decoded command intent, performs test or replay behavior,
-and produces the response data that will be packed back to the forwarder.
-`executor` should be reserved for a lower-level replay implementation that
-actually invokes destination Vulkan commands after decoding, ordering, and handle
-mapping have already been handled.
+`endpoint` is the better name for the receiver-side request/response behavior
+behind the dispatch table. An endpoint receives decoded command intent, performs
+test or replay behavior, and produces the response data that will be packed back
+to the forwarder. Lower-level replay implementation should actually invoke
+destination Vulkan commands only after decoding, ordering, and handle mapping
+have already been handled.
 
 The receiver still needs generated per-API adapter code because unpacking
 parameters, constructing typed responses, and packing responses are API-specific.

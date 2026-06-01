@@ -180,10 +180,11 @@ Receiver-side stream flow:
 
 1. Receiver owns one accepted `TransportSession`.
 2. Receiver reads each accumulated request stream from the transport.
-3. A concrete `ReceiverSession` reads the leading source-thread token and
-   creates or reuses implementation-owned replay state for that token.
-4. The responder owns per-source-thread request sequencing and replay state.
-5. Requests are decoded into receiver-owned command records before replay.
+3. `Receiver` registers an API-responder factory with `ReceiverSession`.
+4. A concrete `ReceiverSession` reads the leading source-thread token and
+   creates or reuses a responder for that token.
+5. The responder owns per-source-thread request sequencing, generated command-id
+   dispatch, and any implementation-owned replay state.
 6. Responses are returned through the same transport session and correlated with
    the originating request.
 
