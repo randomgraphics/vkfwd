@@ -48,7 +48,7 @@ do
   cmp "$root/src/vkfwd/ferry/core/generated/command/$command.metadata.json" "$core_tmp/command/$command.metadata.json"
   cmp "$root/src/vkfwd/ferry/core/generated/command/$command.hpp" "$core_tmp/command/$command.hpp"
   cmp "$root/src/vkfwd/ferry/core/generated/command/$command.cpp" "$core_tmp/command/$command.cpp"
-  cmp "$root/src/vkfwd/ferry/forwarder/generated/command/$command.cpp" "$forwarder_tmp/command/$command.cpp"
+  cmp "$root/src/vkfwd/ferry/forwarder/generated/entry/${command}_entry.cpp" "$forwarder_tmp/entry/${command}_entry.cpp"
 done
 
 python3 - \

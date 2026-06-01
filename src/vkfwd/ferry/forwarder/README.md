@@ -12,7 +12,9 @@ sends flushed streams through a shared `TransportSession`.
   transport-session ownership.
 - `generated/dispatch_table.*`: generated function-pointer tables for commands
   that vkfwd currently supports.
-- `generated/command/*.cpp`: generated Vulkan entry-point wrappers.
+- `generated/entry/*_entry.cpp`: generated Vulkan layer entry-point functions
+  stored in the generated dispatch tables and called by application code through
+  the Vulkan loader.
 - `generated/test/`: generated in-process tests that drive the forwarder entry
   points and validate the packed blobs at a test transport boundary.
 - `manifest/`: Vulkan layer manifest template.

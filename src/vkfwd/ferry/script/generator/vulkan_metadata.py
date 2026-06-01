@@ -1046,8 +1046,8 @@ VKAPI_ATTR {command['return_type']} VKAPI_CALL {command['name']}(
 
 
 def write_forwarder_files(metadata: dict[str, object], forwarder_dir: Path) -> None:
-    commands_dir = forwarder_dir / "command"
-    commands_dir.mkdir(parents=True, exist_ok=True)
+    entry_dir = forwarder_dir / "entry"
+    entry_dir.mkdir(parents=True, exist_ok=True)
     (forwarder_dir / "dispatch_table.hpp").write_text(
         forwarder_header_content(metadata), encoding="utf-8"
     )
@@ -1058,7 +1058,7 @@ def write_forwarder_files(metadata: dict[str, object], forwarder_dir: Path) -> N
         forwarder_hooks_header_content(metadata), encoding="utf-8"
     )
     for command in metadata["commands"]:
-        (commands_dir / f"{command['name']}.cpp").write_text(
+        (entry_dir / f"{command['name']}_entry.cpp").write_text(
             forwarder_command_source_content(metadata, command), encoding="utf-8"
         )
 

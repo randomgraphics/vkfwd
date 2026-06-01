@@ -61,10 +61,10 @@ target_compile_definitions(vkfwd_receiver
 # boundary; the static archive is a test/linking convenience, not a second layer
 # distribution format.
 set(VKFWD_FORWARDER_SOURCES
-  forwarder/generated/command/vkCreateDevice.cpp
-  forwarder/generated/command/vkCreateInstance.cpp
-  forwarder/generated/command/vkDestroyDevice.cpp
-  forwarder/generated/command/vkDestroyInstance.cpp
+  forwarder/generated/entry/vkCreateDevice_entry.cpp
+  forwarder/generated/entry/vkCreateInstance_entry.cpp
+  forwarder/generated/entry/vkDestroyDevice_entry.cpp
+  forwarder/generated/entry/vkDestroyInstance_entry.cpp
   forwarder/generated/dispatch_table.cpp
   forwarder/forwarder.cpp
   forwarder/layer.cpp)
