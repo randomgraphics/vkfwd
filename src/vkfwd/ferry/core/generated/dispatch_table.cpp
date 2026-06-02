@@ -7,20 +7,69 @@
 #include <cstring>
 
 namespace vkfwd::generated {
+namespace {
+
+template<class FunctionPointer>
+FunctionPointer typed_proc(PFN_vkVoidFunction proc) {
+    return reinterpret_cast<FunctionPointer>(proc);
+}
+
+} // namespace
 
 DistributionTable::DistributionTable()
     : commands {
-          {static_cast<std::uint32_t>(CommandId::CreateInstance), reinterpret_cast<PointerToFunctionPointer>(&instance.create_instance)},
+          {static_cast<std::uint32_t>(CommandId::CreateInstance), reinterpret_cast<PointerToFunctionPointer>(&global.create_instance)},
           {static_cast<std::uint32_t>(CommandId::DestroyInstance), reinterpret_cast<PointerToFunctionPointer>(&instance.destroy_instance)},
           {static_cast<std::uint32_t>(CommandId::CreateDevice), reinterpret_cast<PointerToFunctionPointer>(&instance.create_device)},
           {static_cast<std::uint32_t>(CommandId::DestroyDevice), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_device)},
       } {}
 
-PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char * name) const {
+void GlobalDispatchTable::init(PFN_vkGetInstanceProcAddr get_instance_proc_addr_) {
+    get_instance_proc_addr = get_instance_proc_addr_;
+
+    // Global commands are loaded before any VkInstance exists, so the Vulkan
+    // loader contract requires a null instance handle for these lookups.
+    create_instance = get_instance_proc_addr ? typed_proc<PFN_vkCreateInstance>(get_instance_proc_addr(nullptr, "vkCreateInstance")) : nullptr;
+}
+
+void InstanceDispatchTable::init(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr) {
+    // The instance table is populated only after vkCreateInstance succeeds. The
+    // instance handle scopes extension/core lookup and must remain valid while
+    // these dispatch slots are used.
+    if (!get_instance_proc_addr) {
+        get_device_proc_addr = nullptr;
+        destroy_instance     = nullptr;
+        create_device        = nullptr;
+        return;
+    }
+
+    get_device_proc_addr = typed_proc<PFN_vkGetDeviceProcAddr>(get_instance_proc_addr(instance, "vkGetDeviceProcAddr"));
+    destroy_instance     = typed_proc<PFN_vkDestroyInstance>(get_instance_proc_addr(instance, "vkDestroyInstance"));
+    create_device        = typed_proc<PFN_vkCreateDevice>(get_instance_proc_addr(instance, "vkCreateDevice"));
+}
+
+void DeviceDispatchTable::init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr) {
+    // Device commands are loaded after vkCreateDevice succeeds. The device
+    // dispatch slots are scoped to that destination device and should be
+    // refreshed for each replay/device mapping.
+    if (!get_device_proc_addr) {
+        destroy_device = nullptr;
+        return;
+    }
+
+    destroy_device = typed_proc<PFN_vkDestroyDevice>(get_device_proc_addr(device, "vkDestroyDevice"));
+}
+
+PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char * name) const {
     if (!name) { return nullptr; }
     if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_instance_proc_addr); }
-    if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr); }
     if (std::strcmp(name, "vkCreateInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_instance); }
+    return nullptr;
+}
+
+PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char * name) const {
+    if (!name) { return nullptr; }
+    if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr); }
     if (std::strcmp(name, "vkDestroyInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_instance); }
     if (std::strcmp(name, "vkCreateDevice") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_device); }
     return nullptr;
@@ -33,6 +82,7 @@ PFN_vkVoidFunction DeviceDispatchTable::getProcByName(const char * name) const {
 }
 
 PFN_vkVoidFunction DistributionTable::getProcByName(const char * name) const {
+    if (auto entrypoint = global.getProcByName(name)) { return entrypoint; }
     if (auto entrypoint = instance.getProcByName(name)) { return entrypoint; }
     return device.getProcByName(name);
 }

@@ -22,11 +22,14 @@ can own:
 - Response payload construction.
 
 `Receiver` is intentionally thin: it is constructed with a `ReceiverSession` and
-an API `DistributionTable`, then registers an API-responder factory with the
-session. The session owns source-thread demultiplexing and responder lifetime.
-The concrete responder validates accumulated request blobs, decodes command
-chunk headers, resolves each generated command id through the distribution
-table, and returns the response blob for the flushed stream.
+a `ReplayContext`, then registers an API-responder factory with the session. The
+session owns source-thread demultiplexing and responder lifetime. The concrete
+responder validates accumulated request blobs, decodes command chunk headers,
+resolves each generated command id through the replay context's distribution
+table, and returns the response blob for the flushed stream. The replay context
+is deliberately mutable because create/destroy commands will update destination
+dispatch tables, source-to-receiver handle maps, scratch allocations, and replay
+error state as endpoint replay becomes complete.
 
 The current responder stops at generic command-id dispatch. Command-specific
 generated receiver adapters still need to own typed parameter unpacking, Vulkan

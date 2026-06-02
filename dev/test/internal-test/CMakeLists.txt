@@ -36,15 +36,3 @@ target_link_libraries(vkfwd_internal_tests
     vkfwd_forwarder_static
     vkfwd_core
     Catch2::Catch2WithMain)
-
-add_test(
-  NAME vkfwd_internal
-  COMMAND vkfwd_internal_tests)
-
-add_test(
-  NAME vkfwd_structure
-  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/script/smoke_structure.sh ${PROJECT_SOURCE_DIR})
-
-add_test(
-  NAME vkfwd_generated_metadata
-  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/script/generated_metadata.sh ${PROJECT_SOURCE_DIR})

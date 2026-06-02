@@ -42,6 +42,17 @@ public:
         return ptr_[index];
     }
 
+    // Returns the address of an element only after the same bounds check used
+    // by at(). This is the preferred way to hand a blob-backed object to code
+    // that needs pointer syntax without copying the stored bytes.
+    T * address(std::size_t index = 0) const {
+        if (!ptr_ || index >= count_) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd blob view address out of range, index={}, count={}", index, count_);
+            return nullptr;
+        }
+        return ptr_ + index;
+    }
+
     bool set(std::size_t index, const T & value)
         requires(!std::is_const_v<T>)
     {
@@ -74,8 +85,8 @@ public:
     }
 
 private:
-    std::size_t count_  = 0;
-    T *         ptr_    = nullptr;
+    std::size_t count_ = 0;
+    T *         ptr_   = nullptr;
 };
 
 // A growable logical byte stream that owns copied payload bytes in stable
@@ -98,18 +109,18 @@ public:
     // allocation. Consumers may use this to decide whether one whole-blob range
     // can be inspected without stitching chunks together; it is not an allocation
     // policy knob.
-    bool        is_contiguous() const { return chunks_.size() <= 1; }
+    bool is_contiguous() const { return chunks_.size() <= 1; }
 
     // Copies the current logical stream into one backing allocation. Transport
     // implementations use this when their framing layer needs a single byte span
     // but command packers are still free to grow this blob in multiple chunks.
-    Blob        flatten() const;
+    Blob flatten() const;
 
     // Grows the arena and returns a bounded view over exactly the new allocation.
     // If requested, offset receives the logical Blob offset after alignment
     // padding is applied. The returned memory is uninitialized so callers can
     // avoid redundant clears when immediately serializing Vulkan payload bytes.
-    SafeArrayView<std::uint8_t>       grow(std::size_t size, std::size_t alignment = 1, std::size_t * offset = nullptr);
+    SafeArrayView<std::uint8_t> grow(std::size_t size, std::size_t alignment = 1, std::size_t * offset = nullptr);
 
     template<TriviallyCopyable T>
     SafeArrayView<T> grow(std::size_t count, std::size_t alignment = 1, std::size_t * offset = nullptr) {
@@ -123,11 +134,16 @@ public:
         return v.at(0);
     }
 
-    SafeArrayView<const std::uint8_t> at(std::size_t offset, std::size_t size) const;
+    SafeArrayView<const std::uint8_t> at(std::size_t offsetInBytes, std::size_t sizeInBytes) const;
 
     template<TriviallyCopyable T>
-    SafeArrayView<const T> at(std::size_t index_in_unit_of_T, std::size_t count_in_unit_of_T) const {
-        return at(index_in_unit_of_T * sizeof(T), count_in_unit_of_T * sizeof(T)).cast<const T>();
+    SafeArrayView<const T> at(std::size_t offsetInBytes, std::size_t sizeInBytes = sizeof(T)) const {
+        // The typed accessor still uses byte offsets because packed command and
+        // structure payloads may place T at a command-relative byte position
+        // that is not a multiple of sizeof(T). The returned typed view only
+        // covers complete objects; callers must request enough bytes for T.
+        if (sizeInBytes < sizeof(T) || (sizeInBytes % sizeof(T)) != 0) { return {}; }
+        return at(offsetInBytes, sizeInBytes).cast<const T>();
     }
 
 private:

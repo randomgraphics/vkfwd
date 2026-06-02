@@ -67,8 +67,7 @@ Blob Blob::flatten() const {
         if (chunk.used == 0) { continue; }
         const auto * source = reinterpret_cast<const std::uint8_t *>(chunk.data.get());
         if (destination.set(chunk.logical_begin, chunk.used, source) != chunk.used) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd blob flatten failed: could not copy chunk, logical_begin={}, used={}, blob_size={}", chunk.logical_begin, chunk.used,
-                            size_);
+            VKFWD_LOG_ERROR("vkfwd blob flatten failed: could not copy chunk, logical_begin={}, used={}, blob_size={}", chunk.logical_begin, chunk.used, size_);
             return {};
         }
     }

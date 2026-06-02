@@ -6,7 +6,7 @@ code, transport contracts, receiver/replay scaffolding, generator scripts, and
 internal tests for this approach.
 
 All implementation-specific logic stays here for now: loader-chain setup,
-instance/device dispatch tables, layer hooks, generated interceptors,
+global/instance/device dispatch tables, layer hooks, generated interceptors,
 schema-versioned command chunks, copied parameter storage, transport-session
 policy, and receiver replay helpers. Common code should move out only after
 another implementation has the same invariants.

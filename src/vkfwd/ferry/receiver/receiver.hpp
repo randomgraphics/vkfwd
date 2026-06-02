@@ -1,17 +1,17 @@
 #pragma once
 
-#include "generated/dispatch_table.hpp"
 #include "receiver_session.hpp"
+#include "replay_context.hpp"
 
 namespace vkfwd {
 
 class Receiver {
 public:
-    Receiver(ReceiverSession & session, const generated::DistributionTable & api_table);
+    Receiver(ReceiverSession & session, receiver::ReplayContext & replay_context);
 
 private:
-    ReceiverSession &                    session_;
-    const generated::DistributionTable & api_table_;
+    ReceiverSession &         session_;
+    receiver::ReplayContext & replay_context_;
 };
 
 } // namespace vkfwd

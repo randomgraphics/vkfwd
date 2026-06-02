@@ -30,11 +30,15 @@ The forwarder exposes only vkfwd-owned generated entry points. Unknown commands
 return null from `vkGetInstanceProcAddr`/`vkGetDeviceProcAddr` until vkfwd owns
 their generated pack, response, and output-parameter contract.
 
-The generated dispatch tables are shared by loader lookup level:
+The generated dispatch tables follow the Vulkan object lifecycle:
 
-- instance: `vkGetInstanceProcAddr`, `vkGetDeviceProcAddr`, loader-global
-  commands such as `vkCreateInstance`, and instance-level generated entry points
-- device: device-level generated entry points
+- global: initialized before a `VkInstance` exists and holding
+  `vkGetInstanceProcAddr` plus loader-global commands such as
+  `vkCreateInstance`
+- instance: initialized after `vkCreateInstance` succeeds and holding
+  `vkGetDeviceProcAddr` plus instance-level generated entry points
+- device: initialized after `vkCreateDevice` succeeds and holding device-level
+  generated entry points
 
 These tables point to vkfwd wrappers, never to the local Vulkan driver or a
 downstream loader-chain dispatch table. The current forwarder does not call a

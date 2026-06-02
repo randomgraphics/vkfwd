@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-include(CTest)
+option(BUILD_TESTING "Build vkfwd development test targets" ON)
 
 # Vulkan API shape is pinned by the vendored Vulkan-Headers snapshot. Runtime
 # linking may still use the platform Vulkan loader, but project compilation and

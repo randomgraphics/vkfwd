@@ -923,23 +923,32 @@ namespace vkfwd::generated {{
 
 using PointerToFunctionPointer = PFN_vkVoidFunction*;
 
-struct InstanceDispatchTable {{
+struct GlobalDispatchTable {{
   PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
-  PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
   PFN_vkCreateInstance create_instance = nullptr;
+
+  void init(PFN_vkGetInstanceProcAddr get_instance_proc_addr);
+  PFN_vkVoidFunction getProcByName(const char* name) const;
+}};
+
+struct InstanceDispatchTable {{
+  PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
   PFN_vkDestroyInstance destroy_instance = nullptr;
   PFN_vkCreateDevice create_device = nullptr;
 
+  void init(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr);
   PFN_vkVoidFunction getProcByName(const char* name) const;
 }};
 
 struct DeviceDispatchTable {{
   PFN_vkDestroyDevice destroy_device = nullptr;
 
+  void init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr);
   PFN_vkVoidFunction getProcByName(const char* name) const;
 }};
 
 struct DistributionTable {{
+  GlobalDispatchTable global {{}};
   InstanceDispatchTable instance {{}};
   DeviceDispatchTable device {{}};
 
@@ -958,7 +967,10 @@ struct DistributionTable {{
 
 
 def dispatch_table_group(command: dict[str, object]) -> str:
+    name = str(command["name"])
     parameters = list(command["parameters"])
+    if name == "vkCreateInstance":
+        return "global"
     if parameters and parameters[0]["type"] == "VkDevice":
         return "device"
     return "instance"
@@ -967,6 +979,8 @@ def dispatch_table_group(command: dict[str, object]) -> str:
 def dispatch_table_member_access(command: dict[str, object]) -> str:
     level = dispatch_table_group(command)
     field = command_field_name(str(command["name"]))
+    if level == "global":
+        return f"global.{field}"
     if level == "instance":
         return f"instance.{field}"
     if level == "device":
@@ -996,22 +1010,73 @@ def dispatch_table_source_content(metadata: dict[str, object]) -> str:
 #include <cstring>
 
 namespace vkfwd::generated {{
+namespace {{
+
+template<class FunctionPointer>
+FunctionPointer typed_proc(PFN_vkVoidFunction proc) {{
+  return reinterpret_cast<FunctionPointer>(proc);
+}}
+
+}} // namespace
 
 DistributionTable::DistributionTable()
     : commands {{
 {pointer_map_entries}
       }} {{}}
 
-PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char* name) const {{
+void GlobalDispatchTable::init(PFN_vkGetInstanceProcAddr get_instance_proc_addr_) {{
+  get_instance_proc_addr = get_instance_proc_addr_;
+
+  // Global commands are loaded before any VkInstance exists, so the Vulkan
+  // loader contract requires a null instance handle for these lookups.
+  create_instance = get_instance_proc_addr
+      ? typed_proc<PFN_vkCreateInstance>(get_instance_proc_addr(nullptr, "vkCreateInstance"))
+      : nullptr;
+}}
+
+void InstanceDispatchTable::init(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr) {{
+  // The instance table is populated only after vkCreateInstance succeeds. The
+  // instance handle scopes extension/core lookup and must remain valid while
+  // these dispatch slots are used.
+  if (!get_instance_proc_addr) {{
+    get_device_proc_addr = nullptr;
+    destroy_instance = nullptr;
+    create_device = nullptr;
+    return;
+  }}
+
+  get_device_proc_addr = typed_proc<PFN_vkGetDeviceProcAddr>(get_instance_proc_addr(instance, "vkGetDeviceProcAddr"));
+  destroy_instance = typed_proc<PFN_vkDestroyInstance>(get_instance_proc_addr(instance, "vkDestroyInstance"));
+  create_device = typed_proc<PFN_vkCreateDevice>(get_instance_proc_addr(instance, "vkCreateDevice"));
+}}
+
+void DeviceDispatchTable::init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr) {{
+  // Device commands are loaded after vkCreateDevice succeeds. The device
+  // dispatch slots are scoped to that destination device and should be
+  // refreshed for each replay/device mapping.
+  if (!get_device_proc_addr) {{
+    destroy_device = nullptr;
+    return;
+  }}
+
+  destroy_device = typed_proc<PFN_vkDestroyDevice>(get_device_proc_addr(device, "vkDestroyDevice"));
+}}
+
+PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char* name) const {{
   if (!name) {{ return nullptr; }}
   if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(get_instance_proc_addr);
   }}
-  if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr);
-  }}
   if (std::strcmp(name, "vkCreateInstance") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(create_instance);
+  }}
+  return nullptr;
+}}
+
+PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char* name) const {{
+  if (!name) {{ return nullptr; }}
+  if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) {{
+    return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr);
   }}
   if (std::strcmp(name, "vkDestroyInstance") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(destroy_instance);
@@ -1031,6 +1096,7 @@ PFN_vkVoidFunction DeviceDispatchTable::getProcByName(const char* name) const {{
 }}
 
 PFN_vkVoidFunction DistributionTable::getProcByName(const char* name) const {{
+  if (auto entrypoint = global.getProcByName(name)) {{ return entrypoint; }}
   if (auto entrypoint = instance.getProcByName(name)) {{ return entrypoint; }}
   return device.getProcByName(name);
 }}
@@ -1066,6 +1132,7 @@ namespace vkfwd::forwarder::generated {{
 
 {declarations}
 
+const ::vkfwd::generated::GlobalDispatchTable& global_dispatch_table();
 const ::vkfwd::generated::InstanceDispatchTable& instance_dispatch_table();
 const ::vkfwd::generated::DeviceDispatchTable& device_dispatch_table();
 
@@ -1086,10 +1153,13 @@ extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice
 namespace vkfwd::forwarder::generated {{
 namespace {{
 
-const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {{
+const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {{
   .get_instance_proc_addr = vkGetInstanceProcAddr,
-  .get_device_proc_addr = vkGetDeviceProcAddr,
   .create_instance = {forwarder_entrypoint_name("vkCreateInstance")},
+}};
+
+const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {{
+  .get_device_proc_addr = vkGetDeviceProcAddr,
   .destroy_instance = {forwarder_entrypoint_name("vkDestroyInstance")},
   .create_device = {forwarder_entrypoint_name("vkCreateDevice")},
 }};
@@ -1099,6 +1169,10 @@ const ::vkfwd::generated::DeviceDispatchTable kDeviceDispatchTable {{
 }};
 
 }} // namespace
+
+const ::vkfwd::generated::GlobalDispatchTable& global_dispatch_table() {{
+  return kGlobalDispatchTable;
+}}
 
 const ::vkfwd::generated::InstanceDispatchTable& instance_dispatch_table() {{
   return kInstanceDispatchTable;
@@ -1239,7 +1313,7 @@ def receiver_endpoint_declarations(metadata: dict[str, object]) -> str:
     return "\n".join(
         "bool "
         f"{receiver_endpoint_function_name(command)}(const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob, "
-        "const ::vkfwd::generated::DistributionTable& api_table);"
+        "::vkfwd::receiver::ReplayContext& replay_context);"
         for command in metadata["commands"]
     )
 
@@ -1247,14 +1321,18 @@ def receiver_endpoint_declarations(metadata: dict[str, object]) -> str:
 def receiver_endpoint_source(command: dict[str, object]) -> str:
     namespace = command_namespace(str(command["name"]))
     enum_name = command_enum_name(str(command["name"]))
-    parameter_names = ", ".join(f"parameters.{parameter['name']}" for parameter in command["parameters"])
+    parameter_names = ", ".join(
+        f"parameters.{parameter['name']}" for parameter in command["parameters"]
+    )
     pfn_type = command_pfn_type(str(command["name"]))
 
     call_lines = []
     if str(command["return_type"]) == "void":
         call_lines.append(f"  api_function({parameter_names});")
     else:
-        call_lines.append(f"  const {command['return_type']} return_value = api_function({parameter_names});")
+        call_lines.append(
+            f"  const {command['return_type']} return_value = api_function({parameter_names});"
+        )
 
     if command_needs_response(command):
         call_lines.extend(
@@ -1268,10 +1346,10 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
         call_lines.append("  return true;")
 
     return f"""bool {receiver_endpoint_function_name(command)}(const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob,
-                               const ::vkfwd::generated::DistributionTable& api_table) {{
+                               ::vkfwd::receiver::ReplayContext& replay_context) {{
   using Command = ::vkfwd::generated::commands::{namespace}::Command;
 
-  const auto raw_function = api_table.getProcByCommandId(::vkfwd::generated::CommandId::{enum_name});
+  const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::{enum_name});
   if (!raw_function) {{ return false; }}
   const auto api_function = reinterpret_cast<{pfn_type}>(raw_function);
 
@@ -1289,7 +1367,7 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
 def receiver_endpoint_dispatch_cases(metadata: dict[str, object]) -> str:
     return "\n".join(
         f"  case ::vkfwd::generated::CommandId::{command_enum_name(str(command['name']))}:\n"
-        f"    return {receiver_endpoint_function_name(command)}(request_blob, request_packet, response_blob, api_table);"
+        f"    return {receiver_endpoint_function_name(command)}(request_blob, request_packet, response_blob, replay_context);"
         for command in metadata["commands"]
     )
 
@@ -1305,13 +1383,14 @@ def receiver_endpoints_header_content(metadata: dict[str, object]) -> str:
 #include "blob.hpp"
 #include "generated/dispatch_table.hpp"
 #include "protocol.hpp"
+#include "replay_context.hpp"
 
 namespace vkfwd::receiver::generated {{
 
 {declarations}
 
 bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob,
-                       const ::vkfwd::generated::DistributionTable& api_table);
+                       ::vkfwd::receiver::ReplayContext& replay_context);
 
 }} // namespace vkfwd::receiver::generated
 """
@@ -1322,7 +1401,9 @@ def receiver_endpoints_source_content(metadata: dict[str, object]) -> str:
         f'#include "generated/command/{command["name"]}.hpp"'
         for command in metadata["commands"]
     )
-    endpoints = "\n".join(receiver_endpoint_source(command) for command in metadata["commands"])
+    endpoints = "\n".join(
+        receiver_endpoint_source(command) for command in metadata["commands"]
+    )
     dispatch_cases = receiver_endpoint_dispatch_cases(metadata)
     return f"""#include "generated/endpoints.hpp"
 
@@ -1336,7 +1417,7 @@ namespace vkfwd::receiver::generated {{
 
 {endpoints}
 bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob,
-                       const ::vkfwd::generated::DistributionTable& api_table) {{
+                       ::vkfwd::receiver::ReplayContext& replay_context) {{
   switch (command_id) {{
 {dispatch_cases}
   }}
@@ -2432,7 +2513,9 @@ set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
     )
 
 
-def format_generated_files(output_dir: Path, forwarder_output_dir: Path, receiver_output_dir: Path) -> None:
+def format_generated_files(
+    output_dir: Path, forwarder_output_dir: Path, receiver_output_dir: Path
+) -> None:
     root_dir = repo_root()
     root_resolved = root_dir.resolve()
     scopes = []
@@ -2457,7 +2540,9 @@ def format_generated_files(output_dir: Path, forwarder_output_dir: Path, receive
     )
 
 
-def generate(output_dir: Path, forwarder_output_dir: Path, receiver_output_dir: Path) -> None:
+def generate(
+    output_dir: Path, forwarder_output_dir: Path, receiver_output_dir: Path
+) -> None:
     root_dir = repo_root()
     xml_path = root_dir / "src/third_party/vulkan/registry/vk.xml"
     version_path = root_dir / "src/third_party/vulkan/VERSION"

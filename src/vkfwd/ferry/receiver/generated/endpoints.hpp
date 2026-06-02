@@ -7,19 +7,20 @@
 #include "blob.hpp"
 #include "generated/dispatch_table.hpp"
 #include "protocol.hpp"
+#include "replay_context.hpp"
 
 namespace vkfwd::receiver::generated {
 
 bool vkCreateInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                               const ::vkfwd::generated::DistributionTable & api_table);
+                               ::vkfwd::receiver::ReplayContext & replay_context);
 bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                                const ::vkfwd::generated::DistributionTable & api_table);
+                                ::vkfwd::receiver::ReplayContext & replay_context);
 bool vkCreateDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                             const ::vkfwd::generated::DistributionTable & api_table);
+                             ::vkfwd::receiver::ReplayContext & replay_context);
 bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                              const ::vkfwd::generated::DistributionTable & api_table);
+                              ::vkfwd::receiver::ReplayContext & replay_context);
 
 bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                       const ::vkfwd::generated::DistributionTable & api_table);
+                       ::vkfwd::receiver::ReplayContext & replay_context);
 
 } // namespace vkfwd::receiver::generated

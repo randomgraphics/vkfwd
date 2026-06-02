@@ -12,10 +12,10 @@
 namespace vkfwd::receiver::generated {
 
 bool vkCreateInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                               const ::vkfwd::generated::DistributionTable & api_table) {
+                               ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkCreateInstance::Command;
 
-    const auto raw_function = api_table.getProcByCommandId(::vkfwd::generated::CommandId::CreateInstance);
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::CreateInstance);
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkCreateInstance>(raw_function);
 
@@ -32,10 +32,10 @@ bool vkCreateInstance_endpoint(const Blob & request_blob, const CommandChunk & r
 }
 
 bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                                const ::vkfwd::generated::DistributionTable & api_table) {
+                                ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkDestroyInstance::Command;
 
-    const auto raw_function = api_table.getProcByCommandId(::vkfwd::generated::CommandId::DestroyInstance);
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::DestroyInstance);
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkDestroyInstance>(raw_function);
 
@@ -50,10 +50,10 @@ bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & 
 }
 
 bool vkCreateDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                             const ::vkfwd::generated::DistributionTable & api_table) {
+                             ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkCreateDevice::Command;
 
-    const auto raw_function = api_table.getProcByCommandId(::vkfwd::generated::CommandId::CreateDevice);
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::CreateDevice);
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkCreateDevice>(raw_function);
 
@@ -70,10 +70,10 @@ bool vkCreateDevice_endpoint(const Blob & request_blob, const CommandChunk & req
 }
 
 bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                              const ::vkfwd::generated::DistributionTable & api_table) {
+                              ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkDestroyDevice::Command;
 
-    const auto raw_function = api_table.getProcByCommandId(::vkfwd::generated::CommandId::DestroyDevice);
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::DestroyDevice);
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkDestroyDevice>(raw_function);
 
@@ -88,16 +88,16 @@ bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & re
 }
 
 bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                       const ::vkfwd::generated::DistributionTable & api_table) {
+                       ::vkfwd::receiver::ReplayContext & replay_context) {
     switch (command_id) {
     case ::vkfwd::generated::CommandId::CreateInstance:
-        return vkCreateInstance_endpoint(request_blob, request_packet, response_blob, api_table);
+        return vkCreateInstance_endpoint(request_blob, request_packet, response_blob, replay_context);
     case ::vkfwd::generated::CommandId::DestroyInstance:
-        return vkDestroyInstance_endpoint(request_blob, request_packet, response_blob, api_table);
+        return vkDestroyInstance_endpoint(request_blob, request_packet, response_blob, replay_context);
     case ::vkfwd::generated::CommandId::CreateDevice:
-        return vkCreateDevice_endpoint(request_blob, request_packet, response_blob, api_table);
+        return vkCreateDevice_endpoint(request_blob, request_packet, response_blob, replay_context);
     case ::vkfwd::generated::CommandId::DestroyDevice:
-        return vkDestroyDevice_endpoint(request_blob, request_packet, response_blob, api_table);
+        return vkDestroyDevice_endpoint(request_blob, request_packet, response_blob, replay_context);
     }
     return false;
 }

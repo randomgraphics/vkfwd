@@ -15,23 +15,32 @@ namespace vkfwd::generated {
 
 using PointerToFunctionPointer = PFN_vkVoidFunction *;
 
-struct InstanceDispatchTable {
+struct GlobalDispatchTable {
     PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
-    PFN_vkGetDeviceProcAddr   get_device_proc_addr   = nullptr;
     PFN_vkCreateInstance      create_instance        = nullptr;
-    PFN_vkDestroyInstance     destroy_instance       = nullptr;
-    PFN_vkCreateDevice        create_device          = nullptr;
 
+    void               init(PFN_vkGetInstanceProcAddr get_instance_proc_addr);
+    PFN_vkVoidFunction getProcByName(const char * name) const;
+};
+
+struct InstanceDispatchTable {
+    PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
+    PFN_vkDestroyInstance   destroy_instance     = nullptr;
+    PFN_vkCreateDevice      create_device        = nullptr;
+
+    void               init(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr);
     PFN_vkVoidFunction getProcByName(const char * name) const;
 };
 
 struct DeviceDispatchTable {
     PFN_vkDestroyDevice destroy_device = nullptr;
 
+    void               init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr);
     PFN_vkVoidFunction getProcByName(const char * name) const;
 };
 
 struct DistributionTable {
+    GlobalDispatchTable   global {};
     InstanceDispatchTable instance {};
     DeviceDispatchTable   device {};
 

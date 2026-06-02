@@ -5,7 +5,7 @@
 namespace vkfwd::loopback {
 namespace {
 
-class LoopbackTransportSession final: public TransportSession {
+class LoopbackTransportSession final : public TransportSession {
 public:
     LoopbackTransportSession() {
         info_.local_handshake.vulkan_api_version  = generated::kVulkanApiVersion;
@@ -16,9 +16,7 @@ public:
 
     const TransportSessionInfo & info() const override { return info_; }
 
-    Blob send_accumulated_api_calls(Blob &) override {
-        return {};
-    }
+    Blob send_accumulated_api_calls(Blob &) override { return {}; }
 
 private:
     TransportSessionInfo info_;
