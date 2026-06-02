@@ -6,30 +6,105 @@
 
 #include "logging.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <type_traits>
 
 namespace vkfwd::generated::commands::vkDestroyInstance {
 namespace {
 
 template<class T>
-VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk) {
+constexpr std::size_t command_payload_offset() {
+    // Command chunks always begin with the fixed protocol header:
+    // command id, total chunk size including this header, and command revision.
+    // Payload alignment padding follows that header and is included in size.
     constexpr std::size_t kPayloadAlignment = alignof(T);
-    constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+    return (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+}
+
+template<class Pointer>
+VkResult patch_command_pointer(Pointer & pointer_slot, std::size_t pointer_slot_offset, std::size_t target_offset) {
+    // Command-level pointers use the same field-relative offset rule as
+    // structures: the encoded value is measured from the pointer slot itself.
+    // Unpack can therefore repair pointers in-place without remembering whether a
+    // slot came from command parameters or from a nested Vulkan struct.
+    pointer_slot = reinterpret_cast<Pointer>(target_offset ? static_cast<std::uintptr_t>(target_offset - pointer_slot_offset) : 0);
+    return VK_SUCCESS;
+}
+
+template<class Pointer>
+VkResult recover_command_pointer(Pointer & pointer_slot, SafeArrayView<std::uint8_t> & view) {
+    if (!pointer_slot) { return VK_SUCCESS; }
+    auto * begin = view.address(0);
+    if (!begin) [[unlikely]] { return VK_ERROR_UNKNOWN; }
+    auto * slot   = reinterpret_cast<std::uint8_t *>(&pointer_slot);
+    auto * end    = begin + view.size();
+    auto * target = slot + reinterpret_cast<std::uintptr_t>(pointer_slot);
+    if (slot < begin || slot + sizeof(Pointer) > end || target < begin || target >= end) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry command unpack failed: encoded pointer is outside command view, slot={}, target={}, view_size={}",
+                        static_cast<const void *>(slot), static_cast<const void *>(target), view.size());
+        return VK_ERROR_UNKNOWN;
+    }
+    pointer_slot = reinterpret_cast<Pointer>(target);
+    return VK_SUCCESS;
+}
+
+SafeArrayView<std::uint8_t> tail_view_from_pointer(SafeArrayView<std::uint8_t> & view, const void * pointer) {
+    auto * begin = view.address(0);
+    if (!begin || !pointer) { return {}; }
+    auto * target = const_cast<std::uint8_t *>(reinterpret_cast<const std::uint8_t *>(pointer));
+    auto * end    = begin + view.size();
+    if (target < begin || target >= end) { return {}; }
+    return SafeArrayView<std::uint8_t>(static_cast<std::size_t>(end - target), target);
+}
+
+VkResult pack_allocator(const VkAllocationCallbacks * allocator, Blob & blob, std::size_t pointer_slot_offset, const VkAllocationCallbacks *& pointer_slot) {
+    (void) allocator;
+    (void) blob;
+    // Vulkan allocation callbacks are guest-process function pointers and user
+    // data. They have no valid receiver-process address, so the wire contract is
+    // to drop them and replay with the receiver's default allocator.
+    return patch_command_pointer(pointer_slot, pointer_slot_offset, 0);
+}
+
+template<class Pointer>
+VkResult pack_output_pointer(Pointer value, Blob & blob, std::size_t pointer_slot_offset, Pointer & pointer_slot) {
+    using Pointee = std::remove_pointer_t<Pointer>;
+    if (!value) [[unlikely]] { return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }
+    try {
+        std::size_t target      = 0;
+        auto        destination = blob.grow<Pointee>(1, alignof(Pointee), &target);
+        if (!destination.set(0, *value)) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output value into blob, size={}", sizeof(Pointee));
+            return VK_ERROR_UNKNOWN;
+        }
+        return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
+    } catch (const std::bad_alloc &) {
+        VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: out of host memory while copying output value, size={}", sizeof(Pointee));
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+}
+
+template<class T>
+VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk, T *& packed_payload) {
+    constexpr std::size_t kPayloadOffset    = command_payload_offset<T>();
     constexpr std::size_t kCommandSize      = kPayloadOffset + sizeof(T);
+    constexpr std::size_t kPayloadAlignment = alignof(T);
     constexpr std::size_t kChunkAlignment   = alignof(CommandChunkHeader) > kPayloadAlignment ? alignof(CommandChunkHeader) : kPayloadAlignment;
 
-    // The chunk is one contiguous serialized range. Payload starts at an aligned
-    // offset inside that range so receivers can safely reinterpret the packed
-    // command bytes without depending on host-side append history.
+    // The chunk is one contiguous serialized range. Its fixed header is
+    // command id, chunk size including the header, and command revision; payload
+    // starts at an aligned offset after those fields.
     if constexpr (kCommandSize > std::numeric_limits<std::uint32_t>::max()) {
         VKFWD_LOG_ERROR("vkfwd ferry command pack failed: command chunk is too large, command_id={}, command_size={}", static_cast<std::uint32_t>(command_id),
                         kCommandSize);
         return VK_ERROR_UNKNOWN;
     }
 
-    chunk = CommandChunk {.command_offset = 0, .command_size = 0};
+    chunk          = CommandChunk {.command_offset = 0, .command_size = 0};
+    packed_payload = nullptr;
 
     CommandChunkHeader header {};
     try {
@@ -47,6 +122,7 @@ VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t r
         }
         chunk.command_offset = command_offset;
         chunk.command_size   = header.size;
+        packed_payload       = reinterpret_cast<T *>(&destination.at(kPayloadOffset));
     } catch (const std::bad_alloc &) {
         VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={}, payload_size={}",
                         static_cast<std::uint32_t>(command_id), sizeof(T));
@@ -56,20 +132,43 @@ VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t r
 }
 
 template<class T>
-VkResult unpack_command_chunk(const Blob & blob, const CommandChunk & chunk, CommandId command_id, std::uint32_t revision, const T ** payload) {
-    constexpr std::size_t kPayloadAlignment = alignof(T);
-    constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
-    constexpr std::size_t kCommandSize      = kPayloadOffset + sizeof(T);
-    const auto            header_view       = blob.at(chunk.command_offset, sizeof(CommandChunkHeader));
-    const auto            payload_view      = blob.at(chunk.command_offset + kPayloadOffset, sizeof(T));
-    const auto *          header            = header_view.empty() ? nullptr : reinterpret_cast<const CommandChunkHeader *>(&header_view.at(0));
-    const auto *          packed_payload    = payload_view.empty() ? nullptr : reinterpret_cast<const T *>(&payload_view.at(0));
+VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk) {
+    T * packed_payload = nullptr;
+    return append_command_chunk(blob, command_id, revision, payload, chunk, packed_payload);
+}
+
+VkResult finalize_command_chunk(Blob & blob, CommandChunk & chunk) {
+    const std::size_t command_size = blob.size() - chunk.command_offset;
+    if (command_size > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, command_offset={}, command_size={}", chunk.command_offset,
+                        command_size);
+        return VK_ERROR_UNKNOWN;
+    }
+
+    auto   header_view = blob.at<CommandChunkHeader>(chunk.command_offset);
+    auto * header      = header_view.address();
+    if (!header) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, command_offset={}", chunk.command_offset);
+        return VK_ERROR_UNKNOWN;
+    }
+
+    header->size       = static_cast<std::uint32_t>(command_size);
+    chunk.command_size = header->size;
+    return VK_SUCCESS;
+}
+
+template<class T>
+VkResult unpack_command_chunk(SafeArrayView<std::uint8_t> & view, CommandId command_id, std::uint32_t revision, T ** payload) {
+    constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
+    constexpr std::size_t kCommandSize   = kPayloadOffset + sizeof(T);
+    auto *                header         = view.size() < sizeof(CommandChunkHeader) ? nullptr : reinterpret_cast<CommandChunkHeader *>(view.address(0));
+    auto *                packed_payload = view.size() < kCommandSize ? nullptr : reinterpret_cast<T *>(view.address(kPayloadOffset));
     if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
-        header->size != chunk.command_size || chunk.command_size != kCommandSize) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry command unpack failed: invalid command chunk, offset={}, size={}, has_header={}, has_payload={}, command_id={}, "
+        header->size < kCommandSize || view.size() < header->size) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry command unpack failed: invalid command view, view_size={}, has_header={}, has_payload={}, command_id={}, "
                         "expected_command_id={}, revision={}, expected_revision={}, header_size={}, expected_size={}",
-                        chunk.command_offset, chunk.command_size, header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,
-                        static_cast<std::uint32_t>(command_id), header ? header->command_revision : 0, revision, header ? header->size : 0, kCommandSize);
+                        view.size(), header != nullptr, packed_payload != nullptr, header ? header->command_id : 0, static_cast<std::uint32_t>(command_id),
+                        header ? header->command_revision : 0, revision, header ? header->size : 0, kCommandSize);
         return VK_ERROR_UNKNOWN;
     }
 
@@ -79,37 +178,55 @@ VkResult unpack_command_chunk(const Blob & blob, const CommandChunk & chunk, Com
 
 } // namespace
 
-VkResult Command::pack_parameters(Blob & blob, const Parameters & parameters, ParameterPacket & packet) {
+VkResult Command::pack_parameters(Blob & blob, const Parameters & parameters) {
     using Hooks = ::vkfwd::manual::CommandHooks<CommandId::DestroyInstance>;
     if constexpr (Hooks::before_pack_enabled) {
         Parameters hook_parameters = parameters;
         Hooks::before_pack(hook_parameters);
 
-        VkResult status = append_command_chunk(blob, CommandId::DestroyInstance, 1, hook_parameters, packet);
+        Parameters * packed_parameters = nullptr;
+        CommandChunk chunk;
+        VkResult     status = append_command_chunk(blob, CommandId::DestroyInstance, 1, hook_parameters, chunk, packed_parameters);
+        if (status != VK_SUCCESS) [[unlikely]] { return status; }
+        const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
+
+        status = pack_allocator(hook_parameters.pAllocator, blob, payload_offset + offsetof(Parameters, pAllocator), packed_parameters->pAllocator);
+        if (status != VK_SUCCESS) [[unlikely]] { return status; }
+        status = finalize_command_chunk(blob, chunk);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-        if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(packet); }
+        if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(); }
         return VK_SUCCESS;
     } else {
 
-        VkResult status = append_command_chunk(blob, CommandId::DestroyInstance, 1, parameters, packet);
+        Parameters * packed_parameters = nullptr;
+        CommandChunk chunk;
+        VkResult     status = append_command_chunk(blob, CommandId::DestroyInstance, 1, parameters, chunk, packed_parameters);
+        if (status != VK_SUCCESS) [[unlikely]] { return status; }
+        const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
+
+        status = pack_allocator(parameters.pAllocator, blob, payload_offset + offsetof(Parameters, pAllocator), packed_parameters->pAllocator);
+        if (status != VK_SUCCESS) [[unlikely]] { return status; }
+        status = finalize_command_chunk(blob, chunk);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-        if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(packet); }
+        if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(); }
         return VK_SUCCESS;
     }
 }
 
-VkResult Command::unpack_parameters(Blob & blob, const ParameterPacket & packet, Parameters & parameters) {
+VkResult Command::unpack_parameters(SafeArrayView<std::uint8_t> & view, const Parameters ** parameters) {
     using Hooks = ::vkfwd::manual::CommandHooks<CommandId::DestroyInstance>;
-    if constexpr (Hooks::before_unpack_enabled) { Hooks::before_unpack(packet); }
+    if constexpr (Hooks::before_unpack_enabled) { Hooks::before_unpack(view); }
 
-    const Parameters * packed_parameters = nullptr;
-    VkResult           status            = unpack_command_chunk(blob, packet, CommandId::DestroyInstance, 1, &packed_parameters);
+    Parameters * packed_parameters = nullptr;
+    VkResult     status            = unpack_command_chunk(view, CommandId::DestroyInstance, 1, &packed_parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    parameters = *packed_parameters;
+    status = recover_command_pointer(packed_parameters->pAllocator, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *parameters = packed_parameters;
 
-    if constexpr (Hooks::after_unpack_enabled) { Hooks::after_unpack(parameters); }
+    if constexpr (Hooks::after_unpack_enabled) { Hooks::after_unpack(*packed_parameters); }
     return VK_SUCCESS;
 }
 

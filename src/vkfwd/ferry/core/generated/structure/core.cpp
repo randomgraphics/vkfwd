@@ -43,17 +43,17 @@ VkResult append_shallow_struct(const T * value, Blob & blob, PackedStruct & pack
 }
 
 template<class Pointer>
-VkResult patch_pointer(Pointer & pointer_slot, std::size_t target_offset) {
-    // Packed structs keep source pointer fields as relative byte offsets until
-    // replay resolves them against the packed struct base. Passing the typed slot
-    // makes every patch site name the Vulkan field whose ownership was copied.
-    pointer_slot = reinterpret_cast<Pointer>(static_cast<std::uintptr_t>(target_offset));
+VkResult patch_pointer(Pointer & pointer_slot, std::size_t pointer_slot_offset, std::size_t target_offset) {
+    // Every encoded pointer is relative to the field that stores it. That single
+    // base rule lets unpack repair the graph in-place from the pointer slot's own
+    // address without carrying parent-structure offsets through replay code.
+    pointer_slot = reinterpret_cast<Pointer>(target_offset ? static_cast<std::uintptr_t>(target_offset - pointer_slot_offset) : 0);
     return VK_SUCCESS;
 }
 
 template<class T>
-VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, std::size_t structure_offset, const T *& pointer_slot) {
-    if (count == 0 || !values) [[unlikely]] { return patch_pointer(pointer_slot, 0u); }
+VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, std::size_t pointer_slot_offset, const T *& pointer_slot) {
+    if (count == 0 || !values) [[unlikely]] { return patch_pointer(pointer_slot, pointer_slot_offset, 0u); }
     try {
         std::size_t target      = 0;
         auto        destination = blob.grow<T>(count, alignof(T), &target);
@@ -61,7 +61,7 @@ VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, st
             VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy plain array into blob, count={}, element_size={}", count, sizeof(T));
             return VK_ERROR_UNKNOWN;
         }
-        return patch_pointer(pointer_slot, target - structure_offset);
+        return patch_pointer(pointer_slot, pointer_slot_offset, target);
     } catch (const std::bad_alloc &) {
         VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying plain array, count={}, element_size={}, align={}", count,
                         sizeof(T), alignof(T));
@@ -69,25 +69,25 @@ VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, st
     }
 }
 
-VkResult pack_string(const char * value, Blob & blob, std::size_t structure_offset, const char *& pointer_slot) {
-    if (!value) [[unlikely]] { return patch_pointer(pointer_slot, 0u); }
+VkResult pack_string(const char * value, Blob & blob, std::size_t pointer_slot_offset, const char *& pointer_slot) {
+    if (!value) [[unlikely]] { return patch_pointer(pointer_slot, pointer_slot_offset, 0u); }
     try {
         const std::size_t size        = std::strlen(value) + 1;
         std::size_t       target      = 0;
         auto              destination = blob.grow<char>(size, alignof(char), &target);
         if (destination.set(0, size, value) != size) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string into blob, structure_offset={}", structure_offset);
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string into blob, pointer_slot_offset={}", pointer_slot_offset);
             return VK_ERROR_UNKNOWN;
         }
-        return patch_pointer(pointer_slot, target - structure_offset);
+        return patch_pointer(pointer_slot, pointer_slot_offset, target);
     } catch (const std::bad_alloc &) {
-        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying string, structure_offset={}", structure_offset);
+        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying string, pointer_slot_offset={}", pointer_slot_offset);
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 }
 
-VkResult pack_string_array(const char * const * values, std::uint32_t count, Blob & blob, std::size_t structure_offset, const char * const *& pointer_slot) {
-    if (count == 0 || !values) [[unlikely]] { return patch_pointer(pointer_slot, 0u); }
+VkResult pack_string_array(const char * const * values, std::uint32_t count, Blob & blob, std::size_t pointer_slot_offset, const char * const *& pointer_slot) {
+    if (count == 0 || !values) [[unlikely]] { return patch_pointer(pointer_slot, pointer_slot_offset, 0u); }
 
     try {
         std::size_t          array_offset  = 0;
@@ -108,17 +108,18 @@ VkResult pack_string_array(const char * const * values, std::uint32_t count, Blo
                 VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string-array element, array_offset={}, index={}", array_offset, i);
                 return VK_ERROR_UNKNOWN;
             }
-            const std::uintptr_t encoded = static_cast<std::uintptr_t>(string_offset - structure_offset);
+            const std::size_t    slot_offset = array_offset + i * sizeof(std::uintptr_t);
+            const std::uintptr_t encoded     = static_cast<std::uintptr_t>(string_offset - slot_offset);
             if (!pointer_slots.set(i, encoded)) [[unlikely]] {
                 VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not patch string-array element, array_offset={}, index={}, string_offset={}",
                                 array_offset, i, string_offset);
                 return VK_ERROR_UNKNOWN;
             }
         }
-        return patch_pointer(pointer_slot, array_offset - structure_offset);
+        return patch_pointer(pointer_slot, pointer_slot_offset, array_offset);
     } catch (const std::bad_alloc &) {
-        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying string array, count={}, structure_offset={}", count,
-                        structure_offset);
+        VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying string array, count={}, pointer_slot_offset={}", count,
+                        pointer_slot_offset);
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 }
@@ -130,7 +131,7 @@ VkResult pack_plain_typed_pnext(const T * value, Blob & blob, PackedStruct & pac
     PackedStruct pnext;
     status = pack_pnext_chain(value->pNext, blob, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return patch_pointer(packed_value->pNext, pnext.offset ? pnext.offset - packed.offset : 0);
+    return patch_pointer(packed_value->pNext, packed.offset + offsetof(T, pNext), pnext.offset);
 }
 
 template<class T>
@@ -140,31 +141,89 @@ VkResult pack_plain_typed_pnext(const T * value, Blob & blob, PackedStruct & pac
 }
 
 template<class T>
-VkResult unpack_typed_view(const Blob & blob, std::size_t offset, VkStructureType expected_stype, const T ** value) {
+VkResult unpack_typed_view(SafeArrayView<std::uint8_t> & view, VkStructureType expected_stype, T ** value) {
     if (!value) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: output pointer for typed view is null, offset={}, expected_sType={}", offset,
-                        static_cast<int>(expected_stype));
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: output pointer for typed view is null, expected_sType={}", static_cast<int>(expected_stype));
         return VK_ERROR_UNKNOWN;
     }
-    *value                  = nullptr;
-    const auto   typed_view = blob.at(offset, sizeof(T));
-    const auto * typed      = typed_view.empty() ? nullptr : reinterpret_cast<const T *>(&typed_view.at(0));
+    *value       = nullptr;
+    auto * typed = view.size() < sizeof(T) ? nullptr : reinterpret_cast<T *>(view.address(0));
     if (!typed) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: blob does not contain typed view, offset={}, size={}, expected_sType={}", offset, sizeof(T),
-                        static_cast<int>(expected_stype));
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: view does not contain typed record, view_size={}, size={}, expected_sType={}", view.size(),
+                        sizeof(T), static_cast<int>(expected_stype));
         return VK_ERROR_UNKNOWN;
     }
     if (typed->sType != expected_stype) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: sType mismatch, offset={}, expected_sType={}, actual_sType={}", offset,
-                        static_cast<int>(expected_stype), static_cast<int>(typed->sType));
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: sType mismatch, expected_sType={}, actual_sType={}", static_cast<int>(expected_stype),
+                        static_cast<int>(typed->sType));
         return VK_ERROR_UNKNOWN;
     }
-    // This first generated unpack entry point validates the typed record and
-    // returns the packed view. Pointer members are still offsets at this layer;
-    // replay-side rehydration must resolve them with the same local base rule used
-    // during pack.
     *value = typed;
     return VK_SUCCESS;
+}
+
+SafeArrayView<std::uint8_t> tail_view_from_pointer(SafeArrayView<std::uint8_t> & view, const void * pointer) {
+    auto * begin = view.address(0);
+    if (!begin || !pointer) { return {}; }
+    auto * target = const_cast<std::uint8_t *>(reinterpret_cast<const std::uint8_t *>(pointer));
+    auto * end    = begin + view.size();
+    if (target < begin || target >= end) { return {}; }
+    return SafeArrayView<std::uint8_t>(static_cast<std::size_t>(end - target), target);
+}
+
+template<class Pointer>
+VkResult recover_pointer(Pointer & pointer_slot, SafeArrayView<std::uint8_t> & view) {
+    if (!pointer_slot) { return VK_SUCCESS; }
+    auto * begin = view.address(0);
+    if (!begin) [[unlikely]] { return VK_ERROR_UNKNOWN; }
+    auto * slot   = reinterpret_cast<std::uint8_t *>(&pointer_slot);
+    auto * end    = begin + view.size();
+    auto * target = slot + reinterpret_cast<std::uintptr_t>(pointer_slot);
+    if (slot < begin || slot + sizeof(Pointer) > end || target < begin || target >= end) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: encoded pointer is outside view, slot={}, target={}, view_size={}",
+                        static_cast<const void *>(slot), static_cast<const void *>(target), view.size());
+        return VK_ERROR_UNKNOWN;
+    }
+    pointer_slot = reinterpret_cast<Pointer>(target);
+    return VK_SUCCESS;
+}
+
+VkResult recover_string_array(const char * const *& pointer_slot, std::uint32_t count, SafeArrayView<std::uint8_t> & view) {
+    if (count == 0 || !pointer_slot) { return VK_SUCCESS; }
+    auto * begin = view.address(0);
+    if (!begin) [[unlikely]] { return VK_ERROR_UNKNOWN; }
+    auto *            slot         = reinterpret_cast<std::uint8_t *>(&pointer_slot);
+    auto *            array_target = slot + reinterpret_cast<std::uintptr_t>(pointer_slot);
+    auto *            end          = begin + view.size();
+    const std::size_t array_size   = count * sizeof(std::uintptr_t);
+    if (slot < begin || slot + sizeof(pointer_slot) > end || array_target < begin || array_size > static_cast<std::size_t>(end - array_target)) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: encoded string array is outside view, count={}, view_size={}", count, view.size());
+        return VK_ERROR_UNKNOWN;
+    }
+
+    auto * slots = reinterpret_cast<std::uintptr_t *>(array_target);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        if (slots[i] == 0) { continue; }
+        auto * element_slot   = reinterpret_cast<std::uint8_t *>(&slots[i]);
+        auto * element_target = element_slot + slots[i];
+        if (element_target < begin || element_target >= end) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd ferry structure unpack failed: encoded string element is outside view, index={}, view_size={}", i, view.size());
+            return VK_ERROR_UNKNOWN;
+        }
+        slots[i] = reinterpret_cast<std::uintptr_t>(element_target);
+    }
+    pointer_slot = reinterpret_cast<const char * const *>(array_target);
+    return VK_SUCCESS;
+}
+
+template<class Pointer>
+VkResult recover_pnext_chain(Pointer & pointer_slot, SafeArrayView<std::uint8_t> & view) {
+    VkResult status = recover_pointer(pointer_slot, view);
+    if (status != VK_SUCCESS || !pointer_slot) { return status; }
+    auto pnext_view = tail_view_from_pointer(view, pointer_slot);
+    if (pnext_view.empty()) [[unlikely]] { return VK_ERROR_UNKNOWN; }
+    const void * ignored = nullptr;
+    return unpack_pnext_chain(pnext_view, &ignored);
 }
 
 using GenericPackFn = VkResult (*)(const void *, Blob &, PackedStruct &);
@@ -356,11 +415,11 @@ VkResult pack_VkApplicationInfo(const VkApplicationInfo * value, Blob & blob, Pa
     PackedStruct pnext;
     status = pack_pnext_chain(value->pNext, blob, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = patch_pointer(packed_value->pNext, pnext.offset ? pnext.offset - packed.offset : 0);
+    status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkApplicationInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string(value->pApplicationName, blob, packed.offset, packed_value->pApplicationName);
+    status = pack_string(value->pApplicationName, blob, packed.offset + offsetof(VkApplicationInfo, pApplicationName), packed_value->pApplicationName);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_string(value->pEngineName, blob, packed.offset, packed_value->pEngineName);
+    return pack_string(value->pEngineName, blob, packed.offset + offsetof(VkApplicationInfo, pEngineName), packed_value->pEngineName);
 }
 
 VkResult pack_VkInstanceCreateInfo(const VkInstanceCreateInfo * value, Blob & blob, PackedStruct & packed) {
@@ -370,16 +429,18 @@ VkResult pack_VkInstanceCreateInfo(const VkInstanceCreateInfo * value, Blob & bl
     PackedStruct pnext;
     status = pack_pnext_chain(value->pNext, blob, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = patch_pointer(packed_value->pNext, pnext.offset ? pnext.offset - packed.offset : 0);
+    status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkInstanceCreateInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     PackedStruct app;
     status = pack_VkApplicationInfo(value->pApplicationInfo, blob, app);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = patch_pointer(packed_value->pApplicationInfo, app.offset ? app.offset - packed.offset : 0);
+    status = patch_pointer(packed_value->pApplicationInfo, packed.offset + offsetof(VkInstanceCreateInfo, pApplicationInfo), app.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, blob, packed.offset, packed_value->ppEnabledLayerNames);
+    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, blob, packed.offset + offsetof(VkInstanceCreateInfo, ppEnabledLayerNames),
+                               packed_value->ppEnabledLayerNames);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, blob, packed.offset, packed_value->ppEnabledExtensionNames);
+    return pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, blob,
+                             packed.offset + offsetof(VkInstanceCreateInfo, ppEnabledExtensionNames), packed_value->ppEnabledExtensionNames);
 }
 
 VkResult pack_VkDeviceQueueCreateInfo(const VkDeviceQueueCreateInfo * value, Blob & blob, PackedStruct & packed) {
@@ -389,9 +450,10 @@ VkResult pack_VkDeviceQueueCreateInfo(const VkDeviceQueueCreateInfo * value, Blo
     PackedStruct pnext;
     status = pack_pnext_chain(value->pNext, blob, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = patch_pointer(packed_value->pNext, pnext.offset ? pnext.offset - packed.offset : 0);
+    status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkDeviceQueueCreateInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_plain_array(value->pQueuePriorities, value->queueCount, blob, packed.offset, packed_value->pQueuePriorities);
+    return pack_plain_array(value->pQueuePriorities, value->queueCount, blob, packed.offset + offsetof(VkDeviceQueueCreateInfo, pQueuePriorities),
+                            packed_value->pQueuePriorities);
 }
 
 VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, Blob & blob, PackedStruct & packed) {
@@ -401,11 +463,11 @@ VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, Blob & blob, 
     PackedStruct pnext;
     status = pack_pnext_chain(value->pNext, blob, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = patch_pointer(packed_value->pNext, pnext.offset ? pnext.offset - packed.offset : 0);
+    status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkDeviceCreateInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
     if (value->queueCreateInfoCount == 0 || !value->pQueueCreateInfos) [[unlikely]] {
-        status = patch_pointer(packed_value->pQueueCreateInfos, 0u);
+        status = patch_pointer(packed_value->pQueueCreateInfos, packed.offset + offsetof(VkDeviceCreateInfo, pQueueCreateInfos), 0u);
     } else {
         const std::size_t array_offset = blob.size();
         for (std::uint32_t i = 0; i < value->queueCreateInfoCount; ++i) {
@@ -413,21 +475,25 @@ VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, Blob & blob, 
             status = pack_VkDeviceQueueCreateInfo(&value->pQueueCreateInfos[i], blob, child);
             if (status != VK_SUCCESS) [[unlikely]] { return status; }
         }
-        status = patch_pointer(packed_value->pQueueCreateInfos, array_offset - packed.offset);
+        status = patch_pointer(packed_value->pQueueCreateInfos, packed.offset + offsetof(VkDeviceCreateInfo, pQueueCreateInfos), array_offset);
     }
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, blob, packed.offset, packed_value->ppEnabledLayerNames);
+    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, blob, packed.offset + offsetof(VkDeviceCreateInfo, ppEnabledLayerNames),
+                               packed_value->ppEnabledLayerNames);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, blob, packed.offset, packed_value->ppEnabledExtensionNames);
+    status = pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, blob,
+                               packed.offset + offsetof(VkDeviceCreateInfo, ppEnabledExtensionNames), packed_value->ppEnabledExtensionNames);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_plain_array(value->pEnabledFeatures, value->pEnabledFeatures ? 1u : 0u, blob, packed.offset, packed_value->pEnabledFeatures);
+    return pack_plain_array(value->pEnabledFeatures, value->pEnabledFeatures ? 1u : 0u, blob, packed.offset + offsetof(VkDeviceCreateInfo, pEnabledFeatures),
+                            packed_value->pEnabledFeatures);
 }
 
 VkResult pack_VkDeviceGroupDeviceCreateInfo(const VkDeviceGroupDeviceCreateInfo * value, Blob & blob, PackedStruct & packed) {
     VkDeviceGroupDeviceCreateInfo * packed_value = nullptr;
     VkResult                        status       = pack_plain_typed_pnext(value, blob, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
-    return pack_plain_array(value->pPhysicalDevices, value->physicalDeviceCount, blob, packed.offset, packed_value->pPhysicalDevices);
+    return pack_plain_array(value->pPhysicalDevices, value->physicalDeviceCount, blob,
+                            packed.offset + offsetof(VkDeviceGroupDeviceCreateInfo, pPhysicalDevices), packed_value->pPhysicalDevices);
 }
 
 VkResult pack_VkPhysicalDeviceFeatures2(const VkPhysicalDeviceFeatures2 * value, Blob & blob, PackedStruct & packed) {
@@ -510,66 +576,210 @@ VkResult pack_struct_by_type(const void * value, Blob & blob, PackedStruct & pac
     }
 }
 
-VkResult unpack_VkApplicationInfo(const Blob & blob, std::size_t offset, const VkApplicationInfo ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_APPLICATION_INFO, value);
-}
-
-VkResult unpack_VkInstanceCreateInfo(const Blob & blob, std::size_t offset, const VkInstanceCreateInfo ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, value);
-}
-
-VkResult unpack_VkDeviceQueueCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceQueueCreateInfo ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, value);
-}
-
-VkResult unpack_VkDeviceCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceCreateInfo ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, value);
-}
-
-VkResult unpack_VkDeviceGroupDeviceCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceGroupDeviceCreateInfo ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO, value);
-}
-
-VkResult unpack_VkPhysicalDeviceFeatures2(const Blob & blob, std::size_t offset, const VkPhysicalDeviceFeatures2 ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, value);
-}
-
-VkResult unpack_VkPhysicalDeviceVulkan11Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan11Features ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, value);
-}
-
-VkResult unpack_VkPhysicalDeviceVulkan12Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan12Features ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, value);
-}
-
-VkResult unpack_VkPhysicalDeviceVulkan13Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan13Features ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, value);
-}
-
-VkResult unpack_VkPhysicalDeviceVulkan14Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan14Features ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, value);
-}
-
-VkResult unpack_VkPhysicalDeviceDescriptorIndexingFeatures(const Blob & blob, std::size_t offset, const VkPhysicalDeviceDescriptorIndexingFeatures ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES, value);
-}
-
-VkResult unpack_VkDeviceQueueGlobalPriorityCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceQueueGlobalPriorityCreateInfo ** value) {
-    return unpack_typed_view(blob, offset, VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO, value);
-}
-
-VkResult unpack_pnext_chain(const Blob & blob, std::size_t structure_offset, const void ** value) {
-    if (!value) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry pNext unpack failed: output pointer is null, structure_offset={}", structure_offset);
-        return VK_ERROR_UNKNOWN;
-    }
-    const auto node_header = blob.at(structure_offset, sizeof(VkStructureType));
-    *value                 = node_header.empty() ? nullptr : &node_header.at(0);
-    if (!*value) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry pNext unpack failed: blob does not contain pNext node header, structure_offset={}", structure_offset);
-        return VK_ERROR_UNKNOWN;
-    }
+VkResult unpack_VkApplicationInfo(SafeArrayView<std::uint8_t> & view, const VkApplicationInfo ** value) {
+    VkApplicationInfo * typed  = nullptr;
+    VkResult            status = unpack_typed_view(view, VK_STRUCTURE_TYPE_APPLICATION_INFO, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pointer(typed->pApplicationName, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pointer(typed->pEngineName, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
     return VK_SUCCESS;
+}
+
+VkResult unpack_VkInstanceCreateInfo(SafeArrayView<std::uint8_t> & view, const VkInstanceCreateInfo ** value) {
+    VkInstanceCreateInfo * typed  = nullptr;
+    VkResult               status = unpack_typed_view(view, VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pointer(typed->pApplicationInfo, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    if (typed->pApplicationInfo) {
+        auto                      child_view = tail_view_from_pointer(view, typed->pApplicationInfo);
+        const VkApplicationInfo * ignored    = nullptr;
+        status                               = unpack_VkApplicationInfo(child_view, &ignored);
+        if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    }
+    status = recover_string_array(typed->ppEnabledLayerNames, typed->enabledLayerCount, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_string_array(typed->ppEnabledExtensionNames, typed->enabledExtensionCount, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkDeviceQueueCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceQueueCreateInfo ** value) {
+    VkDeviceQueueCreateInfo * typed  = nullptr;
+    VkResult                  status = unpack_typed_view(view, VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pointer(typed->pQueuePriorities, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkDeviceCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceCreateInfo ** value) {
+    VkDeviceCreateInfo * typed  = nullptr;
+    VkResult             status = unpack_typed_view(view, VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pointer(typed->pQueueCreateInfos, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    for (std::uint32_t i = 0; typed->pQueueCreateInfos && i < typed->queueCreateInfoCount; ++i) {
+        auto                            child_view = tail_view_from_pointer(view, &typed->pQueueCreateInfos[i]);
+        const VkDeviceQueueCreateInfo * ignored    = nullptr;
+        status                                     = unpack_VkDeviceQueueCreateInfo(child_view, &ignored);
+        if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    }
+    status = recover_string_array(typed->ppEnabledLayerNames, typed->enabledLayerCount, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_string_array(typed->ppEnabledExtensionNames, typed->enabledExtensionCount, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pointer(typed->pEnabledFeatures, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkDeviceGroupDeviceCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceGroupDeviceCreateInfo ** value) {
+    VkDeviceGroupDeviceCreateInfo * typed  = nullptr;
+    VkResult                        status = unpack_typed_view(view, VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pointer(typed->pPhysicalDevices, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkPhysicalDeviceFeatures2(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceFeatures2 ** value) {
+    VkPhysicalDeviceFeatures2 * typed  = nullptr;
+    VkResult                    status = unpack_typed_view(view, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkPhysicalDeviceVulkan11Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan11Features ** value) {
+    VkPhysicalDeviceVulkan11Features * typed  = nullptr;
+    VkResult                           status = unpack_typed_view(view, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkPhysicalDeviceVulkan12Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan12Features ** value) {
+    VkPhysicalDeviceVulkan12Features * typed  = nullptr;
+    VkResult                           status = unpack_typed_view(view, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkPhysicalDeviceVulkan13Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan13Features ** value) {
+    VkPhysicalDeviceVulkan13Features * typed  = nullptr;
+    VkResult                           status = unpack_typed_view(view, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkPhysicalDeviceVulkan14Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan14Features ** value) {
+    VkPhysicalDeviceVulkan14Features * typed  = nullptr;
+    VkResult                           status = unpack_typed_view(view, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkPhysicalDeviceDescriptorIndexingFeatures(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceDescriptorIndexingFeatures ** value) {
+    VkPhysicalDeviceDescriptorIndexingFeatures * typed  = nullptr;
+    VkResult                                     status = unpack_typed_view(view, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_VkDeviceQueueGlobalPriorityCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceQueueGlobalPriorityCreateInfo ** value) {
+    VkDeviceQueueGlobalPriorityCreateInfo * typed  = nullptr;
+    VkResult                                status = unpack_typed_view(view, VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO, &typed);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    status = recover_pnext_chain(typed->pNext, view);
+    if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    *value = typed;
+    return VK_SUCCESS;
+}
+
+VkResult unpack_pnext_chain(SafeArrayView<std::uint8_t> & view, const void ** value) {
+    if (!value) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry pNext unpack failed: output pointer is null");
+        return VK_ERROR_UNKNOWN;
+    }
+    *value = nullptr;
+    if (view.size() < sizeof(VkStructureType)) [[unlikely]] {
+        VKFWD_LOG_ERROR("vkfwd ferry pNext unpack failed: view does not contain pNext node header, view_size={}", view.size());
+        return VK_ERROR_UNKNOWN;
+    }
+
+    const auto * base = reinterpret_cast<const VkBaseInStructure *>(view.address(0));
+    *value            = base;
+    switch (base->sType) {
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO: {
+        const VkDeviceGroupDeviceCreateInfo * ignored = nullptr;
+        return unpack_VkDeviceGroupDeviceCreateInfo(view, &ignored);
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2: {
+        const VkPhysicalDeviceFeatures2 * ignored = nullptr;
+        return unpack_VkPhysicalDeviceFeatures2(view, &ignored);
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
+        const VkPhysicalDeviceVulkan11Features * ignored = nullptr;
+        return unpack_VkPhysicalDeviceVulkan11Features(view, &ignored);
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES: {
+        const VkPhysicalDeviceVulkan12Features * ignored = nullptr;
+        return unpack_VkPhysicalDeviceVulkan12Features(view, &ignored);
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES: {
+        const VkPhysicalDeviceVulkan13Features * ignored = nullptr;
+        return unpack_VkPhysicalDeviceVulkan13Features(view, &ignored);
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES: {
+        const VkPhysicalDeviceVulkan14Features * ignored = nullptr;
+        return unpack_VkPhysicalDeviceVulkan14Features(view, &ignored);
+    }
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES: {
+        const VkPhysicalDeviceDescriptorIndexingFeatures * ignored = nullptr;
+        return unpack_VkPhysicalDeviceDescriptorIndexingFeatures(view, &ignored);
+    }
+    case VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO: {
+        const VkDeviceQueueGlobalPriorityCreateInfo * ignored = nullptr;
+        return unpack_VkDeviceQueueGlobalPriorityCreateInfo(view, &ignored);
+    }
+    default:
+        VKFWD_LOG_ERROR("vkfwd ferry pNext unpack failed: unsupported sType={}", static_cast<int>(base->sType));
+        return VK_ERROR_UNKNOWN;
+    }
 }
 
 } // namespace vkfwd::generated::structure

@@ -27,7 +27,7 @@ public:
     }
 
 private:
-    ApiResponderFactory            factory_;
+    ApiResponderFactory           factory_;
     std::unique_ptr<ApiResponder> responder_;
 };
 
@@ -51,10 +51,10 @@ private:
 
 LoopbackSession LoopbackSession::create() {
     LoopbackSession session;
-    auto receiver = std::make_unique<LoopbackReceiverSession>();
-    auto transport = std::make_shared<LoopbackTransportSession>(*receiver);
-    session.receiver = std::move(receiver);
-    session.transport = std::move(transport);
+    auto            receiver  = std::make_unique<LoopbackReceiverSession>();
+    auto            transport = std::make_shared<LoopbackTransportSession>(*receiver);
+    session.receiver          = std::move(receiver);
+    session.transport         = std::move(transport);
     return session;
 }
 

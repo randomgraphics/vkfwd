@@ -15,11 +15,10 @@ struct CommandHooks<vkfwd::generated::CommandId::CreateDevice> {
 
     static void before_pack(Parameters & parameters);
 
-    template<class ParameterPacket>
-    static constexpr void after_pack(ParameterPacket &) noexcept {}
+    static constexpr void after_pack() noexcept {}
 
-    template<class ParameterPacket>
-    static constexpr void before_unpack(ParameterPacket &) noexcept {}
+    template<class View>
+    static constexpr void before_unpack(View &) noexcept {}
 
     template<class Parameters>
     static constexpr void after_unpack(Parameters &) noexcept {}

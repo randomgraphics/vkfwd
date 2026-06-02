@@ -4,39 +4,33 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
-extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* name);
-extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* name);
+extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char * name);
+extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char * name);
 
 namespace vkfwd::forwarder::generated {
 namespace {
 
 const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {
-  .get_instance_proc_addr = vkGetInstanceProcAddr,
-  .create_instance = vkCreateInstance_entry,
+    .get_instance_proc_addr = vkGetInstanceProcAddr,
+    .create_instance        = vkCreateInstance_entry,
 };
 
 const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {
-  .get_device_proc_addr = vkGetDeviceProcAddr,
-  .destroy_instance = vkDestroyInstance_entry,
-  .create_device = vkCreateDevice_entry,
+    .get_device_proc_addr = vkGetDeviceProcAddr,
+    .destroy_instance     = vkDestroyInstance_entry,
+    .create_device        = vkCreateDevice_entry,
 };
 
 const ::vkfwd::generated::DeviceDispatchTable kDeviceDispatchTable {
-  .destroy_device = vkDestroyDevice_entry,
+    .destroy_device = vkDestroyDevice_entry,
 };
 
 } // namespace
 
-const ::vkfwd::generated::GlobalDispatchTable& global_dispatch_table() {
-  return kGlobalDispatchTable;
-}
+const ::vkfwd::generated::GlobalDispatchTable & global_dispatch_table() { return kGlobalDispatchTable; }
 
-const ::vkfwd::generated::InstanceDispatchTable& instance_dispatch_table() {
-  return kInstanceDispatchTable;
-}
+const ::vkfwd::generated::InstanceDispatchTable & instance_dispatch_table() { return kInstanceDispatchTable; }
 
-const ::vkfwd::generated::DeviceDispatchTable& device_dispatch_table() {
-  return kDeviceDispatchTable;
-}
+const ::vkfwd::generated::DeviceDispatchTable & device_dispatch_table() { return kDeviceDispatchTable; }
 
 } // namespace vkfwd::forwarder::generated

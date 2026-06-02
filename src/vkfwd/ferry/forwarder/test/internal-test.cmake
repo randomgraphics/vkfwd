@@ -1,0 +1,8 @@
+# This manifest is consumed by dev/test/internal-test/CMakeLists.txt.
+# Keep these handwritten entry-point tests focused on forwarding behavior; core
+# generated round-trip tests own exhaustive command and structure serialization.
+set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
+  vkCreateInstance_test.cpp
+  vkDestroyInstance_test.cpp
+  vkCreateDevice_test.cpp
+  vkDestroyDevice_test.cpp)

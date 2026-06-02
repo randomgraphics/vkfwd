@@ -24,20 +24,17 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance_entry(const VkInstanceCreateInfo
 
     if constexpr (Hooks::before_pack_enabled) { Hooks::before_pack(pCreateInfo, pAllocator, pInstance); }
 
-    auto &                   forwarder = ::vkfwd::Forwarder::instance();
-    Command::Parameters      parameters {.pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pInstance = pInstance};
-    Command::ParameterPacket request;
-    VkResult                 status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+    auto &              forwarder = ::vkfwd::Forwarder::instance();
+    Command::Parameters parameters {.pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pInstance = pInstance};
+    VkResult            status = Command::pack_parameters(forwarder.request_blob(), parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-    Blob                    response_blob = forwarder.flush();
-    Command::ResponsePacket response_packet;
-    response_packet.command_offset = 0;
-    response_packet.command_size   = static_cast<std::uint32_t>(response_blob.size());
-
-    Command::Response response;
-    status = Command::unpack_response(response_blob, response_packet, response);
+    Blob                      response_blob   = forwarder.flush();
+    auto                      response_view   = response_blob.at(0, response_blob.size());
+    const Command::Response * packed_response = nullptr;
+    status                                    = Command::unpack_response(response_view, &packed_response);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
+    Command::Response response = *packed_response;
 
     if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(response); }
 

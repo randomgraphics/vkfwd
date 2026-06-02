@@ -28,16 +28,19 @@ TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves pri
     };
 
     REQUIRE(pack_VkDeviceQueueCreateInfo(&value, blob, packed) == VK_SUCCESS);
-    const VkDeviceQueueCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceQueueCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkDeviceQueueCreateInfo * actual    = nullptr;
+    Blob                            flattened = blob.flatten();
+    auto                            view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceQueueCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->flags == value.flags);
     CHECK(actual->queueFamilyIndex == value.queueFamilyIndex);
     CHECK(actual->queueCount == value.queueCount);
-    check_relative_plain_array(blob, packed.offset, actual->pQueuePriorities, {0.25f, 0.75f});
+    check_relative_plain_array(flattened, packed.offset, actual->pQueuePriorities, {0.25f, 0.75f});
 }
 
 TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested queue info, names, and features") {
@@ -71,9 +74,12 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
     };
 
     REQUIRE(pack_VkDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
-    const VkDeviceCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkDeviceCreateInfo * actual    = nullptr;
+    Blob                       flattened = blob.flatten();
+    auto                       view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
@@ -81,20 +87,20 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
     CHECK(actual->queueCreateInfoCount == value.queueCreateInfoCount);
     CHECK(actual->enabledLayerCount == value.enabledLayerCount);
     CHECK(actual->enabledExtensionCount == value.enabledExtensionCount);
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledLayerNames, {"VK_LAYER_VKFWD_device"});
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledExtensionNames, {"VK_KHR_swapchain", "VK_EXT_private_data"});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledLayerNames, {"VK_LAYER_VKFWD_device"});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledExtensionNames, {"VK_KHR_swapchain", "VK_EXT_private_data"});
 
     REQUIRE(actual->pQueueCreateInfos != nullptr);
-    const auto                      queue_offset = packed.offset + encoded_offset(actual->pQueueCreateInfos);
-    const VkDeviceQueueCreateInfo * actual_queue = nullptr;
-    REQUIRE(unpack_VkDeviceQueueCreateInfo(blob, queue_offset, &actual_queue) == VK_SUCCESS);
+    const VkDeviceQueueCreateInfo * actual_queue = actual->pQueueCreateInfos;
     REQUIRE(actual_queue != nullptr);
+    CHECK(points_into_blob(flattened, actual_queue));
     CHECK(actual_queue->queueFamilyIndex == queue.queueFamilyIndex);
     CHECK(actual_queue->queueCount == queue.queueCount);
-    check_relative_plain_array(blob, queue_offset, actual_queue->pQueuePriorities, {0.5f, 1.0f});
+    check_relative_plain_array(flattened, 0, actual_queue->pQueuePriorities, {0.5f, 1.0f});
 
     REQUIRE(actual->pEnabledFeatures != nullptr);
-    const auto & actual_features = object_at<VkPhysicalDeviceFeatures>(blob, packed.offset + encoded_offset(actual->pEnabledFeatures));
+    CHECK(points_into_blob(flattened, actual->pEnabledFeatures));
+    const auto & actual_features = *actual->pEnabledFeatures;
     CHECK(actual_features.robustBufferAccess == VK_TRUE);
     CHECK(actual_features.samplerAnisotropy == VK_TRUE);
 }
@@ -114,14 +120,18 @@ TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserv
     };
 
     REQUIRE(pack_VkDeviceGroupDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
-    const VkDeviceGroupDeviceCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceGroupDeviceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkDeviceGroupDeviceCreateInfo * actual    = nullptr;
+    Blob                                  flattened = blob.flatten();
+    auto                                  view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceGroupDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->physicalDeviceCount == value.physicalDeviceCount);
-    check_relative_plain_array(blob, packed.offset, actual->pPhysicalDevices, {test_handle<VkPhysicalDevice>(0x101), test_handle<VkPhysicalDevice>(0x202)});
+    check_relative_plain_array(flattened, packed.offset, actual->pPhysicalDevices,
+                               {test_handle<VkPhysicalDevice>(0x101), test_handle<VkPhysicalDevice>(0x202)});
 }
 
 TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack preserves global priority") {
@@ -134,9 +144,12 @@ TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack
     };
 
     REQUIRE(pack_VkDeviceQueueGlobalPriorityCreateInfo(&value, blob, packed) == VK_SUCCESS);
-    const VkDeviceQueueGlobalPriorityCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceQueueGlobalPriorityCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkDeviceQueueGlobalPriorityCreateInfo * actual    = nullptr;
+    Blob                                          flattened = blob.flatten();
+    auto                                          view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceQueueGlobalPriorityCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);

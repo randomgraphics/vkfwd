@@ -135,6 +135,7 @@ public:
     }
 
     SafeArrayView<const std::uint8_t> at(std::size_t offsetInBytes, std::size_t sizeInBytes) const;
+    SafeArrayView<std::uint8_t>       at(std::size_t offsetInBytes, std::size_t sizeInBytes);
 
     template<TriviallyCopyable T>
     SafeArrayView<const T> at(std::size_t offsetInBytes, std::size_t sizeInBytes = sizeof(T)) const {
@@ -144,6 +145,15 @@ public:
         // covers complete objects; callers must request enough bytes for T.
         if (sizeInBytes < sizeof(T) || (sizeInBytes % sizeof(T)) != 0) { return {}; }
         return at(offsetInBytes, sizeInBytes).cast<const T>();
+    }
+
+    template<TriviallyCopyable T>
+    SafeArrayView<T> at(std::size_t offsetInBytes, std::size_t sizeInBytes = sizeof(T)) {
+        // Mutable unpackers repair pointer fields in-place, but they still have
+        // to prove that the entire typed payload is backed by one Blob chunk
+        // before exposing a writable view.
+        if (sizeInBytes < sizeof(T) || (sizeInBytes % sizeof(T)) != 0) { return {}; }
+        return at(offsetInBytes, sizeInBytes).cast<T>();
     }
 
 private:

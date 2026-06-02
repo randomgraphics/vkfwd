@@ -11,24 +11,15 @@
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance_entry(
-    const VkInstanceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkInstance* pInstance);
-VKAPI_ATTR void VKAPI_CALL vkDestroyInstance_entry(
-    VkInstance instance,
-    const VkAllocationCallbacks* pAllocator);
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_entry(
-    VkPhysicalDevice physicalDevice,
-    const VkDeviceCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDevice* pDevice);
-VKAPI_ATTR void VKAPI_CALL vkDestroyDevice_entry(
-    VkDevice device,
-    const VkAllocationCallbacks* pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance_entry(const VkInstanceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
+                                                      VkInstance * pInstance);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyInstance_entry(VkInstance instance, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_entry(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo * pCreateInfo,
+                                                    const VkAllocationCallbacks * pAllocator, VkDevice * pDevice);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyDevice_entry(VkDevice device, const VkAllocationCallbacks * pAllocator);
 
-const ::vkfwd::generated::GlobalDispatchTable& global_dispatch_table();
-const ::vkfwd::generated::InstanceDispatchTable& instance_dispatch_table();
-const ::vkfwd::generated::DeviceDispatchTable& device_dispatch_table();
+const ::vkfwd::generated::GlobalDispatchTable &   global_dispatch_table();
+const ::vkfwd::generated::InstanceDispatchTable & instance_dispatch_table();
+const ::vkfwd::generated::DeviceDispatchTable &   device_dispatch_table();
 
 } // namespace vkfwd::forwarder::generated

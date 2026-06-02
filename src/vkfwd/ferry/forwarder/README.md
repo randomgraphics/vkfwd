@@ -21,8 +21,8 @@ sends flushed streams through a shared `TransportSession`.
 - `generated/entry/*_entry.cpp`: generated Vulkan layer entry-point functions
   stored in the generated dispatch tables and called by application code through
   the Vulkan loader.
-- `generated/test/`: generated in-process tests that drive the forwarder entry
-  points and validate the packed blobs at a test transport boundary.
+- `test/`: handwritten in-process tests for selected forwarder entry-point
+  behavior at a test transport boundary.
 - `manifest/`: Vulkan layer manifest template.
 
 ## Loader and Dispatch Invariants
@@ -103,15 +103,19 @@ command-specific and document why it is needed.
 
 ## Testing Guidance
 
-Generated forwarder tests install a test transport session, call the generated
-Vulkan entry point, validate the received request blob inside the transport, and
-return a generated response blob when the command requires one. This tests the
-entry-point logic, not just command pack/unpack helpers.
+Handwritten forwarder tests install a test transport session, call selected
+generated Vulkan entry points, validate the forwarding boundary, and return a
+generated response blob when the command requires one. These tests protect
+entry-point behavior such as flushing, response propagation, and output-value
+copy-back; exhaustive command and structure pack/unpack coverage belongs in the
+generated core round-trip tests.
 
 When adding a supported command, update the generator so it emits:
 
 - the core command pack/unpack model
 - the forwarder entry point
 - any structure pack/unpack support it needs
-- a generated forwarder test covering input parameters, output parameters, and
-  return value propagation
+
+Add or update a handwritten forwarder entry-point test only when the command
+introduces new forwarding behavior that is not already covered by the existing
+selected entry-point tests.

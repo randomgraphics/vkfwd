@@ -20,6 +20,22 @@ std::size_t encoded_offset(Pointer pointer) {
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }
 
+inline SafeArrayView<std::uint8_t> view_from(Blob & blob, std::size_t offset) { return blob.at(offset, blob.size() - offset); }
+
+template<class Pointer>
+bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {
+    auto * begin = view.address(0);
+    if (!begin || !pointer) { return false; }
+    const auto * target = reinterpret_cast<const std::uint8_t *>(pointer);
+    return target >= begin && target < begin + view.size();
+}
+
+template<class Pointer>
+bool points_into_blob(Blob & blob, Pointer pointer) {
+    auto view = blob.at(0, blob.size());
+    return points_into(view, pointer);
+}
+
 template<class T>
 const T & object_at(const Blob & blob, std::size_t offset) {
     const auto view = blob.at(offset, sizeof(T));
@@ -27,17 +43,14 @@ const T & object_at(const Blob & blob, std::size_t offset) {
     return *reinterpret_cast<const T *>(&view.at(0));
 }
 
-inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {
-    REQUIRE(encoded_value != nullptr);
-    const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
-    const auto        view          = blob.at(string_offset, expected.size() + 1);
-    REQUIRE(!view.empty());
-    const auto * value = reinterpret_cast<const char *>(&view.at(0));
+inline void check_relative_string(Blob & blob, std::size_t, const char * value, std::string_view expected) {
+    REQUIRE(value != nullptr);
+    CHECK(points_into_blob(blob, value));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\0');
 }
 
-inline void check_relative_string_array(const Blob & blob, std::size_t base_offset, const char * const * encoded_values,
+inline void check_relative_string_array(Blob & blob, std::size_t base_offset, const char * const * encoded_values,
                                         std::initializer_list<std::string_view> expected) {
     if (expected.size() == 0) {
         CHECK(encoded_values == nullptr);
@@ -45,17 +58,12 @@ inline void check_relative_string_array(const Blob & blob, std::size_t base_offs
     }
 
     REQUIRE(encoded_values != nullptr);
-    const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        slots_view   = blob.at(array_offset, expected.size() * sizeof(std::uintptr_t));
-    REQUIRE(!slots_view.empty());
-    const auto * slots = reinterpret_cast<const std::uintptr_t *>(&slots_view.at(0));
-
+    CHECK(points_into_blob(blob, encoded_values));
     std::size_t index = 0;
     for (std::string_view expected_value : expected) {
-        REQUIRE(slots[index] != 0);
-        const auto string_view = blob.at(base_offset + static_cast<std::size_t>(slots[index]), expected_value.size() + 1);
-        REQUIRE(!string_view.empty());
-        const auto * actual_value = reinterpret_cast<const char *>(&string_view.at(0));
+        const auto * actual_value = encoded_values[index];
+        REQUIRE(actual_value != nullptr);
+        CHECK(points_into_blob(blob, actual_value));
         CHECK(std::string_view(actual_value, expected_value.size()) == expected_value);
         CHECK(actual_value[expected_value.size()] == '\0');
         ++index;
@@ -63,21 +71,17 @@ inline void check_relative_string_array(const Blob & blob, std::size_t base_offs
 }
 
 template<class T>
-void check_relative_plain_array(const Blob & blob, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {
+void check_relative_plain_array(Blob & blob, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {
     if (expected.size() == 0) {
         CHECK(encoded_values == nullptr);
         return;
     }
 
     REQUIRE(encoded_values != nullptr);
-    const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        view         = blob.at(array_offset, expected.size() * sizeof(T));
-    REQUIRE(!view.empty());
-    const auto * actual_values = reinterpret_cast<const T *>(&view.at(0));
-
+    CHECK(points_into_blob(blob, encoded_values));
     std::size_t index = 0;
     for (const T & expected_value : expected) {
-        CHECK(actual_values[index] == expected_value);
+        CHECK(encoded_values[index] == expected_value);
         ++index;
     }
 }

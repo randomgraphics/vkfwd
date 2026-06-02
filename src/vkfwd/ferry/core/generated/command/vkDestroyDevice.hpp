@@ -11,6 +11,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace vkfwd::generated::commands::vkDestroyDevice {
 
@@ -19,15 +20,12 @@ struct Parameters {
     const VkAllocationCallbacks * pAllocator = {};
 };
 
-using ParameterPacket = vkfwd::CommandChunk;
-
 class Command {
 public:
-    using Parameters      = vkfwd::generated::commands::vkDestroyDevice::Parameters;
-    using ParameterPacket = vkfwd::generated::commands::vkDestroyDevice::ParameterPacket;
+    using Parameters = vkfwd::generated::commands::vkDestroyDevice::Parameters;
 
-    static VkResult pack_parameters(Blob & blob, const Parameters & parameters, ParameterPacket & packet);
-    static VkResult unpack_parameters(Blob & blob, const ParameterPacket & packet, Parameters & parameters);
+    static VkResult pack_parameters(Blob & blob, const Parameters & parameters);
+    static VkResult unpack_parameters(SafeArrayView<std::uint8_t> & view, const Parameters ** parameters);
 };
 
 } // namespace vkfwd::generated::commands::vkDestroyDevice

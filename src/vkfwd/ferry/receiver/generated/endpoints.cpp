@@ -19,16 +19,13 @@ bool vkCreateInstance_endpoint(const Blob & request_blob, const CommandChunk & r
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkCreateInstance>(raw_function);
 
-    Command::Parameters parameters;
-    // Generated command unpacking still takes a mutable Blob because older hooks
-    // may observe packet state. The receiver endpoint only needs a bounded read of
-    // the transport-owned request stream.
-    Blob & mutable_request_blob = const_cast<Blob &>(request_blob);
-    if (Command::unpack_parameters(mutable_request_blob, request_packet, parameters) != VK_SUCCESS) { return false; }
-    const VkResult          return_value = api_function(parameters.pCreateInfo, parameters.pAllocator, parameters.pInstance);
-    Command::Response       response {.return_value = return_value, .pInstance = parameters.pInstance};
-    Command::ResponsePacket response_packet;
-    return Command::pack_response(response_blob, response, response_packet) == VK_SUCCESS;
+    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
+    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters           = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+    const VkResult    return_value = api_function(parameters->pCreateInfo, parameters->pAllocator, parameters->pInstance);
+    Command::Response response {.return_value = return_value, .pInstance = parameters->pInstance};
+    return Command::pack_response(response_blob, response) == VK_SUCCESS;
 }
 
 bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
@@ -39,13 +36,11 @@ bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & 
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkDestroyInstance>(raw_function);
 
-    Command::Parameters parameters;
-    // Generated command unpacking still takes a mutable Blob because older hooks
-    // may observe packet state. The receiver endpoint only needs a bounded read of
-    // the transport-owned request stream.
-    Blob & mutable_request_blob = const_cast<Blob &>(request_blob);
-    if (Command::unpack_parameters(mutable_request_blob, request_packet, parameters) != VK_SUCCESS) { return false; }
-    api_function(parameters.instance, parameters.pAllocator);
+    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
+    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters           = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+    api_function(parameters->instance, parameters->pAllocator);
     return true;
 }
 
@@ -57,16 +52,13 @@ bool vkCreateDevice_endpoint(const Blob & request_blob, const CommandChunk & req
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkCreateDevice>(raw_function);
 
-    Command::Parameters parameters;
-    // Generated command unpacking still takes a mutable Blob because older hooks
-    // may observe packet state. The receiver endpoint only needs a bounded read of
-    // the transport-owned request stream.
-    Blob & mutable_request_blob = const_cast<Blob &>(request_blob);
-    if (Command::unpack_parameters(mutable_request_blob, request_packet, parameters) != VK_SUCCESS) { return false; }
-    const VkResult          return_value = api_function(parameters.physicalDevice, parameters.pCreateInfo, parameters.pAllocator, parameters.pDevice);
-    Command::Response       response {.return_value = return_value, .pDevice = parameters.pDevice};
-    Command::ResponsePacket response_packet;
-    return Command::pack_response(response_blob, response, response_packet) == VK_SUCCESS;
+    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
+    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters           = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+    const VkResult    return_value = api_function(parameters->physicalDevice, parameters->pCreateInfo, parameters->pAllocator, parameters->pDevice);
+    Command::Response response {.return_value = return_value, .pDevice = parameters->pDevice};
+    return Command::pack_response(response_blob, response) == VK_SUCCESS;
 }
 
 bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
@@ -77,13 +69,11 @@ bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & re
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkDestroyDevice>(raw_function);
 
-    Command::Parameters parameters;
-    // Generated command unpacking still takes a mutable Blob because older hooks
-    // may observe packet state. The receiver endpoint only needs a bounded read of
-    // the transport-owned request stream.
-    Blob & mutable_request_blob = const_cast<Blob &>(request_blob);
-    if (Command::unpack_parameters(mutable_request_blob, request_packet, parameters) != VK_SUCCESS) { return false; }
-    api_function(parameters.device, parameters.pAllocator);
+    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
+    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters           = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+    api_function(parameters->device, parameters->pAllocator);
     return true;
 }
 

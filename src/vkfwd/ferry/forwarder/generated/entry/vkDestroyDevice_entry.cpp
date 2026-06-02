@@ -23,10 +23,9 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice_entry(VkDevice device, const VkAlloca
 
     if constexpr (Hooks::before_pack_enabled) { Hooks::before_pack(device, pAllocator); }
 
-    auto &                   forwarder = ::vkfwd::Forwarder::instance();
-    Command::Parameters      parameters {.device = device, .pAllocator = pAllocator};
-    Command::ParameterPacket request;
-    VkResult                 status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+    auto &              forwarder = ::vkfwd::Forwarder::instance();
+    Command::Parameters parameters {.device = device, .pAllocator = pAllocator};
+    VkResult            status = Command::pack_parameters(forwarder.request_blob(), parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return; }
 
     // Deferrable commands have no return value or output parameters, so the

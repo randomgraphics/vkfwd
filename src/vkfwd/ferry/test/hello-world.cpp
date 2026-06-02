@@ -14,7 +14,7 @@
 namespace vkfwd::test {
 namespace {
 
-constexpr VkInstanceCreateFlags kExpectedFlags = 0xbad;
+constexpr VkInstanceCreateFlags kExpectedFlags    = 0xbad;
 const auto                      kReceiverInstance = reinterpret_cast<VkInstance>(static_cast<std::uintptr_t>(0xbeef));
 
 class LoopbackTransportCreator {
@@ -52,10 +52,14 @@ TEST_CASE("loopback hello world forwards vkCreateInstance through receiver repla
     receiver::ReplayContext replay_context;
     replay_context.dispatch.global.init(fake_vkGetInstanceProcAddr);
 
-    auto loopback = LoopbackSession::create();
+    auto     loopback = LoopbackSession::create();
     Receiver receiver(*loopback.receiver, replay_context);
 
     Forwarder::set_transport_creator(LoopbackTransportCreator(loopback.transport));
+    // Other forwarder tests may leave deferrable commands queued in the
+    // thread-local blob. The loopback scenario is a single-call replay contract,
+    // so reset the source stream before installing its request.
+    Forwarder::instance().request_blob().reset();
 
     VkInstanceCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,

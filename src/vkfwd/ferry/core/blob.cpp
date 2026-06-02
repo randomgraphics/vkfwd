@@ -58,6 +58,18 @@ SafeArrayView<const std::uint8_t> Blob::at(std::size_t offset, std::size_t size)
     return {};
 }
 
+SafeArrayView<std::uint8_t> Blob::at(std::size_t offset, std::size_t size) {
+    if (size == 0) { return {}; }
+    for (auto & chunk : chunks_) {
+        if (offset < chunk.logical_begin) { continue; }
+        const std::size_t local = offset - chunk.logical_begin;
+        if (local <= chunk.used && size <= chunk.used - local) {
+            return SafeArrayView<std::uint8_t>(size, reinterpret_cast<std::uint8_t *>(chunk.data.get() + local));
+        }
+    }
+    return {};
+}
+
 Blob Blob::flatten() const {
     Blob flattened(size_ == 0 ? kMinimumChunkSize : size_);
     if (size_ == 0) { return flattened; }

@@ -15,8 +15,6 @@
 
 namespace vkfwd::generated::commands::vkCreateInstance {
 
-constexpr std::uint32_t kCommandRevision = 1;
-
 struct Parameters {
     const VkInstanceCreateInfo *  pCreateInfo = {};
     const VkAllocationCallbacks * pAllocator  = {};
@@ -28,20 +26,17 @@ struct Response {
     VkInstance * pInstance    = {};
 };
 
-using ParameterPacket = vkfwd::CommandChunk;
-using ResponsePacket  = vkfwd::CommandChunk;
-
 class Command {
 public:
-    using Parameters      = vkfwd::generated::commands::vkCreateInstance::Parameters;
-    using Response        = vkfwd::generated::commands::vkCreateInstance::Response;
-    using ParameterPacket = vkfwd::generated::commands::vkCreateInstance::ParameterPacket;
-    using ResponsePacket  = vkfwd::generated::commands::vkCreateInstance::ResponsePacket;
+    using Parameters = vkfwd::generated::commands::vkCreateInstance::Parameters;
 
-    static VkResult pack_parameters(Blob & blob, const Parameters & parameters, ParameterPacket & packet);
-    static VkResult unpack_parameters(Blob & blob, const ParameterPacket & packet, Parameters & parameters);
-    static VkResult pack_response(Blob & blob, const Response & response, ResponsePacket & packet);
-    static VkResult unpack_response(Blob & blob, const ResponsePacket & packet, Response & response);
+    static VkResult pack_parameters(Blob & blob, const Parameters & parameters);
+    static VkResult unpack_parameters(SafeArrayView<std::uint8_t> & view, const Parameters ** parameters);
+
+    using Response = vkfwd::generated::commands::vkCreateInstance::Response;
+
+    static VkResult pack_response(Blob & blob, const Response & response);
+    static VkResult unpack_response(SafeArrayView<std::uint8_t> & view, const Response ** response);
 };
 
 } // namespace vkfwd::generated::commands::vkCreateInstance

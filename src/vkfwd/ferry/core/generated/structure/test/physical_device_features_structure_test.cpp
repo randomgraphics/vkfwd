@@ -23,9 +23,12 @@ TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves f
     value.features.geometryShader     = VK_TRUE;
 
     REQUIRE(pack_VkPhysicalDeviceFeatures2(&value, blob, packed) == VK_SUCCESS);
-    const VkPhysicalDeviceFeatures2 * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceFeatures2(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkPhysicalDeviceFeatures2 * actual    = nullptr;
+    Blob                              flattened = blob.flatten();
+    auto                              view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceFeatures2(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->features.robustBufferAccess == VK_TRUE);
@@ -43,9 +46,12 @@ TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack pres
     value.shaderDrawParameters     = VK_TRUE;
 
     REQUIRE(pack_VkPhysicalDeviceVulkan11Features(&value, blob, packed) == VK_SUCCESS);
-    const VkPhysicalDeviceVulkan11Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan11Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan11Features * actual    = nullptr;
+    Blob                                     flattened = blob.flatten();
+    auto                                     view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan11Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->storageBuffer16BitAccess == VK_TRUE);
@@ -63,9 +69,12 @@ TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack pres
     value.timelineSemaphore  = VK_TRUE;
 
     REQUIRE(pack_VkPhysicalDeviceVulkan12Features(&value, blob, packed) == VK_SUCCESS);
-    const VkPhysicalDeviceVulkan12Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan12Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan12Features * actual    = nullptr;
+    Blob                                     flattened = blob.flatten();
+    auto                                     view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan12Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->descriptorIndexing == VK_TRUE);
@@ -83,9 +92,12 @@ TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack pres
     value.dynamicRendering = VK_TRUE;
 
     REQUIRE(pack_VkPhysicalDeviceVulkan13Features(&value, blob, packed) == VK_SUCCESS);
-    const VkPhysicalDeviceVulkan13Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan13Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan13Features * actual    = nullptr;
+    Blob                                     flattened = blob.flatten();
+    auto                                     view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan13Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->synchronization2 == VK_TRUE);
@@ -103,9 +115,12 @@ TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack pres
     value.maintenance6        = VK_TRUE;
 
     REQUIRE(pack_VkPhysicalDeviceVulkan14Features(&value, blob, packed) == VK_SUCCESS);
-    const VkPhysicalDeviceVulkan14Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan14Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkPhysicalDeviceVulkan14Features * actual    = nullptr;
+    Blob                                     flattened = blob.flatten();
+    auto                                     view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan14Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->globalPriorityQuery == VK_TRUE);
@@ -123,9 +138,12 @@ TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/u
     value.descriptorBindingVariableDescriptorCount = VK_TRUE;
 
     REQUIRE(pack_VkPhysicalDeviceDescriptorIndexingFeatures(&value, blob, packed) == VK_SUCCESS);
-    const VkPhysicalDeviceDescriptorIndexingFeatures * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceDescriptorIndexingFeatures(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkPhysicalDeviceDescriptorIndexingFeatures * actual    = nullptr;
+    Blob                                               flattened = blob.flatten();
+    auto                                               view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceDescriptorIndexingFeatures(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->descriptorBindingPartiallyBound == VK_TRUE);

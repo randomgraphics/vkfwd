@@ -28,17 +28,20 @@ TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied st
     };
 
     REQUIRE(pack_VkApplicationInfo(&value, blob, packed) == VK_SUCCESS);
-    const VkApplicationInfo * actual = nullptr;
-    REQUIRE(unpack_VkApplicationInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkApplicationInfo * actual    = nullptr;
+    Blob                      flattened = blob.flatten();
+    auto                      view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkApplicationInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->applicationVersion == value.applicationVersion);
     CHECK(actual->engineVersion == value.engineVersion);
     CHECK(actual->apiVersion == value.apiVersion);
-    check_relative_string(blob, packed.offset, actual->pApplicationName, value.pApplicationName);
-    check_relative_string(blob, packed.offset, actual->pEngineName, value.pEngineName);
+    check_relative_string(flattened, packed.offset, actual->pApplicationName, value.pApplicationName);
+    check_relative_string(flattened, packed.offset, actual->pEngineName, value.pEngineName);
 }
 
 TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested application info and name arrays") {
@@ -67,27 +70,29 @@ TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested
     };
 
     REQUIRE(pack_VkInstanceCreateInfo(&value, blob, packed) == VK_SUCCESS);
-    const VkInstanceCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkInstanceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    const VkInstanceCreateInfo * actual    = nullptr;
+    Blob                         flattened = blob.flatten();
+    auto                         view      = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkInstanceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->flags == value.flags);
     CHECK(actual->enabledLayerCount == value.enabledLayerCount);
     CHECK(actual->enabledExtensionCount == value.enabledExtensionCount);
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledLayerNames, {"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"});
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledExtensionNames, {"VK_EXT_debug_utils", "VK_KHR_surface"});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledLayerNames, {"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledExtensionNames, {"VK_EXT_debug_utils", "VK_KHR_surface"});
 
     REQUIRE(actual->pApplicationInfo != nullptr);
-    const auto                app_offset = packed.offset + encoded_offset(actual->pApplicationInfo);
-    const VkApplicationInfo * actual_app = nullptr;
-    REQUIRE(unpack_VkApplicationInfo(blob, app_offset, &actual_app) == VK_SUCCESS);
+    const VkApplicationInfo * actual_app = actual->pApplicationInfo;
     REQUIRE(actual_app != nullptr);
+    CHECK(points_into_blob(flattened, actual_app));
     CHECK(actual_app->applicationVersion == app.applicationVersion);
     CHECK(actual_app->engineVersion == app.engineVersion);
-    check_relative_string(blob, app_offset, actual_app->pApplicationName, app.pApplicationName);
-    check_relative_string(blob, app_offset, actual_app->pEngineName, app.pEngineName);
+    check_relative_string(flattened, 0, actual_app->pApplicationName, app.pApplicationName);
+    check_relative_string(flattened, 0, actual_app->pEngineName, app.pEngineName);
 }
 
 } // namespace

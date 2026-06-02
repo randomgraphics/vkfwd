@@ -107,11 +107,12 @@ TEST_CASE("pNext chain packing rejects unreadable node pointers without crashing
 
 TEST_CASE("packed pNext unpacking rejects corrupt blob references") {
     Blob blob;
+    auto empty_view = blob.at(0, 1);
 
-    CHECK(unpack_pnext_chain(blob, 0, nullptr) == VK_ERROR_UNKNOWN);
+    CHECK(unpack_pnext_chain(empty_view, nullptr) == VK_ERROR_UNKNOWN);
 
     const void * unpacked = reinterpret_cast<const void *>(0x1);
-    CHECK(unpack_pnext_chain(blob, 4096, &unpacked) == VK_ERROR_UNKNOWN);
+    CHECK(unpack_pnext_chain(empty_view, &unpacked) == VK_ERROR_UNKNOWN);
     CHECK(unpacked == nullptr);
 }
 

@@ -25,16 +25,15 @@ on both sides of the forwarding boundary.
 Command and structure serializers copy Vulkan inputs into a `Blob`. Pointers in
 packed payloads are not source-process addresses after packing:
 
-- Command parameter pointer slots use command-relative offsets where the command
-  chunk is the base.
-- Structure pointer slots use structure-relative offsets where the copied
-  structure is the base.
+- Every non-null pointer slot uses a field-relative byte offset: the encoded
+  value is measured from the pointer field's own storage location to the copied
+  target bytes.
 - A null source pointer is encoded as a null pointer value.
 
-Unpack functions currently validate the typed view and return a pointer into the
-packed blob. They do not fully rehydrate pointer members into process-local
-addresses. Replay code must resolve encoded offsets using the same base rule the
-packer used.
+Unpack functions take a mutable `SafeArrayView<std::uint8_t>` that starts at the
+serialized command chunk or structure record. They validate that view, repair
+encoded pointer fields in place by adding each offset to its own field address,
+and return a pointer into the same blob-backed storage.
 
 ## Blob Invariants
 
@@ -223,12 +222,24 @@ Manual hook files under `hook/` may customize command behavior. Hook code must
 document the command-specific invariant it is protecting, especially around
 pointer ownership, lifetime, and source-to-receiver handle assumptions.
 
+Generated command packers intentionally drop `VkAllocationCallbacks` parameters
+and encode those slots as null. Allocation callbacks contain guest-process
+function pointers and user data, so they cannot be marshalled into a receiver
+process; replay must use the receiver's default allocator unless a future
+receiver-local allocator policy is added.
+
 ## Testing Guidance
 
 - Put handwritten core tests under `core/test/` with an `internal-test.cmake`
   manifest.
 - Keep generated structure tests under `core/generated/structure/test/`.
+- Keep generated command pack/flatten/unpack round-trip tests under
+  `core/generated/command/test/`.
 - Structure tests should validate both the top-level typed view and any copied
-  pointer-owned payload such as strings, arrays, or nested structs.
+  pointer-owned payload such as strings, arrays, or nested structs after
+  flattening and unpacking. These tests protect the receiver-side invariant that
+  every unpacked pointer resolves to locally valid storage in the flattened
+  blob; command tests add the same coverage for command parameters, responses,
+  and output handles passed to host Vulkan entry points.
 - Negative serialization tests should assert failure codes and, where relevant,
   that output pointers are reset to null.

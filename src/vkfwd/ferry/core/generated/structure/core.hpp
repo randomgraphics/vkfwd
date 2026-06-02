@@ -30,18 +30,18 @@ VkResult pack_VkDeviceQueueGlobalPriorityCreateInfo(const VkDeviceQueueGlobalPri
 VkResult pack_struct_by_type(const void * value, Blob & blob, PackedStruct & packed);
 VkResult pack_pnext_chain(const void * value, Blob & blob, PackedStruct & packed);
 
-VkResult unpack_VkApplicationInfo(const Blob & blob, std::size_t offset, const VkApplicationInfo ** value);
-VkResult unpack_VkInstanceCreateInfo(const Blob & blob, std::size_t offset, const VkInstanceCreateInfo ** value);
-VkResult unpack_VkDeviceQueueCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceQueueCreateInfo ** value);
-VkResult unpack_VkDeviceCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceCreateInfo ** value);
-VkResult unpack_VkDeviceGroupDeviceCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceGroupDeviceCreateInfo ** value);
-VkResult unpack_VkPhysicalDeviceFeatures2(const Blob & blob, std::size_t offset, const VkPhysicalDeviceFeatures2 ** value);
-VkResult unpack_VkPhysicalDeviceVulkan11Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan11Features ** value);
-VkResult unpack_VkPhysicalDeviceVulkan12Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan12Features ** value);
-VkResult unpack_VkPhysicalDeviceVulkan13Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan13Features ** value);
-VkResult unpack_VkPhysicalDeviceVulkan14Features(const Blob & blob, std::size_t offset, const VkPhysicalDeviceVulkan14Features ** value);
-VkResult unpack_VkPhysicalDeviceDescriptorIndexingFeatures(const Blob & blob, std::size_t offset, const VkPhysicalDeviceDescriptorIndexingFeatures ** value);
-VkResult unpack_VkDeviceQueueGlobalPriorityCreateInfo(const Blob & blob, std::size_t offset, const VkDeviceQueueGlobalPriorityCreateInfo ** value);
-VkResult unpack_pnext_chain(const Blob & blob, std::size_t structure_offset, const void ** value);
+VkResult unpack_VkApplicationInfo(SafeArrayView<std::uint8_t> & view, const VkApplicationInfo ** value);
+VkResult unpack_VkInstanceCreateInfo(SafeArrayView<std::uint8_t> & view, const VkInstanceCreateInfo ** value);
+VkResult unpack_VkDeviceQueueCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceQueueCreateInfo ** value);
+VkResult unpack_VkDeviceCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceCreateInfo ** value);
+VkResult unpack_VkDeviceGroupDeviceCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceGroupDeviceCreateInfo ** value);
+VkResult unpack_VkPhysicalDeviceFeatures2(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceFeatures2 ** value);
+VkResult unpack_VkPhysicalDeviceVulkan11Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan11Features ** value);
+VkResult unpack_VkPhysicalDeviceVulkan12Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan12Features ** value);
+VkResult unpack_VkPhysicalDeviceVulkan13Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan13Features ** value);
+VkResult unpack_VkPhysicalDeviceVulkan14Features(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceVulkan14Features ** value);
+VkResult unpack_VkPhysicalDeviceDescriptorIndexingFeatures(SafeArrayView<std::uint8_t> & view, const VkPhysicalDeviceDescriptorIndexingFeatures ** value);
+VkResult unpack_VkDeviceQueueGlobalPriorityCreateInfo(SafeArrayView<std::uint8_t> & view, const VkDeviceQueueGlobalPriorityCreateInfo ** value);
+VkResult unpack_pnext_chain(SafeArrayView<std::uint8_t> & view, const void ** value);
 
 } // namespace vkfwd::generated::structure

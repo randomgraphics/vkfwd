@@ -457,11 +457,10 @@ struct CommandHooks {{
   template <class Parameters>
   static constexpr void before_pack(Parameters&) noexcept {{}}
 
-  template <class ParameterPacket>
-  static constexpr void after_pack(ParameterPacket&) noexcept {{}}
+  static constexpr void after_pack() noexcept {{}}
 
-  template <class ParameterPacket>
-  static constexpr void before_unpack(ParameterPacket&) noexcept {{}}
+  template <class View>
+  static constexpr void before_unpack(View&) noexcept {{}}
 
   template <class Parameters>
   static constexpr void after_unpack(Parameters&) noexcept {{}}
@@ -475,28 +474,12 @@ struct CommandHooks {{
 def command_header_content(
     metadata: dict[str, object], command: dict[str, object]
 ) -> str:
-    if command["name"] in {"vkCreateInstance", "vkCreateDevice"}:
-        # The create-command stream layout is being reorganized around Blob and
-        # generated structure helpers. Until the general emitter learns that
-        # policy for every command, keep this initial generated slice
-        # deterministic by using the checked-in generated template verbatim.
-        return (
-            repo_root()
-            / "src"
-            / "vkfwd"
-            / "ferry"
-            / "core"
-            / "generated"
-            / "command"
-            / f"{command['name']}.hpp"
-        ).read_text(encoding="utf-8")
     enum_name = command_enum_name(command["name"])
     namespace = command_namespace(command["name"])
     fields = "\n".join(
         f"  {parameter_cxx_type(parameter)} {parameter['name']} = {{}};"
         for parameter in command["parameters"]
     )
-    response_aliases = ""
     response_methods = ""
     response_struct = ""
     if command_needs_response(command):
@@ -505,18 +488,13 @@ struct Response {{
 {response_return_member(command)}{response_output_fields(command)}
 }};
 """
-        response_aliases = f"""using ResponsePacket = vkfwd::CommandChunk;
-"""
         response_methods = f"""
   using Response = vkfwd::generated::commands::{namespace}::Response;
-  using ResponsePacket = vkfwd::generated::commands::{namespace}::ResponsePacket;
 
   static VkResult pack_response(Blob& blob,
-                                const Response& response,
-                                ResponsePacket& packet);
-  static VkResult unpack_response(Blob& blob,
-                                  const ResponsePacket& packet,
-                                  Response& response);
+                                const Response& response);
+  static VkResult unpack_response(SafeArrayView<std::uint8_t>& view,
+                                  const Response** response);
 """
     return f"""#pragma once
 
@@ -531,6 +509,7 @@ struct Response {{
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace vkfwd::generated::commands::{namespace} {{
 
@@ -538,20 +517,15 @@ struct Parameters {{
 {fields}
 }};
 {response_struct}
-using ParameterPacket = vkfwd::CommandChunk;
-{response_aliases}
 
 class Command {{
 public:
   using Parameters = vkfwd::generated::commands::{namespace}::Parameters;
-  using ParameterPacket = vkfwd::generated::commands::{namespace}::ParameterPacket;
 
   static VkResult pack_parameters(Blob& blob,
-                                  const Parameters& parameters,
-                                  ParameterPacket& packet);
-  static VkResult unpack_parameters(Blob& blob,
-                                    const ParameterPacket& packet,
-                                    Parameters& parameters);
+                                  const Parameters& parameters);
+  static VkResult unpack_parameters(SafeArrayView<std::uint8_t>& view,
+                                    const Parameters** parameters);
 {response_methods}
 }};
 
@@ -567,17 +541,91 @@ def command_source_helpers(command: dict[str, object]) -> str:
     enum_name = command_enum_name(str(command["name"]))
     return f"""
 template<class T>
-VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk) {{
+constexpr std::size_t command_payload_offset() {{
+  // Command chunks always begin with the fixed protocol header:
+  // command id, total chunk size including this header, and command revision.
+  // Payload alignment padding follows that header and is included in size.
   constexpr std::size_t kPayloadAlignment = alignof(T);
-  constexpr std::size_t kPayloadOffset =
-      (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+  return (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+}}
+
+template<class Pointer>
+VkResult patch_command_pointer(Pointer& pointer_slot, std::size_t pointer_slot_offset, std::size_t target_offset) {{
+  // Command-level pointers use the same field-relative offset rule as
+  // structures: the encoded value is measured from the pointer slot itself.
+  // Unpack can therefore repair pointers in-place without remembering whether a
+  // slot came from command parameters or from a nested Vulkan struct.
+  pointer_slot = reinterpret_cast<Pointer>(target_offset ? static_cast<std::uintptr_t>(target_offset - pointer_slot_offset) : 0);
+  return VK_SUCCESS;
+}}
+
+template<class Pointer>
+VkResult recover_command_pointer(Pointer& pointer_slot, SafeArrayView<std::uint8_t>& view) {{
+  if (!pointer_slot) {{ return VK_SUCCESS; }}
+  auto* begin = view.address(0);
+  if (!begin) [[unlikely]] {{ return VK_ERROR_UNKNOWN; }}
+  auto* slot = reinterpret_cast<std::uint8_t*>(&pointer_slot);
+  auto* end = begin + view.size();
+  auto* target = slot + reinterpret_cast<std::uintptr_t>(pointer_slot);
+  if (slot < begin || slot + sizeof(Pointer) > end || target < begin || target >= end) [[unlikely]] {{
+    VKFWD_LOG_ERROR("vkfwd ferry command unpack failed: encoded pointer is outside command view, slot={{}}, target={{}}, view_size={{}}",
+                    static_cast<const void*>(slot), static_cast<const void*>(target), view.size());
+    return VK_ERROR_UNKNOWN;
+  }}
+  pointer_slot = reinterpret_cast<Pointer>(target);
+  return VK_SUCCESS;
+}}
+
+SafeArrayView<std::uint8_t> tail_view_from_pointer(SafeArrayView<std::uint8_t>& view, const void* pointer) {{
+  auto* begin = view.address(0);
+  if (!begin || !pointer) {{ return {{}}; }}
+  auto* target = const_cast<std::uint8_t*>(reinterpret_cast<const std::uint8_t*>(pointer));
+  auto* end = begin + view.size();
+  if (target < begin || target >= end) {{ return {{}}; }}
+  return SafeArrayView<std::uint8_t>(static_cast<std::size_t>(end - target), target);
+}}
+
+VkResult pack_allocator(const VkAllocationCallbacks* allocator,
+                        Blob& blob,
+                        std::size_t pointer_slot_offset,
+                        const VkAllocationCallbacks*& pointer_slot) {{
+  (void)allocator;
+  (void)blob;
+  // Vulkan allocation callbacks are guest-process function pointers and user
+  // data. They have no valid receiver-process address, so the wire contract is
+  // to drop them and replay with the receiver's default allocator.
+  return patch_command_pointer(pointer_slot, pointer_slot_offset, 0);
+}}
+
+template<class Pointer>
+VkResult pack_output_pointer(Pointer value, Blob& blob, std::size_t pointer_slot_offset, Pointer& pointer_slot) {{
+  using Pointee = std::remove_pointer_t<Pointer>;
+  if (!value) [[unlikely]] {{ return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }}
+  try {{
+    std::size_t target = 0;
+    auto destination = blob.grow<Pointee>(1, alignof(Pointee), &target);
+    if (!destination.set(0, *value)) [[unlikely]] {{
+      VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output value into blob, size={{}}", sizeof(Pointee));
+      return VK_ERROR_UNKNOWN;
+    }}
+    return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
+  }} catch (const std::bad_alloc&) {{
+    VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: out of host memory while copying output value, size={{}}", sizeof(Pointee));
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+template<class T>
+VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk, T*& packed_payload) {{
+  constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
   constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
+  constexpr std::size_t kPayloadAlignment = alignof(T);
   constexpr std::size_t kChunkAlignment =
       alignof(CommandChunkHeader) > kPayloadAlignment ? alignof(CommandChunkHeader) : kPayloadAlignment;
 
-  // The chunk is one contiguous serialized range. Payload starts at an aligned
-  // offset inside that range so receivers can safely reinterpret the packed
-  // command bytes without depending on host-side append history.
+    // The chunk is one contiguous serialized range. Its fixed header is
+    // command id, chunk size including the header, and command revision; payload
+    // starts at an aligned offset after those fields.
   if constexpr (kCommandSize > std::numeric_limits<std::uint32_t>::max()) {{
     VKFWD_LOG_ERROR("vkfwd ferry command pack failed: command chunk is too large, command_id={{}}, command_size={{}}",
                     static_cast<std::uint32_t>(command_id), kCommandSize);
@@ -585,6 +633,7 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
   }}
 
   chunk = CommandChunk{{.command_offset = 0, .command_size = 0}};
+  packed_payload = nullptr;
 
   CommandChunkHeader header{{}};
   try {{
@@ -602,6 +651,7 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
     }}
     chunk.command_offset = command_offset;
     chunk.command_size = header.size;
+    packed_payload = reinterpret_cast<T*>(&destination.at(kPayloadOffset));
   }} catch (const std::bad_alloc&) {{
     VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={{}}, payload_size={{}}",
                     static_cast<std::uint32_t>(command_id), sizeof(T));
@@ -611,21 +661,43 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
 }}
 
 template<class T>
-VkResult unpack_command_chunk(const Blob& blob, const CommandChunk& chunk, CommandId command_id, std::uint32_t revision, const T** payload) {{
-  constexpr std::size_t kPayloadAlignment = alignof(T);
-  constexpr std::size_t kPayloadOffset =
-      (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk) {{
+  T* packed_payload = nullptr;
+  return append_command_chunk(blob, command_id, revision, payload, chunk, packed_payload);
+}}
+
+VkResult finalize_command_chunk(Blob& blob, CommandChunk& chunk) {{
+  const std::size_t command_size = blob.size() - chunk.command_offset;
+  if (command_size > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {{
+    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, command_offset={{}}, command_size={{}}",
+                    chunk.command_offset, command_size);
+    return VK_ERROR_UNKNOWN;
+  }}
+
+  auto header_view = blob.at<CommandChunkHeader>(chunk.command_offset);
+  auto* header = header_view.address();
+  if (!header) [[unlikely]] {{
+    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, command_offset={{}}", chunk.command_offset);
+    return VK_ERROR_UNKNOWN;
+  }}
+
+  header->size = static_cast<std::uint32_t>(command_size);
+  chunk.command_size = header->size;
+  return VK_SUCCESS;
+}}
+
+template<class T>
+VkResult unpack_command_chunk(SafeArrayView<std::uint8_t>& view, CommandId command_id, std::uint32_t revision, T** payload) {{
+  constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
   constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
-  const auto header_view = blob.at(chunk.command_offset, sizeof(CommandChunkHeader));
-  const auto payload_view = blob.at(chunk.command_offset + kPayloadOffset, sizeof(T));
-  const auto* header = header_view.empty() ? nullptr : reinterpret_cast<const CommandChunkHeader*>(&header_view.at(0));
-  const auto* packed_payload = payload_view.empty() ? nullptr : reinterpret_cast<const T*>(&payload_view.at(0));
+  auto* header = view.size() < sizeof(CommandChunkHeader) ? nullptr : reinterpret_cast<CommandChunkHeader*>(view.address(0));
+  auto* packed_payload = view.size() < kCommandSize ? nullptr : reinterpret_cast<T*>(view.address(kPayloadOffset));
   if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
-      header->size != chunk.command_size || chunk.command_size != kCommandSize) [[unlikely]] {{
+      header->size < kCommandSize || view.size() < header->size) [[unlikely]] {{
     VKFWD_LOG_ERROR(
-        "vkfwd ferry command unpack failed: invalid command chunk, offset={{}}, size={{}}, has_header={{}}, has_payload={{}}, command_id={{}}, "
+        "vkfwd ferry command unpack failed: invalid command view, view_size={{}}, has_header={{}}, has_payload={{}}, command_id={{}}, "
         "expected_command_id={{}}, revision={{}}, expected_revision={{}}, header_size={{}}, expected_size={{}}",
-        chunk.command_offset, chunk.command_size, header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,
+        view.size(), header != nullptr, packed_payload != nullptr, header ? header->command_id : 0,
         static_cast<std::uint32_t>(command_id), header ? header->command_revision : 0, revision, header ? header->size : 0, kCommandSize);
     return VK_ERROR_UNKNOWN;
   }}
@@ -636,33 +708,146 @@ VkResult unpack_command_chunk(const Blob& blob, const CommandChunk& chunk, Comma
 """
 
 
-def command_pack_body(command: dict[str, object], enum_name: str) -> str:
+def parameter_is_copied_input_pointer(parameter: dict[str, object]) -> bool:
+    return int(parameter["pointer_depth"]) == 1 and (
+        str(parameter["type"])
+        in {
+            "VkInstanceCreateInfo",
+            "VkDeviceCreateInfo",
+            "VkAllocationCallbacks",
+        }
+        or parameter["direction"] == "output"
+    )
+
+
+def command_pointer_pack_lines(
+    command: dict[str, object], source_name: str
+) -> list[str]:
+    lines: list[str] = []
+    for parameter in command["parameters"]:
+        if not parameter_is_copied_input_pointer(parameter):
+            continue
+        name = str(parameter["name"])
+        ptype = str(parameter["type"])
+        slot = f"payload_offset + offsetof(Parameters, {name})"
+        if ptype == "VkAllocationCallbacks":
+            lines.extend(
+                [
+                    f"  status = pack_allocator({source_name}.{name}, blob, {slot}, packed_parameters->{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                ]
+            )
+        elif parameter["direction"] == "output":
+            lines.extend(
+                [
+                    f"  status = pack_output_pointer({source_name}.{name}, blob, {slot}, packed_parameters->{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f"  structure::PackedStruct packed_{name};",
+                    f"  status = structure::pack_{ptype}({source_name}.{name}, blob, packed_{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                    f"  status = patch_command_pointer(packed_parameters->{name}, {slot}, packed_{name}.offset);",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                ]
+            )
+    return lines
+
+
+def command_parameter_recover_lines(command: dict[str, object]) -> list[str]:
+    lines: list[str] = []
+    for parameter in command["parameters"]:
+        if not parameter_is_copied_input_pointer(parameter):
+            continue
+        name = str(parameter["name"])
+        ptype = str(parameter["type"])
+        lines.extend(
+            [
+                f"  status = recover_command_pointer(packed_parameters->{name}, view);",
+                "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+            ]
+        )
+        if ptype in {"VkInstanceCreateInfo", "VkDeviceCreateInfo"}:
+            lines.extend(
+                [
+                    f"  if (packed_parameters->{name}) {{",
+                    f"    auto child_view = tail_view_from_pointer(view, packed_parameters->{name});",
+                    f"    const {ptype}* ignored_{name} = nullptr;",
+                    f"    status = structure::unpack_{ptype}(child_view, &ignored_{name});",
+                    "    if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                    "  }",
+                ]
+            )
+    return lines
+
+
+def response_pointer_pack_lines(command: dict[str, object]) -> list[str]:
+    lines: list[str] = []
+    for parameter in command["parameters"]:
+        if parameter["direction"] != "output" or int(parameter["pointer_depth"]) != 1:
+            continue
+        name = str(parameter["name"])
+        ptype = str(parameter["type"])
+        slot = f"payload_offset + offsetof(Response, {name})"
+        lines.extend(
+            [
+                f"  status = pack_output_pointer(response.{name}, blob, {slot}, packed_response->{name});",
+                "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+            ]
+        )
+    return lines
+
+
+def response_pointer_recover_lines(command: dict[str, object]) -> list[str]:
+    lines: list[str] = []
+    for parameter in command["parameters"]:
+        if parameter["direction"] != "output" or int(parameter["pointer_depth"]) != 1:
+            continue
+        name = str(parameter["name"])
+        lines.extend(
+            [
+                f"  status = recover_command_pointer(packed_response->{name}, view);",
+                "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+            ]
+        )
+    return lines
+
+
+def command_pack_body(
+    command: dict[str, object], enum_name: str, source_name: str
+) -> str:
+    pointer_lines = "\n".join(command_pointer_pack_lines(command, source_name))
+    if pointer_lines:
+        pointer_lines = "\n" + pointer_lines
     return f"""
-    VkResult status = append_command_chunk(blob, CommandId::{enum_name}, {COMMAND_REVISION}, {{PARAM}}, packet);
-    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  Parameters* packed_parameters = nullptr;
+  CommandChunk chunk;
+  VkResult status = append_command_chunk(blob, CommandId::{enum_name}, {COMMAND_REVISION}, {source_name}, chunk, packed_parameters);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
+{pointer_lines}
+  status = finalize_command_chunk(blob, chunk);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
 """
 
 
 def command_source_content(
     metadata: dict[str, object], command: dict[str, object]
 ) -> str:
-    if command["name"] in {"vkCreateInstance", "vkCreateDevice"}:
-        # See command_header_content(): this preserves deterministic generation
-        # for the first Blob-backed command slice while the all-command emitter
-        # is still catching up to the new stream contract.
-        return (
-            repo_root()
-            / "src"
-            / "vkfwd"
-            / "ferry"
-            / "core"
-            / "generated"
-            / "command"
-            / f"{command['name']}.cpp"
-        ).read_text(encoding="utf-8")
     enum_name = command_enum_name(command["name"])
     namespace = command_namespace(command["name"])
     helpers = command_source_helpers(command)
+    needs_structure = any(
+        parameter_is_copied_input_pointer(parameter)
+        and str(parameter["type"]) != "VkAllocationCallbacks"
+        for parameter in command["parameters"]
+    )
+    structure_include = (
+        '#include "generated/structure/core.hpp"' if needs_structure else ""
+    )
     helpers_block = (
         f"""namespace {{
 
@@ -673,23 +858,38 @@ def command_source_content(
         if helpers.strip()
         else ""
     )
-    pack_body = command_pack_body(command, enum_name)
+    pack_body = command_pack_body(command, enum_name, "parameters")
+    hook_pack_body = command_pack_body(command, enum_name, "hook_parameters")
+    parameter_recover_lines = "\n".join(command_parameter_recover_lines(command))
     response_methods = ""
     if command_needs_response(command):
+        response_pack_lines = "\n".join(response_pointer_pack_lines(command))
+        if response_pack_lines:
+            response_pack_lines = "\n" + response_pack_lines
+        response_recover_lines = "\n".join(response_pointer_recover_lines(command))
+        if response_recover_lines:
+            response_recover_lines = "\n" + response_recover_lines
         response_methods = f"""
 VkResult Command::pack_response(Blob& blob,
-                                const Response& response,
-                                ResponsePacket& packet) {{
-  return append_command_chunk(blob, CommandId::{enum_name}, {COMMAND_REVISION}, response, packet);
+                                const Response& response) {{
+  Response* packed_response = nullptr;
+  CommandChunk chunk;
+  VkResult status = append_command_chunk(blob, CommandId::{enum_name}, {COMMAND_REVISION}, response, chunk, packed_response);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Response>();
+{response_pack_lines}
+  status = finalize_command_chunk(blob, chunk);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return VK_SUCCESS;
 }}
 
-VkResult Command::unpack_response(Blob& blob,
-                                  const ResponsePacket& packet,
-                                  Response& response) {{
-  const Response* packed_response = nullptr;
-  VkResult status = unpack_command_chunk(blob, packet, CommandId::{enum_name}, {COMMAND_REVISION}, &packed_response);
+VkResult Command::unpack_response(SafeArrayView<std::uint8_t>& view,
+                                  const Response** response) {{
+  Response* packed_response = nullptr;
+  VkResult status = unpack_command_chunk(view, CommandId::{enum_name}, {COMMAND_REVISION}, &packed_response);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
-  response = *packed_response;
+{response_recover_lines}
+  *response = packed_response;
   return VK_SUCCESS;
 }}
 """
@@ -700,53 +900,55 @@ VkResult Command::unpack_response(Blob& blob,
 // Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
 
 #include "logging.hpp"
+{structure_include}
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <type_traits>
 
 namespace vkfwd::generated::commands::{namespace} {{
 {helpers_block}
 
 VkResult Command::pack_parameters(Blob& blob,
-                                  const Parameters& parameters,
-                                  ParameterPacket& packet) {{
+                                  const Parameters& parameters) {{
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::{enum_name}>;
   if constexpr (Hooks::before_pack_enabled) {{
     Parameters hook_parameters = parameters;
     Hooks::before_pack(hook_parameters);
 
-{pack_body.replace("{PARAM}", "hook_parameters")}
+{hook_pack_body}
 
     if constexpr (Hooks::after_pack_enabled) {{
-      Hooks::after_pack(packet);
+      Hooks::after_pack();
     }}
     return VK_SUCCESS;
   }} else {{
-{pack_body.replace("{PARAM}", "parameters")}
+{pack_body}
 
     if constexpr (Hooks::after_pack_enabled) {{
-      Hooks::after_pack(packet);
+      Hooks::after_pack();
     }}
     return VK_SUCCESS;
   }}
 }}
 
-VkResult Command::unpack_parameters(Blob& blob,
-                                    const ParameterPacket& packet,
-                                    Parameters& parameters) {{
+VkResult Command::unpack_parameters(SafeArrayView<std::uint8_t>& view,
+                                    const Parameters** parameters) {{
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::{enum_name}>;
   if constexpr (Hooks::before_unpack_enabled) {{
-    Hooks::before_unpack(packet);
+    Hooks::before_unpack(view);
   }}
 
-  const Parameters* packed_parameters = nullptr;
-  VkResult status = unpack_command_chunk(blob, packet, CommandId::{enum_name}, {COMMAND_REVISION}, &packed_parameters);
+  Parameters* packed_parameters = nullptr;
+  VkResult status = unpack_command_chunk(view, CommandId::{enum_name}, {COMMAND_REVISION}, &packed_parameters);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
-  parameters = *packed_parameters;
+{parameter_recover_lines}
+  *parameters = packed_parameters;
 
   if constexpr (Hooks::after_unpack_enabled) {{
-    Hooks::after_unpack(parameters);
+    Hooks::after_unpack(*packed_parameters);
   }}
   return VK_SUCCESS;
 }}
@@ -1199,15 +1401,13 @@ def forwarder_command_source_content(
     if command_needs_response(command):
         response_flow = f"""
   Blob response_blob = forwarder.flush();
-  Command::ResponsePacket response_packet;
-  response_packet.command_offset = 0;
-  response_packet.command_size = static_cast<std::uint32_t>(response_blob.size());
-
-  Command::Response response;
-  status = Command::unpack_response(response_blob, response_packet, response);
+  auto response_view = response_blob.at(0, response_blob.size());
+  const Command::Response* packed_response = nullptr;
+  status = Command::unpack_response(response_view, &packed_response);
   if (status != VK_SUCCESS) [[unlikely]] {{
 {failure_return}
   }}
+  Command::Response response = *packed_response;
 
   if constexpr (Hooks::after_response_unpack_enabled) {{
     Hooks::after_response_unpack(response);
@@ -1255,8 +1455,7 @@ VKAPI_ATTR {command['return_type']} VKAPI_CALL {forwarder_entrypoint_name(str(co
 
   auto& forwarder = ::vkfwd::Forwarder::instance();
   Command::Parameters parameters{parameter_initializer_list(command)};
-  Command::ParameterPacket request;
-  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters);
   if (status != VK_SUCCESS) [[unlikely]] {{
 {failure_return}
   }}
@@ -1301,7 +1500,7 @@ def receiver_response_initializer(command: dict[str, object]) -> str:
         fields.append(".return_value = return_value")
     for parameter in command["parameters"]:
         if parameter["direction"] == "output":
-            fields.append(f".{parameter['name']} = parameters.{parameter['name']}")
+            fields.append(f".{parameter['name']} = parameters->{parameter['name']}")
     return "{" + ", ".join(fields) + "}"
 
 
@@ -1322,7 +1521,7 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
     namespace = command_namespace(str(command["name"]))
     enum_name = command_enum_name(str(command["name"]))
     parameter_names = ", ".join(
-        f"parameters.{parameter['name']}" for parameter in command["parameters"]
+        f"parameters->{parameter['name']}" for parameter in command["parameters"]
     )
     pfn_type = command_pfn_type(str(command["name"]))
 
@@ -1338,8 +1537,7 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
         call_lines.extend(
             [
                 f"  Command::Response response {receiver_response_initializer(command)};",
-                "  Command::ResponsePacket response_packet;",
-                "  return Command::pack_response(response_blob, response, response_packet) == VK_SUCCESS;",
+                "  return Command::pack_response(response_blob, response) == VK_SUCCESS;",
             ]
         )
     else:
@@ -1353,12 +1551,10 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
   if (!raw_function) {{ return false; }}
   const auto api_function = reinterpret_cast<{pfn_type}>(raw_function);
 
-  Command::Parameters parameters;
-  // Generated command unpacking still takes a mutable Blob because older hooks
-  // may observe packet state. The receiver endpoint only needs a bounded read of
-  // the transport-owned request stream.
-  Blob& mutable_request_blob = const_cast<Blob&>(request_blob);
-  if (Command::unpack_parameters(mutable_request_blob, request_packet, parameters) != VK_SUCCESS) {{ return false; }}
+  auto& mutable_request_blob = const_cast<Blob&>(request_blob);
+  auto request_view = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
+  const Command::Parameters* parameters = nullptr;
+  if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) {{ return false; }}
 {chr(10).join(call_lines)}
 }}
 """
@@ -1438,560 +1634,6 @@ def write_receiver_files(metadata: dict[str, object], receiver_dir: Path) -> Non
     )
 
 
-def forwarder_test_support_content(metadata: dict[str, object]) -> str:
-    return f"""#pragma once
-
-// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
-// Vulkan API version: {metadata['versions']['vulkan_api_version']}
-// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
-
-#include "blob.hpp"
-#include "forwarder.hpp"
-#include "protocol.hpp"
-#include "transport_session.hpp"
-
-#include <catch2/catch_test_macros.hpp>
-
-#include <cstddef>
-#include <cstdint>
-#include <initializer_list>
-#include <memory>
-#include <string_view>
-
-namespace vkfwd::forwarder::generated::test {{
-
-using FlushHandler = Blob (*)(Blob & request_blob);
-
-struct TransportState {{
-    FlushHandler handler   = nullptr;
-    bool         processed = false;
-}};
-
-inline TransportState & transport_state() {{
-    static TransportState state;
-    return state;
-}}
-
-class PackUnpackTransportSession final: public TransportSession {{
-public:
-    Blob send_accumulated_api_calls(Blob & request_blob) override {{
-        auto & state   = transport_state();
-        state.processed = true;
-        REQUIRE(state.handler != nullptr);
-        return state.handler(request_blob);
-    }}
-}};
-
-inline std::shared_ptr<TransportSession> make_pack_unpack_transport_session() {{ return std::make_shared<PackUnpackTransportSession>(); }}
-
-inline void install_pack_unpack_transport(FlushHandler handler) {{
-    auto & state    = transport_state();
-    state.handler   = handler;
-    state.processed = false;
-    Forwarder::set_transport_creator(make_pack_unpack_transport_session);
-    Forwarder::instance().request_blob().reset();
-}}
-
-inline CommandChunk first_command_chunk(const Blob & request_blob) {{
-    // Transport tests reconstruct the packet metadata from the stream header
-    // because the forwarding boundary only transports blob bytes, not the
-    // caller-side CommandChunk wrapper returned by pack_parameters(). The first
-    // 64 bits are reserved for source-thread routing, so command chunks begin
-    // after that prefix.
-    const auto header_view = request_blob.at(kSourceThreadIdSize, sizeof(CommandChunkHeader));
-    REQUIRE(!header_view.empty());
-    const auto * header = reinterpret_cast<const CommandChunkHeader *>(&header_view.at(0));
-    return CommandChunk {{.command_offset = kSourceThreadIdSize, .command_size = header->size}};
-}}
-
-template<class Pointer>
-std::size_t encoded_offset(Pointer pointer) {{
-    return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
-}}
-
-template<class Pointer>
-std::size_t command_relative_offset(const CommandChunk & packet, Pointer pointer) {{
-    // Command parameter pointer slots are encoded relative to the command chunk
-    // base. The request stream now has a source-thread prefix, so tests must
-    // rebase those slots through the packet metadata before inspecting payloads.
-    return packet.command_offset + encoded_offset(pointer);
-}}
-
-template<class T>
-const T & object_at(const Blob & blob, std::size_t offset) {{
-    const auto view = blob.at(offset, sizeof(T));
-    REQUIRE(!view.empty());
-    return *reinterpret_cast<const T *>(&view.at(0));
-}}
-
-inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {{
-    REQUIRE(encoded_value != nullptr);
-    const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
-    const auto        view          = blob.at(string_offset, expected.size() + 1);
-    REQUIRE(!view.empty());
-    const auto * value = reinterpret_cast<const char *>(&view.at(0));
-    CHECK(std::string_view(value, expected.size()) == expected);
-    CHECK(value[expected.size()] == '\\0');
-}}
-
-inline void check_relative_string_array(const Blob & blob,
-                                        std::size_t base_offset,
-                                        const char * const * encoded_values,
-                                        std::initializer_list<std::string_view> expected) {{
-    if (expected.size() == 0) {{
-        CHECK(encoded_values == nullptr);
-        return;
-    }}
-
-    REQUIRE(encoded_values != nullptr);
-    const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        slots_view   = blob.at(array_offset, expected.size() * sizeof(std::uintptr_t));
-    REQUIRE(!slots_view.empty());
-    const auto * slots = reinterpret_cast<const std::uintptr_t *>(&slots_view.at(0));
-
-    std::size_t index = 0;
-    for (std::string_view value : expected) {{
-        REQUIRE(slots[index] != 0);
-        const auto string_view = blob.at(base_offset + static_cast<std::size_t>(slots[index]), value.size() + 1);
-        REQUIRE(!string_view.empty());
-        const auto * string = reinterpret_cast<const char *>(&string_view.at(0));
-        CHECK(std::string_view(string, value.size()) == value);
-        CHECK(string[value.size()] == '\\0');
-        ++index;
-    }}
-}}
-
-inline void check_allocator_callbacks(const VkAllocationCallbacks & actual, const VkAllocationCallbacks & expected) {{
-    CHECK(actual.pUserData == expected.pUserData);
-    CHECK(actual.pfnAllocation == expected.pfnAllocation);
-    CHECK(actual.pfnReallocation == expected.pfnReallocation);
-    CHECK(actual.pfnFree == expected.pfnFree);
-    CHECK(actual.pfnInternalAllocation == expected.pfnInternalAllocation);
-    CHECK(actual.pfnInternalFree == expected.pfnInternalFree);
-}}
-
-inline void * VKAPI_PTR test_allocation(void *, std::size_t, std::size_t, VkSystemAllocationScope) {{ return nullptr; }}
-
-inline void * VKAPI_PTR test_reallocation(void *, void *, std::size_t, std::size_t, VkSystemAllocationScope) {{ return nullptr; }}
-
-inline void VKAPI_PTR test_free(void *, void *) {{}}
-
-inline void VKAPI_PTR test_internal_allocation(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {{}}
-
-inline void VKAPI_PTR test_internal_free(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {{}}
-
-inline VkAllocationCallbacks test_allocator(void * user_data) {{
-    return VkAllocationCallbacks {{
-        .pUserData            = user_data,
-        .pfnAllocation        = test_allocation,
-        .pfnReallocation      = test_reallocation,
-        .pfnFree              = test_free,
-        .pfnInternalAllocation = test_internal_allocation,
-        .pfnInternalFree       = test_internal_free,
-    }};
-}}
-
-template<class Handle>
-Handle test_handle(std::uintptr_t value) {{
-    return reinterpret_cast<Handle>(value);
-}}
-
-}} // namespace vkfwd::forwarder::generated::test
-"""
-
-
-def vkcreateinstance_test_content(metadata: dict[str, object]) -> str:
-    return f"""#include "support.hpp"
-
-#include "generated/command/vkCreateInstance.hpp"
-#include "generated/forwarder_entrypoints.hpp"
-#include "generated/structure/core.hpp"
-
-// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
-// Vulkan API version: {metadata['versions']['vulkan_api_version']}
-// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
-
-#include <catch2/catch_test_macros.hpp>
-
-#include <array>
-#include <cstdint>
-
-namespace vkfwd::forwarder::generated::test {{
-namespace {{
-
-using Command = ::vkfwd::generated::commands::vkCreateInstance::Command;
-
-struct Scenario {{
-    int                              allocator_user_data = 0x31;
-    VkAllocationCallbacks            allocator;
-    VkApplicationInfo                application_info;
-    std::array<const char *, 2>       layers;
-    std::array<const char *, 2>       extensions;
-    VkInstanceCreateInfo             create_info;
-    VkInstance *                     output_instance = nullptr;
-    VkInstance                       response_instance;
-    VkResult                         response_result = VK_INCOMPLETE;
-}};
-
-Scenario make_scenario() {{
-    Scenario scenario;
-    scenario.allocator = test_allocator(&scenario.allocator_user_data);
-    scenario.application_info = VkApplicationInfo {{
-        .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pNext              = nullptr,
-        .pApplicationName   = "vkfwd-create-instance-app",
-        .applicationVersion = 7,
-        .pEngineName        = "vkfwd-create-instance-engine",
-        .engineVersion      = 11,
-        .apiVersion         = VK_MAKE_API_VERSION(0, 1, 2, 3),
-    }};
-    scenario.layers     = {{"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"}};
-    scenario.extensions = {{"VK_EXT_debug_utils", "VK_KHR_surface"}};
-    scenario.create_info = VkInstanceCreateInfo {{
-        .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext                   = nullptr,
-        .flags                   = VkInstanceCreateFlags {{0x4}},
-        .pApplicationInfo        = &scenario.application_info,
-        .enabledLayerCount       = static_cast<std::uint32_t>(scenario.layers.size()),
-        .ppEnabledLayerNames     = scenario.layers.data(),
-        .enabledExtensionCount   = static_cast<std::uint32_t>(scenario.extensions.size()),
-        .ppEnabledExtensionNames = scenario.extensions.data(),
-    }};
-    scenario.response_instance = test_handle<VkInstance>(0x101);
-    return scenario;
-}}
-
-Scenario & scenario() {{
-    static Scenario value = make_scenario();
-    return value;
-}}
-
-Blob handle_flush(Blob & request_blob) {{
-    auto & expected = scenario();
-    const auto packet = first_command_chunk(request_blob);
-
-    Command::Parameters actual;
-    REQUIRE(Command::unpack_parameters(request_blob, packet, actual) == VK_SUCCESS);
-    CHECK(actual.pInstance == expected.output_instance);
-
-    REQUIRE(actual.pCreateInfo != nullptr);
-    const auto create_info_offset = command_relative_offset(packet, actual.pCreateInfo);
-    const VkInstanceCreateInfo * packed_create_info = nullptr;
-    REQUIRE(::vkfwd::generated::structure::unpack_VkInstanceCreateInfo(request_blob, create_info_offset, &packed_create_info) == VK_SUCCESS);
-    REQUIRE(packed_create_info != nullptr);
-    CHECK(packed_create_info->pNext == nullptr);
-    CHECK(packed_create_info->flags == expected.create_info.flags);
-    CHECK(packed_create_info->enabledLayerCount == expected.create_info.enabledLayerCount);
-    CHECK(packed_create_info->enabledExtensionCount == expected.create_info.enabledExtensionCount);
-
-    REQUIRE(packed_create_info->pApplicationInfo != nullptr);
-    const auto application_info_offset = create_info_offset + encoded_offset(packed_create_info->pApplicationInfo);
-    const VkApplicationInfo * packed_application_info = nullptr;
-    REQUIRE(::vkfwd::generated::structure::unpack_VkApplicationInfo(request_blob, application_info_offset, &packed_application_info) == VK_SUCCESS);
-    REQUIRE(packed_application_info != nullptr);
-    CHECK(packed_application_info->pNext == nullptr);
-    CHECK(packed_application_info->applicationVersion == expected.application_info.applicationVersion);
-    CHECK(packed_application_info->engineVersion == expected.application_info.engineVersion);
-    CHECK(packed_application_info->apiVersion == expected.application_info.apiVersion);
-    check_relative_string(request_blob, application_info_offset, packed_application_info->pApplicationName, expected.application_info.pApplicationName);
-    check_relative_string(request_blob, application_info_offset, packed_application_info->pEngineName, expected.application_info.pEngineName);
-    check_relative_string_array(request_blob, create_info_offset, packed_create_info->ppEnabledLayerNames,
-                                {{"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"}});
-    check_relative_string_array(request_blob, create_info_offset, packed_create_info->ppEnabledExtensionNames,
-                                {{"VK_EXT_debug_utils", "VK_KHR_surface"}});
-
-    REQUIRE(actual.pAllocator != nullptr);
-    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, command_relative_offset(packet, actual.pAllocator));
-    check_allocator_callbacks(packed_allocator, expected.allocator);
-
-    Blob response_blob;
-    Command::Response response {{.return_value = expected.response_result, .pInstance = &expected.response_instance}};
-    Command::ResponsePacket response_packet;
-    REQUIRE(Command::pack_response(response_blob, response, response_packet) == VK_SUCCESS);
-    return response_blob;
-}}
-
-}} // namespace
-
-TEST_CASE("vkCreateInstance generated forwarder round trips packed parameters and response") {{
-    auto & expected = scenario();
-    install_pack_unpack_transport(handle_flush);
-
-    VkInstance instance = VK_NULL_HANDLE;
-    expected.output_instance = &instance;
-    const VkResult result = vkfwd::forwarder::generated::vkCreateInstance_entry(&expected.create_info, &expected.allocator, &instance);
-
-    CHECK(transport_state().processed);
-    CHECK(result == expected.response_result);
-    CHECK(instance == expected.response_instance);
-}}
-
-}} // namespace vkfwd::forwarder::generated::test
-"""
-
-
-def vkcreatedevice_test_content(metadata: dict[str, object]) -> str:
-    return f"""#include "support.hpp"
-
-#include "generated/command/vkCreateDevice.hpp"
-#include "generated/forwarder_entrypoints.hpp"
-#include "generated/structure/core.hpp"
-
-// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
-// Vulkan API version: {metadata['versions']['vulkan_api_version']}
-// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
-
-#include <catch2/catch_test_macros.hpp>
-
-#include <array>
-#include <cstdint>
-
-namespace vkfwd::forwarder::generated::test {{
-namespace {{
-
-using Command = ::vkfwd::generated::commands::vkCreateDevice::Command;
-
-struct Scenario {{
-    int                              allocator_user_data = 0x42;
-    VkAllocationCallbacks            allocator;
-    VkPhysicalDevice                 physical_device = test_handle<VkPhysicalDevice>(0x202);
-    std::array<float, 2>             queue_priorities;
-    VkDeviceQueueCreateInfo          queue_create_info;
-    std::array<const char *, 1>       layers;
-    std::array<const char *, 2>       extensions;
-    VkPhysicalDeviceFeatures         enabled_features;
-    VkDeviceCreateInfo               create_info;
-    VkDevice *                       output_device = nullptr;
-    VkDevice                         response_device;
-    VkResult                         response_result = VK_NOT_READY;
-}};
-
-Scenario make_scenario() {{
-    Scenario scenario;
-    scenario.allocator        = test_allocator(&scenario.allocator_user_data);
-    scenario.queue_priorities = {{0.25f, 0.75f}};
-    scenario.queue_create_info = VkDeviceQueueCreateInfo {{
-        .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .pNext            = nullptr,
-        .flags            = VkDeviceQueueCreateFlags {{0x2}},
-        .queueFamilyIndex = 3,
-        .queueCount       = static_cast<std::uint32_t>(scenario.queue_priorities.size()),
-        .pQueuePriorities = scenario.queue_priorities.data(),
-    }};
-    scenario.layers                      = {{"VK_LAYER_VKFWD_device"}};
-    scenario.extensions                  = {{"VK_KHR_swapchain", "VK_EXT_private_data"}};
-    scenario.enabled_features            = VkPhysicalDeviceFeatures {{}};
-    scenario.enabled_features.robustBufferAccess = VK_TRUE;
-    scenario.enabled_features.samplerAnisotropy  = VK_TRUE;
-    scenario.create_info = VkDeviceCreateInfo {{
-        .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext                   = nullptr,
-        .flags                   = VkDeviceCreateFlags {{0x8}},
-        .queueCreateInfoCount    = 1,
-        .pQueueCreateInfos       = &scenario.queue_create_info,
-        .enabledLayerCount       = static_cast<std::uint32_t>(scenario.layers.size()),
-        .ppEnabledLayerNames     = scenario.layers.data(),
-        .enabledExtensionCount   = static_cast<std::uint32_t>(scenario.extensions.size()),
-        .ppEnabledExtensionNames = scenario.extensions.data(),
-        .pEnabledFeatures        = &scenario.enabled_features,
-    }};
-    scenario.response_device = test_handle<VkDevice>(0x303);
-    return scenario;
-}}
-
-Scenario & scenario() {{
-    static Scenario value = make_scenario();
-    return value;
-}}
-
-Blob handle_flush(Blob & request_blob) {{
-    auto & expected = scenario();
-    const auto packet = first_command_chunk(request_blob);
-
-    Command::Parameters actual;
-    REQUIRE(Command::unpack_parameters(request_blob, packet, actual) == VK_SUCCESS);
-    CHECK(actual.physicalDevice == expected.physical_device);
-    CHECK(actual.pDevice == expected.output_device);
-
-    REQUIRE(actual.pCreateInfo != nullptr);
-    const auto create_info_offset = command_relative_offset(packet, actual.pCreateInfo);
-    const VkDeviceCreateInfo * packed_create_info = nullptr;
-    REQUIRE(::vkfwd::generated::structure::unpack_VkDeviceCreateInfo(request_blob, create_info_offset, &packed_create_info) == VK_SUCCESS);
-    REQUIRE(packed_create_info != nullptr);
-    CHECK(packed_create_info->pNext == nullptr);
-    CHECK(packed_create_info->flags == expected.create_info.flags);
-    CHECK(packed_create_info->queueCreateInfoCount == expected.create_info.queueCreateInfoCount);
-    CHECK(packed_create_info->enabledLayerCount == expected.create_info.enabledLayerCount);
-    CHECK(packed_create_info->enabledExtensionCount == expected.create_info.enabledExtensionCount);
-
-    REQUIRE(packed_create_info->pQueueCreateInfos != nullptr);
-    const auto queue_info_offset = create_info_offset + encoded_offset(packed_create_info->pQueueCreateInfos);
-    const VkDeviceQueueCreateInfo * packed_queue_info = nullptr;
-    REQUIRE(::vkfwd::generated::structure::unpack_VkDeviceQueueCreateInfo(request_blob, queue_info_offset, &packed_queue_info) == VK_SUCCESS);
-    REQUIRE(packed_queue_info != nullptr);
-    CHECK(packed_queue_info->pNext == nullptr);
-    CHECK(packed_queue_info->flags == expected.queue_create_info.flags);
-    CHECK(packed_queue_info->queueFamilyIndex == expected.queue_create_info.queueFamilyIndex);
-    CHECK(packed_queue_info->queueCount == expected.queue_create_info.queueCount);
-
-    REQUIRE(packed_queue_info->pQueuePriorities != nullptr);
-    const auto priorities_offset = queue_info_offset + encoded_offset(packed_queue_info->pQueuePriorities);
-    const auto priorities_view = request_blob.at(priorities_offset, expected.queue_priorities.size() * sizeof(float));
-    REQUIRE(!priorities_view.empty());
-    const auto * priorities = reinterpret_cast<const float *>(&priorities_view.at(0));
-    CHECK(priorities[0] == expected.queue_priorities[0]);
-    CHECK(priorities[1] == expected.queue_priorities[1]);
-
-    check_relative_string_array(request_blob, create_info_offset, packed_create_info->ppEnabledLayerNames, {{"VK_LAYER_VKFWD_device"}});
-    check_relative_string_array(request_blob, create_info_offset, packed_create_info->ppEnabledExtensionNames,
-                                {{"VK_KHR_swapchain", "VK_EXT_private_data"}});
-
-    REQUIRE(packed_create_info->pEnabledFeatures != nullptr);
-    const auto features_offset = create_info_offset + encoded_offset(packed_create_info->pEnabledFeatures);
-    const auto & packed_features = object_at<VkPhysicalDeviceFeatures>(request_blob, features_offset);
-    CHECK(packed_features.robustBufferAccess == VK_TRUE);
-    CHECK(packed_features.samplerAnisotropy == VK_TRUE);
-
-    REQUIRE(actual.pAllocator != nullptr);
-    const auto & packed_allocator = object_at<VkAllocationCallbacks>(request_blob, command_relative_offset(packet, actual.pAllocator));
-    check_allocator_callbacks(packed_allocator, expected.allocator);
-
-    Blob response_blob;
-    Command::Response response {{.return_value = expected.response_result, .pDevice = &expected.response_device}};
-    Command::ResponsePacket response_packet;
-    REQUIRE(Command::pack_response(response_blob, response, response_packet) == VK_SUCCESS);
-    return response_blob;
-}}
-
-}} // namespace
-
-TEST_CASE("vkCreateDevice generated forwarder round trips packed parameters and response") {{
-    auto & expected = scenario();
-    install_pack_unpack_transport(handle_flush);
-
-    VkDevice device = VK_NULL_HANDLE;
-    expected.output_device = &device;
-    const VkResult result = vkfwd::forwarder::generated::vkCreateDevice_entry(expected.physical_device, &expected.create_info, &expected.allocator, &device);
-
-    CHECK(transport_state().processed);
-    CHECK(result == expected.response_result);
-    CHECK(device == expected.response_device);
-}}
-
-}} // namespace vkfwd::forwarder::generated::test
-"""
-
-
-def destroy_test_content(
-    metadata: dict[str, object], command: dict[str, object]
-) -> str:
-    namespace = command_namespace(str(command["name"]))
-    enum_name = command_enum_name(str(command["name"]))
-    dispatch_name = str(command["parameters"][0]["name"])
-    handle_type = str(command["parameters"][0]["type"])
-    handle_value = "0x404" if command["name"] == "vkDestroyInstance" else "0x505"
-    return f"""#include "support.hpp"
-
-#include "generated/command/{command['name']}.hpp"
-#include "generated/forwarder_entrypoints.hpp"
-
-// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
-// Vulkan API version: {metadata['versions']['vulkan_api_version']}
-// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
-
-#include <catch2/catch_test_macros.hpp>
-
-namespace vkfwd::forwarder::generated::test {{
-namespace {{
-
-using Command = ::vkfwd::generated::commands::{namespace}::Command;
-
-struct Scenario {{
-    int                   allocator_user_data = {handle_value};
-    VkAllocationCallbacks allocator;
-    {handle_type}         {dispatch_name} = test_handle<{handle_type}>({handle_value});
-}};
-
-Scenario make_scenario() {{
-    Scenario scenario;
-    scenario.allocator = test_allocator(&scenario.allocator_user_data);
-    return scenario;
-}}
-
-Scenario & scenario() {{
-    static Scenario value = make_scenario();
-    return value;
-}}
-
-Blob handle_flush(Blob & request_blob) {{
-    auto & expected = scenario();
-    const auto packet = first_command_chunk(request_blob);
-
-    Command::Parameters actual;
-    REQUIRE(Command::unpack_parameters(request_blob, packet, actual) == VK_SUCCESS);
-    CHECK(actual.{dispatch_name} == expected.{dispatch_name});
-    CHECK(actual.pAllocator == &expected.allocator);
-    check_allocator_callbacks(*actual.pAllocator, expected.allocator);
-
-    // Deferrable generated commands acknowledge successful transport processing
-    // with an empty response blob; there is no response packet to unpack.
-    return Blob {{}};
-}}
-
-}} // namespace
-
-TEST_CASE("{command['name']} generated forwarder packs parameters when flushed") {{
-    auto & expected = scenario();
-    install_pack_unpack_transport(handle_flush);
-
-    vkfwd::forwarder::generated::{forwarder_entrypoint_name(str(command['name']))}(expected.{dispatch_name}, &expected.allocator);
-    Blob response_blob = Forwarder::instance().flush();
-
-    CHECK(transport_state().processed);
-    CHECK(response_blob.size() == 0);
-}}
-
-}} // namespace vkfwd::forwarder::generated::test
-"""
-
-
-def forwarder_test_content(
-    metadata: dict[str, object], command: dict[str, object]
-) -> str:
-    if command["name"] == "vkCreateInstance":
-        return vkcreateinstance_test_content(metadata)
-    if command["name"] == "vkCreateDevice":
-        return vkcreatedevice_test_content(metadata)
-    return destroy_test_content(metadata, command)
-
-
-def write_forwarder_test_files(
-    metadata: dict[str, object], forwarder_dir: Path
-) -> None:
-    test_dir = forwarder_dir / "test"
-    test_dir.mkdir(parents=True, exist_ok=True)
-    (test_dir / "support.hpp").write_text(
-        forwarder_test_support_content(metadata), encoding="utf-8"
-    )
-    local_sources = []
-    for command in metadata["commands"]:
-        file_name = f"{command['name']}_test.cpp"
-        local_sources.append(file_name)
-        (test_dir / file_name).write_text(
-            forwarder_test_content(metadata, command), encoding="utf-8"
-        )
-
-    manifest_sources = "\n".join(f"  {source}" for source in local_sources)
-    (test_dir / "internal-test.cmake").write_text(
-        f"""# This generated manifest is consumed by dev/test/internal-test/CMakeLists.txt.
-# Keep entries relative so the generated forwarder tests remain self-contained.
-set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
-{manifest_sources})
-""",
-        encoding="utf-8",
-    )
-
-
 def structure_test_support_content(metadata: dict[str, object]) -> str:
     return f"""#pragma once
 
@@ -2015,6 +1657,24 @@ std::size_t encoded_offset(Pointer pointer) {{
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }}
 
+inline SafeArrayView<std::uint8_t> view_from(Blob & blob, std::size_t offset) {{
+    return blob.at(offset, blob.size() - offset);
+}}
+
+template<class Pointer>
+bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {{
+    auto * begin = view.address(0);
+    if (!begin || !pointer) {{ return false; }}
+    const auto * target = reinterpret_cast<const std::uint8_t *>(pointer);
+    return target >= begin && target < begin + view.size();
+}}
+
+template<class Pointer>
+bool points_into_blob(Blob & blob, Pointer pointer) {{
+    auto view = blob.at(0, blob.size());
+    return points_into(view, pointer);
+}}
+
 template<class T>
 const T & object_at(const Blob & blob, std::size_t offset) {{
     const auto view = blob.at(offset, sizeof(T));
@@ -2022,17 +1682,14 @@ const T & object_at(const Blob & blob, std::size_t offset) {{
     return *reinterpret_cast<const T *>(&view.at(0));
 }}
 
-inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {{
-    REQUIRE(encoded_value != nullptr);
-    const std::size_t string_offset = base_offset + encoded_offset(encoded_value);
-    const auto        view          = blob.at(string_offset, expected.size() + 1);
-    REQUIRE(!view.empty());
-    const auto * value = reinterpret_cast<const char *>(&view.at(0));
+inline void check_relative_string(Blob & blob, std::size_t, const char * value, std::string_view expected) {{
+    REQUIRE(value != nullptr);
+    CHECK(points_into_blob(blob, value));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\\0');
 }}
 
-inline void check_relative_string_array(const Blob & blob, std::size_t base_offset, const char * const * encoded_values,
+inline void check_relative_string_array(Blob & blob, std::size_t base_offset, const char * const * encoded_values,
                                         std::initializer_list<std::string_view> expected) {{
     if (expected.size() == 0) {{
         CHECK(encoded_values == nullptr);
@@ -2040,17 +1697,12 @@ inline void check_relative_string_array(const Blob & blob, std::size_t base_offs
     }}
 
     REQUIRE(encoded_values != nullptr);
-    const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        slots_view   = blob.at(array_offset, expected.size() * sizeof(std::uintptr_t));
-    REQUIRE(!slots_view.empty());
-    const auto * slots = reinterpret_cast<const std::uintptr_t *>(&slots_view.at(0));
-
+    CHECK(points_into_blob(blob, encoded_values));
     std::size_t index = 0;
     for (std::string_view expected_value : expected) {{
-        REQUIRE(slots[index] != 0);
-        const auto string_view = blob.at(base_offset + static_cast<std::size_t>(slots[index]), expected_value.size() + 1);
-        REQUIRE(!string_view.empty());
-        const auto * actual_value = reinterpret_cast<const char *>(&string_view.at(0));
+        const auto * actual_value = encoded_values[index];
+        REQUIRE(actual_value != nullptr);
+        CHECK(points_into_blob(blob, actual_value));
         CHECK(std::string_view(actual_value, expected_value.size()) == expected_value);
         CHECK(actual_value[expected_value.size()] == '\\0');
         ++index;
@@ -2058,21 +1710,17 @@ inline void check_relative_string_array(const Blob & blob, std::size_t base_offs
 }}
 
 template<class T>
-void check_relative_plain_array(const Blob & blob, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {{
+void check_relative_plain_array(Blob & blob, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {{
     if (expected.size() == 0) {{
         CHECK(encoded_values == nullptr);
         return;
     }}
 
     REQUIRE(encoded_values != nullptr);
-    const std::size_t array_offset = base_offset + encoded_offset(encoded_values);
-    const auto        view         = blob.at(array_offset, expected.size() * sizeof(T));
-    REQUIRE(!view.empty());
-    const auto * actual_values = reinterpret_cast<const T *>(&view.at(0));
-
+    CHECK(points_into_blob(blob, encoded_values));
     std::size_t index = 0;
     for (const T & expected_value : expected) {{
-        CHECK(actual_values[index] == expected_value);
+        CHECK(encoded_values[index] == expected_value);
         ++index;
     }}
 }}
@@ -2118,16 +1766,19 @@ TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied st
 
     REQUIRE(pack_VkApplicationInfo(&value, blob, packed) == VK_SUCCESS);
     const VkApplicationInfo * actual = nullptr;
-    REQUIRE(unpack_VkApplicationInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkApplicationInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->applicationVersion == value.applicationVersion);
     CHECK(actual->engineVersion == value.engineVersion);
     CHECK(actual->apiVersion == value.apiVersion);
-    check_relative_string(blob, packed.offset, actual->pApplicationName, value.pApplicationName);
-    check_relative_string(blob, packed.offset, actual->pEngineName, value.pEngineName);
+    check_relative_string(flattened, packed.offset, actual->pApplicationName, value.pApplicationName);
+    check_relative_string(flattened, packed.offset, actual->pEngineName, value.pEngineName);
 }}
 
 TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested application info and name arrays") {{
@@ -2157,26 +1808,28 @@ TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested
 
     REQUIRE(pack_VkInstanceCreateInfo(&value, blob, packed) == VK_SUCCESS);
     const VkInstanceCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkInstanceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkInstanceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->flags == value.flags);
     CHECK(actual->enabledLayerCount == value.enabledLayerCount);
     CHECK(actual->enabledExtensionCount == value.enabledExtensionCount);
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledLayerNames, {{"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"}});
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledExtensionNames, {{"VK_EXT_debug_utils", "VK_KHR_surface"}});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledLayerNames, {{"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"}});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledExtensionNames, {{"VK_EXT_debug_utils", "VK_KHR_surface"}});
 
     REQUIRE(actual->pApplicationInfo != nullptr);
-    const auto app_offset = packed.offset + encoded_offset(actual->pApplicationInfo);
-    const VkApplicationInfo * actual_app = nullptr;
-    REQUIRE(unpack_VkApplicationInfo(blob, app_offset, &actual_app) == VK_SUCCESS);
+    const VkApplicationInfo * actual_app = actual->pApplicationInfo;
     REQUIRE(actual_app != nullptr);
+    CHECK(points_into_blob(flattened, actual_app));
     CHECK(actual_app->applicationVersion == app.applicationVersion);
     CHECK(actual_app->engineVersion == app.engineVersion);
-    check_relative_string(blob, app_offset, actual_app->pApplicationName, app.pApplicationName);
-    check_relative_string(blob, app_offset, actual_app->pEngineName, app.pEngineName);
+    check_relative_string(flattened, 0, actual_app->pApplicationName, app.pApplicationName);
+    check_relative_string(flattened, 0, actual_app->pEngineName, app.pEngineName);
 }}
 
 }} // namespace
@@ -2216,15 +1869,18 @@ TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves pri
 
     REQUIRE(pack_VkDeviceQueueCreateInfo(&value, blob, packed) == VK_SUCCESS);
     const VkDeviceQueueCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceQueueCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceQueueCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->flags == value.flags);
     CHECK(actual->queueFamilyIndex == value.queueFamilyIndex);
     CHECK(actual->queueCount == value.queueCount);
-    check_relative_plain_array(blob, packed.offset, actual->pQueuePriorities, {{0.25f, 0.75f}});
+    check_relative_plain_array(flattened, packed.offset, actual->pQueuePriorities, {{0.25f, 0.75f}});
 }}
 
 TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested queue info, names, and features") {{
@@ -2259,8 +1915,11 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
 
     REQUIRE(pack_VkDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
     const VkDeviceCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
@@ -2268,20 +1927,20 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
     CHECK(actual->queueCreateInfoCount == value.queueCreateInfoCount);
     CHECK(actual->enabledLayerCount == value.enabledLayerCount);
     CHECK(actual->enabledExtensionCount == value.enabledExtensionCount);
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledLayerNames, {{"VK_LAYER_VKFWD_device"}});
-    check_relative_string_array(blob, packed.offset, actual->ppEnabledExtensionNames, {{"VK_KHR_swapchain", "VK_EXT_private_data"}});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledLayerNames, {{"VK_LAYER_VKFWD_device"}});
+    check_relative_string_array(flattened, packed.offset, actual->ppEnabledExtensionNames, {{"VK_KHR_swapchain", "VK_EXT_private_data"}});
 
     REQUIRE(actual->pQueueCreateInfos != nullptr);
-    const auto queue_offset = packed.offset + encoded_offset(actual->pQueueCreateInfos);
-    const VkDeviceQueueCreateInfo * actual_queue = nullptr;
-    REQUIRE(unpack_VkDeviceQueueCreateInfo(blob, queue_offset, &actual_queue) == VK_SUCCESS);
+    const VkDeviceQueueCreateInfo * actual_queue = actual->pQueueCreateInfos;
     REQUIRE(actual_queue != nullptr);
+    CHECK(points_into_blob(flattened, actual_queue));
     CHECK(actual_queue->queueFamilyIndex == queue.queueFamilyIndex);
     CHECK(actual_queue->queueCount == queue.queueCount);
-    check_relative_plain_array(blob, queue_offset, actual_queue->pQueuePriorities, {{0.5f, 1.0f}});
+    check_relative_plain_array(flattened, 0, actual_queue->pQueuePriorities, {{0.5f, 1.0f}});
 
     REQUIRE(actual->pEnabledFeatures != nullptr);
-    const auto & actual_features = object_at<VkPhysicalDeviceFeatures>(blob, packed.offset + encoded_offset(actual->pEnabledFeatures));
+    CHECK(points_into_blob(flattened, actual->pEnabledFeatures));
+    const auto & actual_features = *actual->pEnabledFeatures;
     CHECK(actual_features.robustBufferAccess == VK_TRUE);
     CHECK(actual_features.samplerAnisotropy == VK_TRUE);
 }}
@@ -2302,13 +1961,16 @@ TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserv
 
     REQUIRE(pack_VkDeviceGroupDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
     const VkDeviceGroupDeviceCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceGroupDeviceCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceGroupDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->physicalDeviceCount == value.physicalDeviceCount);
-    check_relative_plain_array(blob, packed.offset, actual->pPhysicalDevices,
+    check_relative_plain_array(flattened, packed.offset, actual->pPhysicalDevices,
                                {{test_handle<VkPhysicalDevice>(0x101), test_handle<VkPhysicalDevice>(0x202)}});
 }}
 
@@ -2323,8 +1985,11 @@ TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack
 
     REQUIRE(pack_VkDeviceQueueGlobalPriorityCreateInfo(&value, blob, packed) == VK_SUCCESS);
     const VkDeviceQueueGlobalPriorityCreateInfo * actual = nullptr;
-    REQUIRE(unpack_VkDeviceQueueGlobalPriorityCreateInfo(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkDeviceQueueGlobalPriorityCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
 
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
@@ -2363,8 +2028,11 @@ TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves f
 
     REQUIRE(pack_VkPhysicalDeviceFeatures2(&value, blob, packed) == VK_SUCCESS);
     const VkPhysicalDeviceFeatures2 * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceFeatures2(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceFeatures2(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->features.robustBufferAccess == VK_TRUE);
@@ -2383,8 +2051,11 @@ TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack pres
 
     REQUIRE(pack_VkPhysicalDeviceVulkan11Features(&value, blob, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan11Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan11Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan11Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->storageBuffer16BitAccess == VK_TRUE);
@@ -2403,8 +2074,11 @@ TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack pres
 
     REQUIRE(pack_VkPhysicalDeviceVulkan12Features(&value, blob, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan12Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan12Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan12Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->descriptorIndexing == VK_TRUE);
@@ -2423,8 +2097,11 @@ TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack pres
 
     REQUIRE(pack_VkPhysicalDeviceVulkan13Features(&value, blob, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan13Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan13Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan13Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->synchronization2 == VK_TRUE);
@@ -2443,8 +2120,11 @@ TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack pres
 
     REQUIRE(pack_VkPhysicalDeviceVulkan14Features(&value, blob, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan14Features * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceVulkan14Features(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceVulkan14Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->globalPriorityQuery == VK_TRUE);
@@ -2463,8 +2143,11 @@ TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/u
 
     REQUIRE(pack_VkPhysicalDeviceDescriptorIndexingFeatures(&value, blob, packed) == VK_SUCCESS);
     const VkPhysicalDeviceDescriptorIndexingFeatures * actual = nullptr;
-    REQUIRE(unpack_VkPhysicalDeviceDescriptorIndexingFeatures(blob, packed.offset, &actual) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    auto view = view_from(flattened, packed.offset);
+    REQUIRE(unpack_VkPhysicalDeviceDescriptorIndexingFeatures(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
+    REQUIRE(points_into(view, actual));
     CHECK(actual->sType == value.sType);
     CHECK(actual->pNext == nullptr);
     CHECK(actual->descriptorBindingPartiallyBound == VK_TRUE);
@@ -2501,6 +2184,314 @@ def write_structure_test_files(metadata: dict[str, object], output_dir: Path) ->
 # Keep entries relative so generated structure tests stay beside their helpers.
 set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
 {manifest_sources})
+""",
+        encoding="utf-8",
+    )
+
+
+def command_roundtrip_test_content(metadata: dict[str, object]) -> str:
+    return f"""#include "blob.hpp"
+#include "generated/command/vkCreateDevice.hpp"
+#include "generated/command/vkCreateInstance.hpp"
+#include "generated/command/vkDestroyDevice.hpp"
+#include "generated/command/vkDestroyInstance.hpp"
+#include "generated/structure/core.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+
+namespace vkfwd::generated::commands::test {{
+namespace {{
+
+template<class Pointer>
+bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {{
+    auto * begin = view.address(0);
+    if (!begin || !pointer) {{ return false; }}
+    const auto * target = reinterpret_cast<const std::uint8_t *>(pointer);
+    return target >= begin && target < begin + view.size();
+}}
+
+SafeArrayView<std::uint8_t> full_view(Blob & blob) {{
+    return blob.at(0, blob.size());
+}}
+
+SafeArrayView<std::uint8_t> tail_view(Blob & blob, std::size_t offset) {{
+    return blob.at(offset, blob.size() - offset);
+}}
+
+template<class T>
+constexpr std::size_t command_payload_offset() {{
+    constexpr std::size_t alignment = alignof(T);
+    return (sizeof(CommandChunkHeader) + alignment - 1) & ~(alignment - 1);
+}}
+
+template<class T>
+const T * packed_command_payload(Blob & blob) {{
+    const auto view = blob.at(command_payload_offset<T>(), sizeof(T));
+    REQUIRE(!view.empty());
+    return reinterpret_cast<const T *>(view.address(0));
+}}
+
+void check_string(const char * actual, std::string_view expected) {{
+    REQUIRE(actual != nullptr);
+    CHECK(std::string_view(actual, expected.size()) == expected);
+    CHECK(actual[expected.size()] == '\\0');
+}}
+
+template<class T>
+void check_array(const T * actual, std::initializer_list<T> expected) {{
+    REQUIRE(actual != nullptr);
+    std::size_t index = 0;
+    for (const T & value : expected) {{
+        CHECK(actual[index] == value);
+        ++index;
+    }}
+}}
+
+inline void * VKAPI_PTR test_allocation(void *, std::size_t, std::size_t, VkSystemAllocationScope) {{ return nullptr; }}
+inline void * VKAPI_PTR test_reallocation(void *, void *, std::size_t, std::size_t, VkSystemAllocationScope) {{ return nullptr; }}
+inline void VKAPI_PTR test_free(void *, void *) {{}}
+inline void VKAPI_PTR test_internal_allocation(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {{}}
+inline void VKAPI_PTR test_internal_free(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {{}}
+
+VkAllocationCallbacks test_allocator(void * user_data) {{
+    return VkAllocationCallbacks {{
+        .pUserData            = user_data,
+        .pfnAllocation        = test_allocation,
+        .pfnReallocation      = test_reallocation,
+        .pfnFree              = test_free,
+        .pfnInternalAllocation = test_internal_allocation,
+        .pfnInternalFree       = test_internal_free,
+    }};
+}}
+
+template<class Handle>
+Handle test_handle(std::uintptr_t value) {{
+    return reinterpret_cast<Handle>(value);
+}}
+
+VkApplicationInfo make_application_info() {{
+    return VkApplicationInfo {{
+        .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext              = nullptr,
+        .pApplicationName   = "vkfwd-roundtrip-app",
+        .applicationVersion = 13,
+        .pEngineName        = "vkfwd-roundtrip-engine",
+        .engineVersion      = 17,
+        .apiVersion         = VK_MAKE_API_VERSION(0, 1, 4, 0),
+    }};
+}}
+
+VkDeviceQueueCreateInfo make_queue_info(const float * priorities, std::uint32_t count) {{
+    return VkDeviceQueueCreateInfo {{
+        .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext            = nullptr,
+        .flags            = VkDeviceQueueCreateFlags {{0x2}},
+        .queueFamilyIndex = 5,
+        .queueCount       = count,
+        .pQueuePriorities = priorities,
+    }};
+}}
+
+}} // namespace
+
+TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs every pointer into flattened blob") {{
+    using Command = commands::vkCreateInstance::Command;
+    Blob blob(64);
+    int allocator_user_data = 0x31;
+    auto allocator = test_allocator(&allocator_user_data);
+    auto app = make_application_info();
+    std::array<const char *, 1> layers {{"VK_LAYER_VKFWD_instance"}};
+    std::array<const char *, 1> extensions {{"VK_KHR_surface"}};
+    VkInstanceCreateInfo create_info {{
+        .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pNext                   = nullptr,
+        .flags                   = VkInstanceCreateFlags {{0x4}},
+        .pApplicationInfo        = &app,
+        .enabledLayerCount       = static_cast<std::uint32_t>(layers.size()),
+        .ppEnabledLayerNames     = layers.data(),
+        .enabledExtensionCount   = static_cast<std::uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data(),
+    }};
+    VkInstance source_instance = test_handle<VkInstance>(0x404);
+    Command::Parameters parameters {{
+        .pCreateInfo = &create_info,
+        .pAllocator  = &allocator,
+        .pInstance   = &source_instance,
+    }};
+
+    REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+    CHECK(packed_parameters->pAllocator == nullptr);
+    auto view = full_view(flattened);
+    const Command::Parameters * actual = nullptr;
+    REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
+
+    REQUIRE(points_into(view, actual));
+    REQUIRE(points_into(view, actual->pCreateInfo));
+    CHECK(actual->pAllocator == nullptr);
+    REQUIRE(points_into(view, actual->pInstance));
+    CHECK(actual->pInstance != &source_instance);
+    CHECK(*actual->pInstance == source_instance);
+    check_string(actual->pCreateInfo->pApplicationInfo->pApplicationName, app.pApplicationName);
+    check_string(actual->pCreateInfo->ppEnabledLayerNames[0], layers[0]);
+    check_string(actual->pCreateInfo->ppEnabledExtensionNames[0], extensions[0]);
+}}
+
+TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs every pointer into flattened blob") {{
+    using Command = commands::vkCreateDevice::Command;
+    Blob blob(64);
+    int allocator_user_data = 0x42;
+    auto allocator = test_allocator(&allocator_user_data);
+    std::array<float, 2> priorities {{0.25f, 0.75f}};
+    auto queue = make_queue_info(priorities.data(), static_cast<std::uint32_t>(priorities.size()));
+    std::array<const char *, 1> layers {{"VK_LAYER_VKFWD_device"}};
+    std::array<const char *, 1> extensions {{"VK_KHR_swapchain"}};
+    VkPhysicalDeviceFeatures features {{}};
+    features.robustBufferAccess = VK_TRUE;
+    VkDeviceCreateInfo create_info {{
+        .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext                   = nullptr,
+        .flags                   = VkDeviceCreateFlags {{0x8}},
+        .queueCreateInfoCount    = 1,
+        .pQueueCreateInfos       = &queue,
+        .enabledLayerCount       = static_cast<std::uint32_t>(layers.size()),
+        .ppEnabledLayerNames     = layers.data(),
+        .enabledExtensionCount   = static_cast<std::uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data(),
+        .pEnabledFeatures        = &features,
+    }};
+    VkDevice source_device = test_handle<VkDevice>(0x505);
+    Command::Parameters parameters {{
+        .physicalDevice = test_handle<VkPhysicalDevice>(0x303),
+        .pCreateInfo    = &create_info,
+        .pAllocator     = &allocator,
+        .pDevice        = &source_device,
+    }};
+
+    REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
+    Blob flattened = blob.flatten();
+    const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+    CHECK(packed_parameters->pAllocator == nullptr);
+    auto view = full_view(flattened);
+    const Command::Parameters * actual = nullptr;
+    REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
+
+    REQUIRE(points_into(view, actual));
+    REQUIRE(points_into(view, actual->pCreateInfo));
+    CHECK(actual->pAllocator == nullptr);
+    REQUIRE(points_into(view, actual->pDevice));
+    CHECK(actual->pDevice != &source_device);
+    CHECK(*actual->pDevice == source_device);
+    check_array(actual->pCreateInfo->pQueueCreateInfos->pQueuePriorities, {{0.25f, 0.75f}});
+    CHECK(actual->pCreateInfo->pEnabledFeatures->robustBufferAccess == VK_TRUE);
+}}
+
+TEST_CASE("generated destroy command parameter pack flatten unpack drops allocator callbacks") {{
+    int allocator_user_data = 0x51;
+    auto allocator = test_allocator(&allocator_user_data);
+
+    {{
+        using Command = commands::vkDestroyInstance::Command;
+        Blob blob(64);
+        Command::Parameters parameters {{
+            .instance   = test_handle<VkInstance>(0x601),
+            .pAllocator = &allocator,
+        }};
+        REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
+        Blob flattened = blob.flatten();
+        const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+        CHECK(packed_parameters->pAllocator == nullptr);
+        auto view = full_view(flattened);
+        const Command::Parameters * actual = nullptr;
+        REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
+        REQUIRE(points_into(view, actual));
+        CHECK(actual->pAllocator == nullptr);
+        CHECK(actual->instance == parameters.instance);
+    }}
+
+    {{
+        using Command = commands::vkDestroyDevice::Command;
+        Blob blob(64);
+        Command::Parameters parameters {{
+            .device     = test_handle<VkDevice>(0x602),
+            .pAllocator = &allocator,
+        }};
+        REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
+        Blob flattened = blob.flatten();
+        const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+        CHECK(packed_parameters->pAllocator == nullptr);
+        auto view = full_view(flattened);
+        const Command::Parameters * actual = nullptr;
+        REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
+        REQUIRE(points_into(view, actual));
+        CHECK(actual->pAllocator == nullptr);
+        CHECK(actual->device == parameters.device);
+    }}
+}}
+
+TEST_CASE("generated create command responses pack flatten unpack reconstruct output pointers into flattened blob") {{
+    {{
+        using Command = commands::vkCreateInstance::Command;
+        Blob blob(64);
+        VkInstance instance = test_handle<VkInstance>(0x701);
+        Command::Response response {{
+            .return_value = VK_SUCCESS,
+            .pInstance    = &instance,
+        }};
+        REQUIRE(Command::pack_response(blob, response) == VK_SUCCESS);
+        Blob flattened = blob.flatten();
+        auto view = full_view(flattened);
+        const Command::Response * actual = nullptr;
+        REQUIRE(Command::unpack_response(view, &actual) == VK_SUCCESS);
+        REQUIRE(points_into(view, actual));
+        REQUIRE(points_into(view, actual->pInstance));
+        CHECK(*actual->pInstance == instance);
+    }}
+
+    {{
+        using Command = commands::vkCreateDevice::Command;
+        Blob blob(64);
+        VkDevice device = test_handle<VkDevice>(0x702);
+        Command::Response response {{
+            .return_value = VK_SUCCESS,
+            .pDevice      = &device,
+        }};
+        REQUIRE(Command::pack_response(blob, response) == VK_SUCCESS);
+        Blob flattened = blob.flatten();
+        auto view = full_view(flattened);
+        const Command::Response * actual = nullptr;
+        REQUIRE(Command::unpack_response(view, &actual) == VK_SUCCESS);
+        REQUIRE(points_into(view, actual));
+        REQUIRE(points_into(view, actual->pDevice));
+        CHECK(*actual->pDevice == device);
+    }}
+}}
+
+}} // namespace vkfwd::generated::commands::test
+"""
+
+
+def write_command_test_files(metadata: dict[str, object], output_dir: Path) -> None:
+    test_dir = output_dir / "command" / "test"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    (test_dir / "pack_unpack_roundtrip_test.cpp").write_text(
+        command_roundtrip_test_content(metadata), encoding="utf-8"
+    )
+    (test_dir / "internal-test.cmake").write_text(
+        """# This generated manifest is consumed by dev/test/internal-test/CMakeLists.txt.
+# Keep generated command pack/flatten/unpack tests beside generated command serializers.
+set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
+  pack_unpack_roundtrip_test.cpp)
 """,
         encoding="utf-8",
     )
@@ -2585,9 +2576,9 @@ def generate(
     write_vulkan_api_header(metadata, output_dir / "vulkan_api.hpp")
     write_dispatch_table_files(metadata, output_dir)
     write_structure_test_files(metadata, output_dir)
+    write_command_test_files(metadata, output_dir)
     write_forwarder_files(metadata, forwarder_output_dir)
     write_receiver_files(metadata, receiver_output_dir)
-    write_forwarder_test_files(metadata, forwarder_output_dir)
     format_generated_files(output_dir, forwarder_output_dir, receiver_output_dir)
 
 

@@ -23,10 +23,9 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyInstance_entry(VkInstance instance, const Vk
 
     if constexpr (Hooks::before_pack_enabled) { Hooks::before_pack(instance, pAllocator); }
 
-    auto &                   forwarder = ::vkfwd::Forwarder::instance();
-    Command::Parameters      parameters {.instance = instance, .pAllocator = pAllocator};
-    Command::ParameterPacket request;
-    VkResult                 status = Command::pack_parameters(forwarder.request_blob(), parameters, request);
+    auto &              forwarder = ::vkfwd::Forwarder::instance();
+    Command::Parameters parameters {.instance = instance, .pAllocator = pAllocator};
+    VkResult            status = Command::pack_parameters(forwarder.request_blob(), parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return; }
 
     // Deferrable commands have no return value or output parameters, so the
