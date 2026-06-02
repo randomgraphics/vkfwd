@@ -4,4 +4,3 @@
 add_subdirectory(core)
 add_subdirectory(receiver)
 add_subdirectory(forwarder)
-add_subdirectory(loopback)

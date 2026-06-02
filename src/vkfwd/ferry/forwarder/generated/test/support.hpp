@@ -31,15 +31,8 @@ inline TransportState & transport_state() {
     return state;
 }
 
-inline TransportSessionInfo & pack_unpack_session_info() {
-    static TransportSessionInfo info;
-    return info;
-}
-
 class PackUnpackTransportSession final : public TransportSession {
 public:
-    const TransportSessionInfo & info() const override { return pack_unpack_session_info(); }
-
     Blob send_accumulated_api_calls(Blob & request_blob) override {
         auto & state    = transport_state();
         state.processed = true;

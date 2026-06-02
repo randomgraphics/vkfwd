@@ -16,12 +16,6 @@ class TransportSession {
 public:
     virtual ~TransportSession() = default;
 
-    // The session owns compatibility negotiation before any request stream carries
-    // command bytes. Keeping the handshake at session scope lets many source
-    // threads share one remote-device connection without repeating schema checks
-    // on every Vulkan call.
-    virtual const TransportSessionInfo & info() const = 0;
-
     // Forward one accumulated source-thread request stream and synchronously
     // return the response for the final response-bearing command in that stream.
     // The first 64 bits of every request stream are a vkfwd source-thread token;

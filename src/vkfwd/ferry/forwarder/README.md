@@ -14,9 +14,10 @@ sends flushed streams through a shared `TransportSession`.
   and name-lookup methods for commands that vkfwd currently supports. The table
   code intentionally does not declare API entry points so table shape stays
   separate from wrapper linkage.
-- `generated/entrypoints.*`: generated declarations and populated dispatch-table
-  instances for the Vulkan layer entry point wrappers. Wrapper symbols use a
-  `_entry` suffix so they cannot collide with loader/exported Vulkan names.
+- `generated/forwarder_entrypoints.*`: generated declarations and populated
+  dispatch-table instances for the Vulkan layer entry point wrappers. Wrapper
+  symbols use a `_entry` suffix so they cannot collide with loader/exported
+  Vulkan names.
 - `generated/entry/*_entry.cpp`: generated Vulkan layer entry-point functions
   stored in the generated dispatch tables and called by application code through
   the Vulkan loader.

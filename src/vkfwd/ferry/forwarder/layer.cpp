@@ -1,7 +1,5 @@
 #include "generated/dispatch_table.hpp"
-#include "generated/entrypoints.hpp"
-
-#include <vulkan/vulkan.h>
+#include "generated/forwarder_entrypoints.hpp"
 
 #if defined(_WIN32)
     #define VKFWD_EXPORT extern "C" __declspec(dllexport)

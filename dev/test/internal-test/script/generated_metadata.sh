@@ -40,9 +40,9 @@ cmp "$root/src/vkfwd/ferry/core/generated/vulkan_manual_hooks.hpp" "$core_tmp/vu
 cmp "$root/src/vkfwd/ferry/core/generated/README.md" "$core_tmp/README.md"
 cmp "$root/src/vkfwd/ferry/core/generated/dispatch_table.hpp" "$core_tmp/dispatch_table.hpp"
 cmp "$root/src/vkfwd/ferry/core/generated/dispatch_table.cpp" "$core_tmp/dispatch_table.cpp"
-cmp "$root/src/vkfwd/ferry/forwarder/generated/entrypoints.hpp" "$forwarder_tmp/entrypoints.hpp"
-cmp "$root/src/vkfwd/ferry/forwarder/generated/entrypoints.cpp" "$forwarder_tmp/entrypoints.cpp"
-cmp "$root/src/vkfwd/ferry/forwarder/generated/vulkan_forwarder_hooks.hpp" "$forwarder_tmp/vulkan_forwarder_hooks.hpp"
+cmp "$root/src/vkfwd/ferry/forwarder/generated/forwarder_entrypoints.hpp" "$forwarder_tmp/forwarder_entrypoints.hpp"
+cmp "$root/src/vkfwd/ferry/forwarder/generated/forwarder_entrypoints.cpp" "$forwarder_tmp/forwarder_entrypoints.cpp"
+cmp "$root/src/vkfwd/ferry/forwarder/generated/forwarder_hooks.hpp" "$forwarder_tmp/forwarder_hooks.hpp"
 cmp "$root/src/vkfwd/ferry/receiver/generated/endpoints.hpp" "$receiver_tmp/endpoints.hpp"
 cmp "$root/src/vkfwd/ferry/receiver/generated/endpoints.cpp" "$receiver_tmp/endpoints.cpp"
 

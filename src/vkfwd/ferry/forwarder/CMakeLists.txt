@@ -4,7 +4,7 @@
 # boundary; the static archive is a test/linking convenience, not a second layer
 # distribution format.
 set(VKFWD_FORWARDER_SOURCES
-  generated/entrypoints.cpp
+  generated/forwarder_entrypoints.cpp
   generated/entry/vkCreateDevice_entry.cpp
   generated/entry/vkCreateInstance_entry.cpp
   generated/entry/vkDestroyDevice_entry.cpp

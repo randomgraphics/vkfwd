@@ -20,9 +20,8 @@ another implementation has the same invariants.
   that pack source calls into per-thread request blobs. See
   `forwarder/README.md` before changing layer lookup, dispatch tables, or flush
   behavior.
-- `loopback/`: in-process simulation app and transport session that bind the
-  real forwarder to a flattened local byte-stream response. It intentionally
-  skips receiver replay until the receiver contract is ready for end-to-end use.
+- `test/`: in-process ferry tests and loopback transport helpers that bind the
+  real forwarder to receiver replay without leaving the process.
 - `receiver/`: replay-side scaffolding. It will own destination dispatch,
   source-to-destination handle maps, replay ordering, and copied command
   lifetimes as the receiver becomes complete.

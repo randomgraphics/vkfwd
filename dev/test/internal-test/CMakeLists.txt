@@ -33,6 +33,7 @@ add_executable(vkfwd_internal_tests
 
 target_link_libraries(vkfwd_internal_tests
   PRIVATE
+    vkfwd_receiver
     vkfwd_forwarder_static
     vkfwd_core
     Catch2::Catch2WithMain)
