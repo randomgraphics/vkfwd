@@ -4,7 +4,7 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,7 +20,7 @@ std::size_t encoded_offset(Pointer pointer) {
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }
 
-inline SafeArrayView<std::uint8_t> view_from(Blob & blob, std::size_t offset) { return blob.at(offset, blob.size() - offset); }
+inline SafeArrayView<std::uint8_t> view_from(CommandStream & stream, std::size_t offset) { return stream.at(offset, stream.size() - offset); }
 
 template<class Pointer>
 bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {
@@ -31,26 +31,26 @@ bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {
 }
 
 template<class Pointer>
-bool points_into_blob(Blob & blob, Pointer pointer) {
-    auto view = blob.at(0, blob.size());
+bool points_into_blob(CommandStream & stream, Pointer pointer) {
+    auto view = stream.at(0, stream.size());
     return points_into(view, pointer);
 }
 
 template<class T>
-const T & object_at(const Blob & blob, std::size_t offset) {
-    const auto view = blob.at(offset, sizeof(T));
+const T & object_at(const CommandStream & stream, std::size_t offset) {
+    const auto view = stream.at(offset, sizeof(T));
     REQUIRE(!view.empty());
     return *reinterpret_cast<const T *>(&view.at(0));
 }
 
-inline void check_relative_string(Blob & blob, std::size_t, const char * value, std::string_view expected) {
+inline void check_relative_string(CommandStream & stream, std::size_t, const char * value, std::string_view expected) {
     REQUIRE(value != nullptr);
-    CHECK(points_into_blob(blob, value));
+    CHECK(points_into_blob(stream, value));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\0');
 }
 
-inline void check_relative_string_array(Blob & blob, std::size_t base_offset, const char * const * encoded_values,
+inline void check_relative_string_array(CommandStream & stream, std::size_t base_offset, const char * const * encoded_values,
                                         std::initializer_list<std::string_view> expected) {
     if (expected.size() == 0) {
         CHECK(encoded_values == nullptr);
@@ -58,12 +58,12 @@ inline void check_relative_string_array(Blob & blob, std::size_t base_offset, co
     }
 
     REQUIRE(encoded_values != nullptr);
-    CHECK(points_into_blob(blob, encoded_values));
+    CHECK(points_into_blob(stream, encoded_values));
     std::size_t index = 0;
     for (std::string_view expected_value : expected) {
         const auto * actual_value = encoded_values[index];
         REQUIRE(actual_value != nullptr);
-        CHECK(points_into_blob(blob, actual_value));
+        CHECK(points_into_blob(stream, actual_value));
         CHECK(std::string_view(actual_value, expected_value.size()) == expected_value);
         CHECK(actual_value[expected_value.size()] == '\0');
         ++index;
@@ -71,14 +71,14 @@ inline void check_relative_string_array(Blob & blob, std::size_t base_offset, co
 }
 
 template<class T>
-void check_relative_plain_array(Blob & blob, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {
+void check_relative_plain_array(CommandStream & stream, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {
     if (expected.size() == 0) {
         CHECK(encoded_values == nullptr);
         return;
     }
 
     REQUIRE(encoded_values != nullptr);
-    CHECK(points_into_blob(blob, encoded_values));
+    CHECK(points_into_blob(stream, encoded_values));
     std::size_t index = 0;
     for (const T & expected_value : expected) {
         CHECK(encoded_values[index] == expected_value);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 #include "forwarder.hpp"
 #include "protocol.hpp"
 #include "transport_session.hpp"
@@ -9,13 +9,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <initializer_list>
 #include <memory>
 #include <string_view>
 
 namespace vkfwd::forwarder::test {
 
-using FlushHandler = Blob (*)(Blob & request_blob);
+using FlushHandler = CommandStream (*)(CommandStream & request_stream);
 
 struct TransportState {
     FlushHandler handler   = nullptr;
@@ -29,11 +30,11 @@ inline TransportState & transport_state() {
 
 class PackUnpackTransportSession final : public TransportSession {
 public:
-    Blob send_accumulated_api_calls(Blob & request_blob) override {
+    CommandStream send_accumulated_api_calls(CommandStream & request_stream) override {
         auto & state    = transport_state();
         state.processed = true;
         REQUIRE(state.handler != nullptr);
-        return state.handler(request_blob);
+        return state.handler(request_stream);
     }
 };
 
@@ -44,18 +45,43 @@ inline void install_pack_unpack_transport(FlushHandler handler) {
     state.handler   = handler;
     state.processed = false;
     Forwarder::set_transport_creator(make_pack_unpack_transport_session);
-    Forwarder::instance().request_blob().reset();
+    Forwarder::instance().request_stream().reset();
 }
 
-inline CommandChunk first_command_chunk(const Blob & request_blob) {
+inline CommandChunk first_command_chunk(const CommandStream & request_stream) {
     // Transport tests reconstruct chunk metadata from the stream header because
-    // the forwarding boundary only transports blob bytes. The first
-    // 64 bits are reserved for source-thread routing, so command chunks begin
-    // after that prefix.
-    const auto header_view = request_blob.at(kSourceThreadIdSize, sizeof(CommandChunkHeader));
-    REQUIRE(!header_view.empty());
-    const auto * header = reinterpret_cast<const CommandChunkHeader *>(&header_view.at(0));
-    return CommandChunk {.command_offset = kSourceThreadIdSize, .command_size = header->size};
+    // the forwarding boundary only transports stream bytes. The first 64 bits
+    // are reserved for source-thread routing; closed chunk tails are explicit
+    // gap records and ordinary alignment padding is skipped by offset math.
+    std::size_t offset = kSourceThreadIdSize;
+    while (offset < request_stream.size()) {
+        const auto gap_view = request_stream.at(offset, sizeof(CommandStreamGapHeader));
+        if (!gap_view.empty()) {
+            CommandStreamGapHeader gap {};
+            std::memcpy(&gap, gap_view.address(0), sizeof(gap));
+            if (gap.magic == kCommandStreamGapMagic) {
+                REQUIRE(gap.size >= sizeof(CommandStreamGapHeader));
+                offset += gap.size;
+                continue;
+            }
+        }
+        const std::size_t remainder = offset % CommandStream::kBaseAlignment;
+        if (remainder != 0) {
+            offset += CommandStream::kBaseAlignment - remainder;
+            continue;
+        }
+        const auto header_view = request_stream.at(offset, sizeof(CommandChunkHeader));
+        if (!header_view.empty()) {
+            const auto * header      = reinterpret_cast<const CommandChunkHeader *>(&header_view.at(0));
+            const auto   next_offset = offset + header->size;
+            if (header->size >= sizeof(CommandChunkHeader) && next_offset >= offset && next_offset <= request_stream.size()) {
+                return CommandChunk {.command_offset = offset, .command_size = header->size};
+            }
+        }
+        break;
+    }
+    FAIL("request stream does not contain a command chunk");
+    return {};
 }
 
 template<class Pointer>
@@ -63,7 +89,9 @@ std::size_t encoded_offset(Pointer pointer) {
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }
 
-inline SafeArrayView<std::uint8_t> command_view(Blob & blob, const CommandChunk & packet) { return blob.at(packet.command_offset, packet.command_size); }
+inline SafeArrayView<std::uint8_t> command_view(CommandStream & stream, const CommandChunk & packet) {
+    return stream.at(packet.command_offset, packet.command_size);
+}
 
 template<class T>
 constexpr std::size_t command_payload_offset() {
@@ -85,8 +113,8 @@ bool points_into_view(SafeArrayView<std::uint8_t> & view, Pointer pointer) {
 }
 
 template<class Object, class Pointer>
-std::size_t field_relative_target_offset(const Blob & blob, std::size_t object_offset, Pointer Object::* field) {
-    const auto object_view = blob.at(object_offset, sizeof(Object));
+std::size_t field_relative_target_offset(const CommandStream & stream, std::size_t object_offset, Pointer Object::* field) {
+    const auto object_view = stream.at(object_offset, sizeof(Object));
     REQUIRE(!object_view.empty());
     const auto *         object  = reinterpret_cast<const Object *>(&object_view.at(0));
     const auto *         slot    = reinterpret_cast<const std::uint8_t *>(&(object->*field));
@@ -96,8 +124,8 @@ std::size_t field_relative_target_offset(const Blob & blob, std::size_t object_o
 }
 
 template<class Object, class Pointer>
-void check_field_relative_pointer(const Blob & blob, std::size_t object_offset, Pointer Object::* field, std::size_t target_offset) {
-    const auto object_view = blob.at(object_offset, sizeof(Object));
+void check_field_relative_pointer(const CommandStream & stream, std::size_t object_offset, Pointer Object::* field, std::size_t target_offset) {
+    const auto object_view = stream.at(object_offset, sizeof(Object));
     REQUIRE(!object_view.empty());
     const auto *      object      = reinterpret_cast<const Object *>(&object_view.at(0));
     const auto *      slot        = reinterpret_cast<const std::uint8_t *>(&(object->*field));
@@ -107,23 +135,23 @@ void check_field_relative_pointer(const Blob & blob, std::size_t object_offset, 
 }
 
 template<class T>
-const T & object_at(const Blob & blob, std::size_t offset) {
-    const auto view = blob.at(offset, sizeof(T));
+const T & object_at(const CommandStream & stream, std::size_t offset) {
+    const auto view = stream.at(offset, sizeof(T));
     REQUIRE(!view.empty());
     return *reinterpret_cast<const T *>(&view.at(0));
 }
 
-inline void check_relative_string(const Blob & blob, std::size_t base_offset, const char * encoded_value, std::string_view expected) {
-    (void) blob;
+inline void check_relative_string(const CommandStream & stream, std::size_t base_offset, const char * encoded_value, std::string_view expected) {
+    (void) stream;
     (void) base_offset;
     REQUIRE(encoded_value != nullptr);
     CHECK(std::string_view(encoded_value, expected.size()) == expected);
     CHECK(encoded_value[expected.size()] == '\0');
 }
 
-inline void check_relative_string_array(const Blob & blob, std::size_t base_offset, const char * const * encoded_values,
+inline void check_relative_string_array(const CommandStream & stream, std::size_t base_offset, const char * const * encoded_values,
                                         std::initializer_list<std::string_view> expected) {
-    (void) blob;
+    (void) stream;
     (void) base_offset;
     if (expected.size() == 0) {
         CHECK(encoded_values == nullptr);

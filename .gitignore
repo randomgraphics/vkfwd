@@ -2,4 +2,5 @@ build/
 dev/env/.pyvenv/
 .codegraph/
 __pycache__/
+.vscode/
 *.py[cod]

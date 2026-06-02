@@ -15,7 +15,7 @@ namespace vkfwd::generated::structure::test {
 namespace {
 
 TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied strings") {
-    Blob              blob;
+    CommandStream     stream;
     PackedStruct      packed;
     VkApplicationInfo value {
         .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -27,9 +27,9 @@ TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied st
         .apiVersion         = VK_MAKE_API_VERSION(0, 1, 4, 0),
     };
 
-    REQUIRE(pack_VkApplicationInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkApplicationInfo(&value, stream, packed) == VK_SUCCESS);
     const VkApplicationInfo * actual    = nullptr;
-    Blob                      flattened = blob.flatten();
+    CommandStream             flattened = stream.flatten();
     auto                      view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkApplicationInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -45,7 +45,7 @@ TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied st
 }
 
 TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested application info and name arrays") {
-    Blob              blob;
+    CommandStream     stream;
     PackedStruct      packed;
     VkApplicationInfo app {
         .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -69,9 +69,9 @@ TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested
         .ppEnabledExtensionNames = extensions.data(),
     };
 
-    REQUIRE(pack_VkInstanceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkInstanceCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkInstanceCreateInfo * actual    = nullptr;
-    Blob                         flattened = blob.flatten();
+    CommandStream                flattened = stream.flatten();
     auto                         view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkInstanceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);

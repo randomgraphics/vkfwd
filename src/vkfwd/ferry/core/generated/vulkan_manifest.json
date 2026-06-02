@@ -1,12 +1,18 @@
 {
-  "command_count": 4,
+  "command_count": 7,
   "command_metadata": [
+    "command/vkEnumerateInstanceVersion.metadata.json",
+    "command/vkEnumerateInstanceLayerProperties.metadata.json",
+    "command/vkEnumerateInstanceExtensionProperties.metadata.json",
     "command/vkCreateInstance.metadata.json",
     "command/vkDestroyInstance.metadata.json",
     "command/vkCreateDevice.metadata.json",
     "command/vkDestroyDevice.metadata.json"
   ],
   "commands": [
+    "vkEnumerateInstanceVersion",
+    "vkEnumerateInstanceLayerProperties",
+    "vkEnumerateInstanceExtensionProperties",
     "vkCreateInstance",
     "vkDestroyInstance",
     "vkCreateDevice",

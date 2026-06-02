@@ -12,13 +12,13 @@ namespace {
 
 class UnconfiguredTransportSession final : public TransportSession {
 public:
-    Blob send_accumulated_api_calls(Blob & request_blob) override {
+    CommandStream send_accumulated_api_calls(CommandStream & request_stream) override {
         // This placeholder keeps layer bring-up deterministic when no real
         // transport has been installed. Log at the transport boundary so the
         // later empty-response unpack failure does not hide the actual setup
         // problem, while still avoiding fake local Vulkan replay.
         if (!reported_.exchange(true, std::memory_order_relaxed)) {
-            VKFWD_LOG_ERROR("vkfwd forwarder transport is not configured; dropping accumulated API stream, size={}", request_blob.size());
+            VKFWD_LOG_ERROR("vkfwd forwarder transport is not configured; dropping accumulated API stream, size={}", request_stream.size());
         }
         return {};
     }
@@ -77,22 +77,22 @@ Forwarder::Forwarder(): transport_(shared_transport_instance()), thread_id_(next
 void Forwarder::begin_request_stream() {
     // The receiver demultiplexes accumulated streams from one shared transport
     // session by reading this fixed-width prefix before any command chunk bytes.
-    request_blob_.grow<SourceThreadId>() = thread_id_;
+    request_stream_.grow<SourceThreadId>() = thread_id_;
 }
 
-Blob Forwarder::flush() {
+CommandStream Forwarder::flush() {
     assert(thread_id_ != 0);
-    if (request_blob_.size() == 0) { begin_request_stream(); }
+    if (request_stream_.size() == 0) { begin_request_stream(); }
     // Configuration normally happens before application threads enter Vulkan,
     // but in-process tests replace the transport between cases. Refreshing at
     // the flush boundary keeps existing thread-local Forwarders aligned with
     // the current process-wide session without moving transport policy into
     // generated entry points.
-    transport_         = shared_transport_instance();
-    Blob response_blob = transport_ ? transport_->send_accumulated_api_calls(request_blob_) : Blob {};
-    request_blob_.reset();
+    transport_                    = shared_transport_instance();
+    CommandStream response_stream = transport_ ? transport_->send_accumulated_api_calls(request_stream_) : CommandStream {};
+    request_stream_.reset();
     begin_request_stream();
-    return response_blob;
+    return response_stream;
 }
 
 } // namespace vkfwd

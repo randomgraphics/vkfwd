@@ -1,6 +1,6 @@
 #pragma once
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 #include "protocol.hpp"
 
 #include <memory>
@@ -21,7 +21,7 @@ public:
     // The first 64 bits of every request stream are a vkfwd source-thread token;
     // transport implementations use that prefix for routing and correlation
     // instead of maintaining a separate per-thread transport object.
-    virtual Blob send_accumulated_api_calls(Blob & request_blob) = 0;
+    virtual CommandStream send_accumulated_api_calls(CommandStream & request_stream) = 0;
 };
 
 } // namespace vkfwd

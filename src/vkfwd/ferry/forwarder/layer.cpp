@@ -25,10 +25,16 @@ VKFWD_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkIn
 
     // Global commands are available before a VkInstance exists; instance
     // commands become discoverable through the same loader hook once the
-    // application has an instance. Both tables point to vkfwd wrappers, never to
-    // a local driver or lower layer.
+    // application has an instance. Vulkan also allows vkGetInstanceProcAddr to
+    // return dispatchable device-command trampolines that internally dispatch
+    // from their first VkDevice/VkQueue/VkCommandBuffer argument, so expose
+    // vkfwd-owned device wrappers here as well as through vkGetDeviceProcAddr.
+    // Both paths point to vkfwd wrappers, never to a local driver or lower
+    // layer.
     if (auto entrypoint = lookup_global_entrypoint(name)) { return entrypoint; }
+    if (instance == VK_NULL_HANDLE) { return nullptr; }
     if (auto entrypoint = lookup_instance_entrypoint(name)) { return entrypoint; }
+    if (auto entrypoint = lookup_device_entrypoint(name)) { return entrypoint; }
 
     // Unknown commands remain unavailable until vkfwd owns their generated pack,
     // response payload, and output-parameter contract.

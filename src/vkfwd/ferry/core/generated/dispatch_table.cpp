@@ -18,6 +18,11 @@ FunctionPointer typed_proc(PFN_vkVoidFunction proc) {
 
 DistributionTable::DistributionTable()
     : commands {
+          {static_cast<std::uint32_t>(CommandId::EnumerateInstanceVersion), reinterpret_cast<PointerToFunctionPointer>(&global.enumerate_instance_version)},
+          {static_cast<std::uint32_t>(CommandId::EnumerateInstanceLayerProperties),
+           reinterpret_cast<PointerToFunctionPointer>(&global.enumerate_instance_layer_properties)},
+          {static_cast<std::uint32_t>(CommandId::EnumerateInstanceExtensionProperties),
+           reinterpret_cast<PointerToFunctionPointer>(&global.enumerate_instance_extension_properties)},
           {static_cast<std::uint32_t>(CommandId::CreateInstance), reinterpret_cast<PointerToFunctionPointer>(&global.create_instance)},
           {static_cast<std::uint32_t>(CommandId::DestroyInstance), reinterpret_cast<PointerToFunctionPointer>(&instance.destroy_instance)},
           {static_cast<std::uint32_t>(CommandId::CreateDevice), reinterpret_cast<PointerToFunctionPointer>(&instance.create_device)},
@@ -29,6 +34,15 @@ void GlobalDispatchTable::init(PFN_vkGetInstanceProcAddr get_instance_proc_addr_
 
     // Global commands are loaded before any VkInstance exists, so the Vulkan
     // loader contract requires a null instance handle for these lookups.
+    enumerate_instance_version =
+        get_instance_proc_addr ? typed_proc<PFN_vkEnumerateInstanceVersion>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceVersion")) : nullptr;
+    enumerate_instance_layer_properties =
+        get_instance_proc_addr ? typed_proc<PFN_vkEnumerateInstanceLayerProperties>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceLayerProperties"))
+                               : nullptr;
+    enumerate_instance_extension_properties =
+        get_instance_proc_addr
+            ? typed_proc<PFN_vkEnumerateInstanceExtensionProperties>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceExtensionProperties"))
+            : nullptr;
     create_instance = get_instance_proc_addr ? typed_proc<PFN_vkCreateInstance>(get_instance_proc_addr(nullptr, "vkCreateInstance")) : nullptr;
 }
 
@@ -64,6 +78,11 @@ PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char * name) const {
     if (!name) { return nullptr; }
     if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_instance_proc_addr); }
     if (std::strcmp(name, "vkCreateInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_instance); }
+    if (std::strcmp(name, "vkEnumerateInstanceVersion") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_version); }
+    if (std::strcmp(name, "vkEnumerateInstanceLayerProperties") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_layer_properties); }
+    if (std::strcmp(name, "vkEnumerateInstanceExtensionProperties") == 0) {
+        return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_extension_properties);
+    }
     return nullptr;
 }
 

@@ -16,7 +16,7 @@ namespace vkfwd::generated::structure {
 namespace {
 
 template<class T>
-VkResult append_shallow_struct(const T * value, Blob & blob, PackedStruct & packed, T *& packed_value) {
+VkResult append_shallow_struct(const T * value, CommandStream & stream, PackedStruct & packed, T *& packed_value) {
     packed_value = nullptr;
     if (!value) [[unlikely]] {
         packed.offset = 0;
@@ -28,9 +28,9 @@ VkResult append_shallow_struct(const T * value, Blob & blob, PackedStruct & pack
         // shallow struct body, and it preserves the C member offsets used for
         // pointer-slot patching below.
         std::size_t destination_offset = 0;
-        auto        destination        = blob.grow<T>(1, alignof(T), &destination_offset);
+        auto        destination        = stream.grow<T>(1, alignof(T), &destination_offset);
         if (destination.set(0, *value) == false) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy shallow struct into blob, size={}, align={}", sizeof(T), alignof(T));
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy shallow struct into stream, size={}, align={}", sizeof(T), alignof(T));
             return VK_ERROR_UNKNOWN;
         }
         packed.offset = destination_offset;
@@ -52,13 +52,13 @@ VkResult patch_pointer(Pointer & pointer_slot, std::size_t pointer_slot_offset, 
 }
 
 template<class T>
-VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, std::size_t pointer_slot_offset, const T *& pointer_slot) {
+VkResult pack_plain_array(const T * values, std::uint32_t count, CommandStream & stream, std::size_t pointer_slot_offset, const T *& pointer_slot) {
     if (count == 0 || !values) [[unlikely]] { return patch_pointer(pointer_slot, pointer_slot_offset, 0u); }
     try {
         std::size_t target      = 0;
-        auto        destination = blob.grow<T>(count, alignof(T), &target);
+        auto        destination = stream.grow<T>(count, alignof(T), &target);
         if (destination.set(0, count, values) != count) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy plain array into blob, count={}, element_size={}", count, sizeof(T));
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy plain array into stream, count={}, element_size={}", count, sizeof(T));
             return VK_ERROR_UNKNOWN;
         }
         return patch_pointer(pointer_slot, pointer_slot_offset, target);
@@ -69,14 +69,14 @@ VkResult pack_plain_array(const T * values, std::uint32_t count, Blob & blob, st
     }
 }
 
-VkResult pack_string(const char * value, Blob & blob, std::size_t pointer_slot_offset, const char *& pointer_slot) {
+VkResult pack_string(const char * value, CommandStream & stream, std::size_t pointer_slot_offset, const char *& pointer_slot) {
     if (!value) [[unlikely]] { return patch_pointer(pointer_slot, pointer_slot_offset, 0u); }
     try {
         const std::size_t size        = std::strlen(value) + 1;
         std::size_t       target      = 0;
-        auto              destination = blob.grow<char>(size, alignof(char), &target);
+        auto              destination = stream.grow<char>(size, alignof(char), &target);
         if (destination.set(0, size, value) != size) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string into blob, pointer_slot_offset={}", pointer_slot_offset);
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string into stream, pointer_slot_offset={}", pointer_slot_offset);
             return VK_ERROR_UNKNOWN;
         }
         return patch_pointer(pointer_slot, pointer_slot_offset, target);
@@ -86,12 +86,13 @@ VkResult pack_string(const char * value, Blob & blob, std::size_t pointer_slot_o
     }
 }
 
-VkResult pack_string_array(const char * const * values, std::uint32_t count, Blob & blob, std::size_t pointer_slot_offset, const char * const *& pointer_slot) {
+VkResult pack_string_array(const char * const * values, std::uint32_t count, CommandStream & stream, std::size_t pointer_slot_offset,
+                           const char * const *& pointer_slot) {
     if (count == 0 || !values) [[unlikely]] { return patch_pointer(pointer_slot, pointer_slot_offset, 0u); }
 
     try {
         std::size_t          array_offset  = 0;
-        auto                 pointer_slots = blob.grow<std::uintptr_t>(count, alignof(std::uintptr_t), &array_offset);
+        auto                 pointer_slots = stream.grow<std::uintptr_t>(count, alignof(std::uintptr_t), &array_offset);
         const std::uintptr_t zero          = 0;
         for (std::uint32_t i = 0; i < count; ++i) {
             if (!pointer_slots.set(i, zero)) [[unlikely]] {
@@ -103,7 +104,7 @@ VkResult pack_string_array(const char * const * values, std::uint32_t count, Blo
             if (!values[i]) [[unlikely]] { continue; }
             const std::size_t string_size   = std::strlen(values[i]) + 1;
             std::size_t       string_offset = 0;
-            auto              string_view   = blob.grow<char>(string_size, alignof(char), &string_offset);
+            auto              string_view   = stream.grow<char>(string_size, alignof(char), &string_offset);
             if (string_view.set(0, string_size, values[i]) != string_size) [[unlikely]] {
                 VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy string-array element, array_offset={}, index={}", array_offset, i);
                 return VK_ERROR_UNKNOWN;
@@ -125,19 +126,19 @@ VkResult pack_string_array(const char * const * values, std::uint32_t count, Blo
 }
 
 template<class T>
-VkResult pack_plain_typed_pnext(const T * value, Blob & blob, PackedStruct & packed, T *& packed_value) {
-    VkResult status = append_shallow_struct(value, blob, packed, packed_value);
+VkResult pack_plain_typed_pnext(const T * value, CommandStream & stream, PackedStruct & packed, T *& packed_value) {
+    VkResult status = append_shallow_struct(value, stream, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
     PackedStruct pnext;
-    status = pack_pnext_chain(value->pNext, blob, pnext);
+    status = pack_pnext_chain(value->pNext, stream, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     return patch_pointer(packed_value->pNext, packed.offset + offsetof(T, pNext), pnext.offset);
 }
 
 template<class T>
-VkResult pack_plain_typed_pnext(const T * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_plain_typed_pnext(const T * value, CommandStream & stream, PackedStruct & packed) {
     T * packed_value = nullptr;
-    return pack_plain_typed_pnext(value, blob, packed, packed_value);
+    return pack_plain_typed_pnext(value, stream, packed, packed_value);
 }
 
 template<class T>
@@ -226,15 +227,15 @@ VkResult recover_pnext_chain(Pointer & pointer_slot, SafeArrayView<std::uint8_t>
     return unpack_pnext_chain(pnext_view, &ignored);
 }
 
-using GenericPackFn = VkResult (*)(const void *, Blob &, PackedStruct &);
+using GenericPackFn = VkResult (*)(const void *, CommandStream &, PackedStruct &);
 
 template<class T>
-VkResult pack_struct_as(const void * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(reinterpret_cast<const T *>(value), blob, packed);
+VkResult pack_struct_as(const void * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_plain_typed_pnext(reinterpret_cast<const T *>(value), stream, packed);
 }
 
-VkResult pack_device_group_device_create_info_as(const void * value, Blob & blob, PackedStruct & packed) {
-    return pack_VkDeviceGroupDeviceCreateInfo(reinterpret_cast<const VkDeviceGroupDeviceCreateInfo *>(value), blob, packed);
+VkResult pack_device_group_device_create_info_as(const void * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_VkDeviceGroupDeviceCreateInfo(reinterpret_cast<const VkDeviceGroupDeviceCreateInfo *>(value), stream, packed);
 }
 
 #if defined(__unix__) || defined(__APPLE__)
@@ -408,60 +409,60 @@ VkResult validate_pnext_chain(const void * value) {
 
 } // namespace
 
-VkResult pack_VkApplicationInfo(const VkApplicationInfo * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_VkApplicationInfo(const VkApplicationInfo * value, CommandStream & stream, PackedStruct & packed) {
     VkApplicationInfo * packed_value = nullptr;
-    VkResult            status       = append_shallow_struct(value, blob, packed, packed_value);
+    VkResult            status       = append_shallow_struct(value, stream, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
     PackedStruct pnext;
-    status = pack_pnext_chain(value->pNext, blob, pnext);
+    status = pack_pnext_chain(value->pNext, stream, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkApplicationInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string(value->pApplicationName, blob, packed.offset + offsetof(VkApplicationInfo, pApplicationName), packed_value->pApplicationName);
+    status = pack_string(value->pApplicationName, stream, packed.offset + offsetof(VkApplicationInfo, pApplicationName), packed_value->pApplicationName);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_string(value->pEngineName, blob, packed.offset + offsetof(VkApplicationInfo, pEngineName), packed_value->pEngineName);
+    return pack_string(value->pEngineName, stream, packed.offset + offsetof(VkApplicationInfo, pEngineName), packed_value->pEngineName);
 }
 
-VkResult pack_VkInstanceCreateInfo(const VkInstanceCreateInfo * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_VkInstanceCreateInfo(const VkInstanceCreateInfo * value, CommandStream & stream, PackedStruct & packed) {
     VkInstanceCreateInfo * packed_value = nullptr;
-    VkResult               status       = append_shallow_struct(value, blob, packed, packed_value);
+    VkResult               status       = append_shallow_struct(value, stream, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
     PackedStruct pnext;
-    status = pack_pnext_chain(value->pNext, blob, pnext);
+    status = pack_pnext_chain(value->pNext, stream, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkInstanceCreateInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     PackedStruct app;
-    status = pack_VkApplicationInfo(value->pApplicationInfo, blob, app);
+    status = pack_VkApplicationInfo(value->pApplicationInfo, stream, app);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     status = patch_pointer(packed_value->pApplicationInfo, packed.offset + offsetof(VkInstanceCreateInfo, pApplicationInfo), app.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, blob, packed.offset + offsetof(VkInstanceCreateInfo, ppEnabledLayerNames),
-                               packed_value->ppEnabledLayerNames);
+    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, stream,
+                               packed.offset + offsetof(VkInstanceCreateInfo, ppEnabledLayerNames), packed_value->ppEnabledLayerNames);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, blob,
+    return pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, stream,
                              packed.offset + offsetof(VkInstanceCreateInfo, ppEnabledExtensionNames), packed_value->ppEnabledExtensionNames);
 }
 
-VkResult pack_VkDeviceQueueCreateInfo(const VkDeviceQueueCreateInfo * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_VkDeviceQueueCreateInfo(const VkDeviceQueueCreateInfo * value, CommandStream & stream, PackedStruct & packed) {
     VkDeviceQueueCreateInfo * packed_value = nullptr;
-    VkResult                  status       = append_shallow_struct(value, blob, packed, packed_value);
+    VkResult                  status       = append_shallow_struct(value, stream, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
     PackedStruct pnext;
-    status = pack_pnext_chain(value->pNext, blob, pnext);
+    status = pack_pnext_chain(value->pNext, stream, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkDeviceQueueCreateInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_plain_array(value->pQueuePriorities, value->queueCount, blob, packed.offset + offsetof(VkDeviceQueueCreateInfo, pQueuePriorities),
+    return pack_plain_array(value->pQueuePriorities, value->queueCount, stream, packed.offset + offsetof(VkDeviceQueueCreateInfo, pQueuePriorities),
                             packed_value->pQueuePriorities);
 }
 
-VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, CommandStream & stream, PackedStruct & packed) {
     VkDeviceCreateInfo * packed_value = nullptr;
-    VkResult             status       = append_shallow_struct(value, blob, packed, packed_value);
+    VkResult             status       = append_shallow_struct(value, stream, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
     PackedStruct pnext;
-    status = pack_pnext_chain(value->pNext, blob, pnext);
+    status = pack_pnext_chain(value->pNext, stream, pnext);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     status = patch_pointer(packed_value->pNext, packed.offset + offsetof(VkDeviceCreateInfo, pNext), pnext.offset);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
@@ -469,62 +470,86 @@ VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, Blob & blob, 
     if (value->queueCreateInfoCount == 0 || !value->pQueueCreateInfos) [[unlikely]] {
         status = patch_pointer(packed_value->pQueueCreateInfos, packed.offset + offsetof(VkDeviceCreateInfo, pQueueCreateInfos), 0u);
     } else {
-        const std::size_t array_offset = blob.size();
+        std::size_t                            array_offset = 0;
+        SafeArrayView<VkDeviceQueueCreateInfo> queue_infos;
+        try {
+            queue_infos = stream.grow<VkDeviceQueueCreateInfo>(value->queueCreateInfoCount, alignof(VkDeviceQueueCreateInfo), &array_offset);
+            if (queue_infos.set(0, value->queueCreateInfoCount, value->pQueueCreateInfos) != value->queueCreateInfoCount) [[unlikely]] {
+                VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: could not copy queue-create-info array, count={}", value->queueCreateInfoCount);
+                return VK_ERROR_UNKNOWN;
+            }
+        } catch (const std::bad_alloc &) {
+            VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while copying queue-create-info array, count={}",
+                            value->queueCreateInfoCount);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
         for (std::uint32_t i = 0; i < value->queueCreateInfoCount; ++i) {
-            PackedStruct child;
-            status = pack_VkDeviceQueueCreateInfo(&value->pQueueCreateInfos[i], blob, child);
+            auto &            packed_queue = queue_infos.at(i);
+            const auto &      source_queue = value->pQueueCreateInfos[i];
+            const std::size_t item_offset  = array_offset + i * sizeof(VkDeviceQueueCreateInfo);
+
+            PackedStruct queue_pnext;
+            status = pack_pnext_chain(source_queue.pNext, stream, queue_pnext);
+            if (status != VK_SUCCESS) [[unlikely]] { return status; }
+            status = patch_pointer(packed_queue.pNext, item_offset + offsetof(VkDeviceQueueCreateInfo, pNext), queue_pnext.offset);
+            if (status != VK_SUCCESS) [[unlikely]] { return status; }
+
+            status = pack_plain_array(source_queue.pQueuePriorities, source_queue.queueCount, stream,
+                                      item_offset + offsetof(VkDeviceQueueCreateInfo, pQueuePriorities), packed_queue.pQueuePriorities);
             if (status != VK_SUCCESS) [[unlikely]] { return status; }
         }
         status = patch_pointer(packed_value->pQueueCreateInfos, packed.offset + offsetof(VkDeviceCreateInfo, pQueueCreateInfos), array_offset);
     }
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, blob, packed.offset + offsetof(VkDeviceCreateInfo, ppEnabledLayerNames),
+    status = pack_string_array(value->ppEnabledLayerNames, value->enabledLayerCount, stream, packed.offset + offsetof(VkDeviceCreateInfo, ppEnabledLayerNames),
                                packed_value->ppEnabledLayerNames);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, blob,
+    status = pack_string_array(value->ppEnabledExtensionNames, value->enabledExtensionCount, stream,
                                packed.offset + offsetof(VkDeviceCreateInfo, ppEnabledExtensionNames), packed_value->ppEnabledExtensionNames);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    return pack_plain_array(value->pEnabledFeatures, value->pEnabledFeatures ? 1u : 0u, blob, packed.offset + offsetof(VkDeviceCreateInfo, pEnabledFeatures),
+    return pack_plain_array(value->pEnabledFeatures, value->pEnabledFeatures ? 1u : 0u, stream, packed.offset + offsetof(VkDeviceCreateInfo, pEnabledFeatures),
                             packed_value->pEnabledFeatures);
 }
 
-VkResult pack_VkDeviceGroupDeviceCreateInfo(const VkDeviceGroupDeviceCreateInfo * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_VkDeviceGroupDeviceCreateInfo(const VkDeviceGroupDeviceCreateInfo * value, CommandStream & stream, PackedStruct & packed) {
     VkDeviceGroupDeviceCreateInfo * packed_value = nullptr;
-    VkResult                        status       = pack_plain_typed_pnext(value, blob, packed, packed_value);
+    VkResult                        status       = pack_plain_typed_pnext(value, stream, packed, packed_value);
     if (status != VK_SUCCESS || !value) [[unlikely]] { return status; }
-    return pack_plain_array(value->pPhysicalDevices, value->physicalDeviceCount, blob,
+    return pack_plain_array(value->pPhysicalDevices, value->physicalDeviceCount, stream,
                             packed.offset + offsetof(VkDeviceGroupDeviceCreateInfo, pPhysicalDevices), packed_value->pPhysicalDevices);
 }
 
-VkResult pack_VkPhysicalDeviceFeatures2(const VkPhysicalDeviceFeatures2 * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(value, blob, packed);
+VkResult pack_VkPhysicalDeviceFeatures2(const VkPhysicalDeviceFeatures2 * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_plain_typed_pnext(value, stream, packed);
 }
 
-VkResult pack_VkPhysicalDeviceVulkan11Features(const VkPhysicalDeviceVulkan11Features * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(value, blob, packed);
+VkResult pack_VkPhysicalDeviceVulkan11Features(const VkPhysicalDeviceVulkan11Features * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_plain_typed_pnext(value, stream, packed);
 }
 
-VkResult pack_VkPhysicalDeviceVulkan12Features(const VkPhysicalDeviceVulkan12Features * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(value, blob, packed);
+VkResult pack_VkPhysicalDeviceVulkan12Features(const VkPhysicalDeviceVulkan12Features * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_plain_typed_pnext(value, stream, packed);
 }
 
-VkResult pack_VkPhysicalDeviceVulkan13Features(const VkPhysicalDeviceVulkan13Features * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(value, blob, packed);
+VkResult pack_VkPhysicalDeviceVulkan13Features(const VkPhysicalDeviceVulkan13Features * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_plain_typed_pnext(value, stream, packed);
 }
 
-VkResult pack_VkPhysicalDeviceVulkan14Features(const VkPhysicalDeviceVulkan14Features * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(value, blob, packed);
+VkResult pack_VkPhysicalDeviceVulkan14Features(const VkPhysicalDeviceVulkan14Features * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_plain_typed_pnext(value, stream, packed);
 }
 
-VkResult pack_VkPhysicalDeviceDescriptorIndexingFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(value, blob, packed);
+VkResult pack_VkPhysicalDeviceDescriptorIndexingFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures * value, CommandStream & stream,
+                                                         PackedStruct & packed) {
+    return pack_plain_typed_pnext(value, stream, packed);
 }
 
-VkResult pack_VkDeviceQueueGlobalPriorityCreateInfo(const VkDeviceQueueGlobalPriorityCreateInfo * value, Blob & blob, PackedStruct & packed) {
-    return pack_plain_typed_pnext(value, blob, packed);
+VkResult pack_VkDeviceQueueGlobalPriorityCreateInfo(const VkDeviceQueueGlobalPriorityCreateInfo * value, CommandStream & stream, PackedStruct & packed) {
+    return pack_plain_typed_pnext(value, stream, packed);
 }
 
-VkResult pack_pnext_chain(const void * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_pnext_chain(const void * value, CommandStream & stream, PackedStruct & packed) {
     packed.offset = 0;
     if (!value) [[likely]] { return VK_SUCCESS; }
 
@@ -534,27 +559,27 @@ VkResult pack_pnext_chain(const void * value, Blob & blob, PackedStruct & packed
     const auto * base = reinterpret_cast<const VkBaseInStructure *>(value);
     switch (base->sType) {
     case VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO:
-        return pack_VkDeviceGroupDeviceCreateInfo(reinterpret_cast<const VkDeviceGroupDeviceCreateInfo *>(value), blob, packed);
+        return pack_VkDeviceGroupDeviceCreateInfo(reinterpret_cast<const VkDeviceGroupDeviceCreateInfo *>(value), stream, packed);
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
-        return pack_VkPhysicalDeviceFeatures2(reinterpret_cast<const VkPhysicalDeviceFeatures2 *>(value), blob, packed);
+        return pack_VkPhysicalDeviceFeatures2(reinterpret_cast<const VkPhysicalDeviceFeatures2 *>(value), stream, packed);
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
-        return pack_VkPhysicalDeviceVulkan11Features(reinterpret_cast<const VkPhysicalDeviceVulkan11Features *>(value), blob, packed);
+        return pack_VkPhysicalDeviceVulkan11Features(reinterpret_cast<const VkPhysicalDeviceVulkan11Features *>(value), stream, packed);
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES:
-        return pack_VkPhysicalDeviceVulkan12Features(reinterpret_cast<const VkPhysicalDeviceVulkan12Features *>(value), blob, packed);
+        return pack_VkPhysicalDeviceVulkan12Features(reinterpret_cast<const VkPhysicalDeviceVulkan12Features *>(value), stream, packed);
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES:
-        return pack_VkPhysicalDeviceVulkan13Features(reinterpret_cast<const VkPhysicalDeviceVulkan13Features *>(value), blob, packed);
+        return pack_VkPhysicalDeviceVulkan13Features(reinterpret_cast<const VkPhysicalDeviceVulkan13Features *>(value), stream, packed);
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES:
-        return pack_VkPhysicalDeviceVulkan14Features(reinterpret_cast<const VkPhysicalDeviceVulkan14Features *>(value), blob, packed);
+        return pack_VkPhysicalDeviceVulkan14Features(reinterpret_cast<const VkPhysicalDeviceVulkan14Features *>(value), stream, packed);
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES:
-        return pack_VkPhysicalDeviceDescriptorIndexingFeatures(reinterpret_cast<const VkPhysicalDeviceDescriptorIndexingFeatures *>(value), blob, packed);
+        return pack_VkPhysicalDeviceDescriptorIndexingFeatures(reinterpret_cast<const VkPhysicalDeviceDescriptorIndexingFeatures *>(value), stream, packed);
     case VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO:
-        return pack_VkDeviceQueueGlobalPriorityCreateInfo(reinterpret_cast<const VkDeviceQueueGlobalPriorityCreateInfo *>(value), blob, packed);
+        return pack_VkDeviceQueueGlobalPriorityCreateInfo(reinterpret_cast<const VkDeviceQueueGlobalPriorityCreateInfo *>(value), stream, packed);
     default:
-        return pack_struct_by_type(value, blob, packed);
+        return pack_struct_by_type(value, stream, packed);
     }
 }
 
-VkResult pack_struct_by_type(const void * value, Blob & blob, PackedStruct & packed) {
+VkResult pack_struct_by_type(const void * value, CommandStream & stream, PackedStruct & packed) {
     packed.offset = 0;
     if (!value) [[unlikely]] { return VK_SUCCESS; }
 
@@ -569,7 +594,7 @@ VkResult pack_struct_by_type(const void * value, Blob & blob, PackedStruct & pac
             VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: no generic packer for sType={}", static_cast<int>(base->sType));
             return VK_ERROR_UNKNOWN;
         }
-        return found->second(value, blob, packed);
+        return found->second(value, stream, packed);
     } catch (const std::bad_alloc &) {
         VKFWD_LOG_ERROR("vkfwd ferry structure pack failed: out of host memory while looking up generic packer");
         return VK_ERROR_OUT_OF_HOST_MEMORY;

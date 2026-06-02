@@ -14,10 +14,13 @@ namespace vkfwd::generated {
 // generated from stable command names instead of registry order so compatible
 // Vulkan XML revisions can add or remove commands without renumbering the stream.
 enum class CommandId : std::uint32_t {
-    CreateInstance  = 2472334652,
-    DestroyInstance = 748278256,
-    CreateDevice    = 1470473620,
-    DestroyDevice   = 2054705423,
+    EnumerateInstanceVersion             = 2065902916,
+    EnumerateInstanceLayerProperties     = 2945753866,
+    EnumerateInstanceExtensionProperties = 1659509659,
+    CreateInstance                       = 2472334652,
+    DestroyInstance                      = 748278256,
+    CreateDevice                         = 1470473620,
+    DestroyDevice                        = 2054705423,
 };
 
 constexpr VulkanApiVersion kVulkanApiVersion {1, 4, 352};

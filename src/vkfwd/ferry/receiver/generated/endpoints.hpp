@@ -4,23 +4,29 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 #include "generated/dispatch_table.hpp"
 #include "protocol.hpp"
 #include "replay_context.hpp"
 
 namespace vkfwd::receiver::generated {
 
-bool vkCreateInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkEnumerateInstanceVersion_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+                                         ::vkfwd::receiver::ReplayContext & replay_context);
+bool vkEnumerateInstanceLayerProperties_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+                                                 ::vkfwd::receiver::ReplayContext & replay_context);
+bool vkEnumerateInstanceExtensionProperties_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+                                                     ::vkfwd::receiver::ReplayContext & replay_context);
+bool vkCreateInstance_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                                ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkDestroyInstance_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                                 ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkCreateDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkCreateDevice_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                              ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkDestroyDevice_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                               ::vkfwd::receiver::ReplayContext & replay_context);
 
-bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                       ::vkfwd::receiver::ReplayContext & replay_context);
+bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream & request_stream, const CommandChunk & request_packet,
+                       CommandStream & response_stream, ::vkfwd::receiver::ReplayContext & replay_context);
 
 } // namespace vkfwd::receiver::generated

@@ -1,5 +1,8 @@
 #include "generated/endpoints.hpp"
 
+#include "generated/command/vkEnumerateInstanceVersion.hpp"
+#include "generated/command/vkEnumerateInstanceLayerProperties.hpp"
+#include "generated/command/vkEnumerateInstanceExtensionProperties.hpp"
 #include "generated/command/vkCreateInstance.hpp"
 #include "generated/command/vkDestroyInstance.hpp"
 #include "generated/command/vkCreateDevice.hpp"
@@ -11,7 +14,58 @@
 
 namespace vkfwd::receiver::generated {
 
-bool vkCreateInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkEnumerateInstanceVersion_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+                                         ::vkfwd::receiver::ReplayContext & replay_context) {
+    using Command = ::vkfwd::generated::commands::vkEnumerateInstanceVersion::Command;
+
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::EnumerateInstanceVersion);
+    if (!raw_function) { return false; }
+    const auto api_function = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(raw_function);
+
+    auto &                      mutable_request_stream = const_cast<CommandStream &>(request_stream);
+    auto                        request_view           = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters             = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+    const VkResult    return_value = api_function(parameters->pApiVersion);
+    Command::Response response {.return_value = return_value, .pApiVersion = parameters->pApiVersion};
+    return Command::pack_response(response_stream, response) == VK_SUCCESS;
+}
+
+bool vkEnumerateInstanceLayerProperties_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+                                                 ::vkfwd::receiver::ReplayContext & replay_context) {
+    using Command = ::vkfwd::generated::commands::vkEnumerateInstanceLayerProperties::Command;
+
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::EnumerateInstanceLayerProperties);
+    if (!raw_function) { return false; }
+    const auto api_function = reinterpret_cast<PFN_vkEnumerateInstanceLayerProperties>(raw_function);
+
+    auto &                      mutable_request_stream = const_cast<CommandStream &>(request_stream);
+    auto                        request_view           = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters             = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+    const VkResult    return_value = api_function(parameters->pPropertyCount, parameters->pProperties);
+    Command::Response response {.return_value = return_value, .pPropertyCount = parameters->pPropertyCount, .pProperties = parameters->pProperties};
+    return Command::pack_response(response_stream, response) == VK_SUCCESS;
+}
+
+bool vkEnumerateInstanceExtensionProperties_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+                                                     ::vkfwd::receiver::ReplayContext & replay_context) {
+    using Command = ::vkfwd::generated::commands::vkEnumerateInstanceExtensionProperties::Command;
+
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::EnumerateInstanceExtensionProperties);
+    if (!raw_function) { return false; }
+    const auto api_function = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(raw_function);
+
+    auto &                      mutable_request_stream = const_cast<CommandStream &>(request_stream);
+    auto                        request_view           = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters             = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+    const VkResult    return_value = api_function(parameters->pLayerName, parameters->pPropertyCount, parameters->pProperties);
+    Command::Response response {.return_value = return_value, .pPropertyCount = parameters->pPropertyCount, .pProperties = parameters->pProperties};
+    return Command::pack_response(response_stream, response) == VK_SUCCESS;
+}
+
+bool vkCreateInstance_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                                ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkCreateInstance::Command;
 
@@ -19,16 +73,23 @@ bool vkCreateInstance_endpoint(const Blob & request_blob, const CommandChunk & r
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkCreateInstance>(raw_function);
 
-    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
-    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
-    const Command::Parameters * parameters           = nullptr;
+    auto &                      mutable_request_stream = const_cast<CommandStream &>(request_stream);
+    auto                        request_view           = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters             = nullptr;
     if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
-    const VkResult    return_value = api_function(parameters->pCreateInfo, parameters->pAllocator, parameters->pInstance);
+    const VkResult return_value = api_function(parameters->pCreateInfo, parameters->pAllocator, parameters->pInstance);
+    if (return_value == VK_SUCCESS && parameters->pInstance && *parameters->pInstance) {
+        // Successful receiver-side instance creation changes the
+        // destination dispatch scope. Keep this in ReplayContext so
+        // tests and transports do not patch host callbacks around the
+        // generated endpoint contract.
+        replay_context.dispatch.instance.init(*parameters->pInstance, replay_context.dispatch.global.get_instance_proc_addr);
+    }
     Command::Response response {.return_value = return_value, .pInstance = parameters->pInstance};
-    return Command::pack_response(response_blob, response) == VK_SUCCESS;
+    return Command::pack_response(response_stream, response) == VK_SUCCESS;
 }
 
-bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkDestroyInstance_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                                 ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkDestroyInstance::Command;
 
@@ -36,15 +97,15 @@ bool vkDestroyInstance_endpoint(const Blob & request_blob, const CommandChunk & 
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkDestroyInstance>(raw_function);
 
-    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
-    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
-    const Command::Parameters * parameters           = nullptr;
+    auto &                      mutable_request_stream = const_cast<CommandStream &>(request_stream);
+    auto                        request_view           = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters             = nullptr;
     if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
     api_function(parameters->instance, parameters->pAllocator);
     return true;
 }
 
-bool vkCreateDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkCreateDevice_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                              ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkCreateDevice::Command;
 
@@ -52,16 +113,22 @@ bool vkCreateDevice_endpoint(const Blob & request_blob, const CommandChunk & req
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkCreateDevice>(raw_function);
 
-    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
-    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
-    const Command::Parameters * parameters           = nullptr;
+    auto &                      mutable_request_stream = const_cast<CommandStream &>(request_stream);
+    auto                        request_view           = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters             = nullptr;
     if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
-    const VkResult    return_value = api_function(parameters->physicalDevice, parameters->pCreateInfo, parameters->pAllocator, parameters->pDevice);
+    const VkResult return_value = api_function(parameters->physicalDevice, parameters->pCreateInfo, parameters->pAllocator, parameters->pDevice);
+    if (return_value == VK_SUCCESS && parameters->pDevice && *parameters->pDevice) {
+        // Device dispatch is receiver-owned state derived from the
+        // destination device handle. Source-side forwarding must not
+        // provide or cache these host function pointers.
+        replay_context.dispatch.device.init(*parameters->pDevice, replay_context.dispatch.instance.get_device_proc_addr);
+    }
     Command::Response response {.return_value = return_value, .pDevice = parameters->pDevice};
-    return Command::pack_response(response_blob, response) == VK_SUCCESS;
+    return Command::pack_response(response_stream, response) == VK_SUCCESS;
 }
 
-bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
+bool vkDestroyDevice_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
                               ::vkfwd::receiver::ReplayContext & replay_context) {
     using Command = ::vkfwd::generated::commands::vkDestroyDevice::Command;
 
@@ -69,25 +136,31 @@ bool vkDestroyDevice_endpoint(const Blob & request_blob, const CommandChunk & re
     if (!raw_function) { return false; }
     const auto api_function = reinterpret_cast<PFN_vkDestroyDevice>(raw_function);
 
-    auto &                      mutable_request_blob = const_cast<Blob &>(request_blob);
-    auto                        request_view         = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
-    const Command::Parameters * parameters           = nullptr;
+    auto &                      mutable_request_stream = const_cast<CommandStream &>(request_stream);
+    auto                        request_view           = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+    const Command::Parameters * parameters             = nullptr;
     if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
     api_function(parameters->device, parameters->pAllocator);
     return true;
 }
 
-bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob & request_blob, const CommandChunk & request_packet, Blob & response_blob,
-                       ::vkfwd::receiver::ReplayContext & replay_context) {
+bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream & request_stream, const CommandChunk & request_packet,
+                       CommandStream & response_stream, ::vkfwd::receiver::ReplayContext & replay_context) {
     switch (command_id) {
+    case ::vkfwd::generated::CommandId::EnumerateInstanceVersion:
+        return vkEnumerateInstanceVersion_endpoint(request_stream, request_packet, response_stream, replay_context);
+    case ::vkfwd::generated::CommandId::EnumerateInstanceLayerProperties:
+        return vkEnumerateInstanceLayerProperties_endpoint(request_stream, request_packet, response_stream, replay_context);
+    case ::vkfwd::generated::CommandId::EnumerateInstanceExtensionProperties:
+        return vkEnumerateInstanceExtensionProperties_endpoint(request_stream, request_packet, response_stream, replay_context);
     case ::vkfwd::generated::CommandId::CreateInstance:
-        return vkCreateInstance_endpoint(request_blob, request_packet, response_blob, replay_context);
+        return vkCreateInstance_endpoint(request_stream, request_packet, response_stream, replay_context);
     case ::vkfwd::generated::CommandId::DestroyInstance:
-        return vkDestroyInstance_endpoint(request_blob, request_packet, response_blob, replay_context);
+        return vkDestroyInstance_endpoint(request_stream, request_packet, response_stream, replay_context);
     case ::vkfwd::generated::CommandId::CreateDevice:
-        return vkCreateDevice_endpoint(request_blob, request_packet, response_blob, replay_context);
+        return vkCreateDevice_endpoint(request_stream, request_packet, response_stream, replay_context);
     case ::vkfwd::generated::CommandId::DestroyDevice:
-        return vkDestroyDevice_endpoint(request_blob, request_packet, response_blob, replay_context);
+        return vkDestroyDevice_endpoint(request_stream, request_packet, response_stream, replay_context);
     }
     return false;
 }

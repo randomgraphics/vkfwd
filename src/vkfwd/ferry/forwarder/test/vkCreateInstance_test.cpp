@@ -59,25 +59,25 @@ Scenario & scenario() {
     return value;
 }
 
-Blob handle_flush(Blob & request_blob) {
+CommandStream handle_flush(CommandStream & request_stream) {
     auto &     expected = scenario();
-    const auto packet   = first_command_chunk(request_blob);
+    const auto packet   = first_command_chunk(request_stream);
 
     const auto   parameters_offset  = command_payload_blob_offset<Command::Parameters>(packet);
-    const auto & raw_parameters     = object_at<Command::Parameters>(request_blob, parameters_offset);
-    const auto   create_info_offset = field_relative_target_offset(request_blob, parameters_offset, &Command::Parameters::pCreateInfo);
-    const auto   allocator_offset   = field_relative_target_offset(request_blob, parameters_offset, &Command::Parameters::pAllocator);
-    check_field_relative_pointer(request_blob, parameters_offset, &Command::Parameters::pCreateInfo, create_info_offset);
-    check_field_relative_pointer(request_blob, parameters_offset, &Command::Parameters::pAllocator, allocator_offset);
+    const auto & raw_parameters     = object_at<Command::Parameters>(request_stream, parameters_offset);
+    const auto   create_info_offset = field_relative_target_offset(request_stream, parameters_offset, &Command::Parameters::pCreateInfo);
+    const auto   allocator_offset   = field_relative_target_offset(request_stream, parameters_offset, &Command::Parameters::pAllocator);
+    check_field_relative_pointer(request_stream, parameters_offset, &Command::Parameters::pCreateInfo, create_info_offset);
+    check_field_relative_pointer(request_stream, parameters_offset, &Command::Parameters::pAllocator, allocator_offset);
     CHECK(raw_parameters.pAllocator == nullptr);
-    const auto instance_output_offset = field_relative_target_offset(request_blob, parameters_offset, &Command::Parameters::pInstance);
-    check_field_relative_pointer(request_blob, parameters_offset, &Command::Parameters::pInstance, instance_output_offset);
+    const auto instance_output_offset = field_relative_target_offset(request_stream, parameters_offset, &Command::Parameters::pInstance);
+    check_field_relative_pointer(request_stream, parameters_offset, &Command::Parameters::pInstance, instance_output_offset);
 
-    const auto & raw_create_info         = object_at<VkInstanceCreateInfo>(request_blob, create_info_offset);
-    const auto   application_info_offset = field_relative_target_offset(request_blob, create_info_offset, &VkInstanceCreateInfo::pApplicationInfo);
-    check_field_relative_pointer(request_blob, create_info_offset, &VkInstanceCreateInfo::pApplicationInfo, application_info_offset);
+    const auto & raw_create_info         = object_at<VkInstanceCreateInfo>(request_stream, create_info_offset);
+    const auto   application_info_offset = field_relative_target_offset(request_stream, create_info_offset, &VkInstanceCreateInfo::pApplicationInfo);
+    check_field_relative_pointer(request_stream, create_info_offset, &VkInstanceCreateInfo::pApplicationInfo, application_info_offset);
 
-    auto                        command_bytes = command_view(request_blob, packet);
+    auto                        command_bytes = command_view(request_stream, packet);
     const Command::Parameters * actual        = nullptr;
     REQUIRE(Command::unpack_parameters(command_bytes, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -100,17 +100,17 @@ Blob handle_flush(Blob & request_blob) {
     CHECK(packed_application_info->applicationVersion == expected.application_info.applicationVersion);
     CHECK(packed_application_info->engineVersion == expected.application_info.engineVersion);
     CHECK(packed_application_info->apiVersion == expected.application_info.apiVersion);
-    check_relative_string(request_blob, 0, packed_application_info->pApplicationName, expected.application_info.pApplicationName);
-    check_relative_string(request_blob, 0, packed_application_info->pEngineName, expected.application_info.pEngineName);
-    check_relative_string_array(request_blob, 0, packed_create_info->ppEnabledLayerNames, {"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"});
-    check_relative_string_array(request_blob, 0, packed_create_info->ppEnabledExtensionNames, {"VK_EXT_debug_utils", "VK_KHR_surface"});
+    check_relative_string(request_stream, 0, packed_application_info->pApplicationName, expected.application_info.pApplicationName);
+    check_relative_string(request_stream, 0, packed_application_info->pEngineName, expected.application_info.pEngineName);
+    check_relative_string_array(request_stream, 0, packed_create_info->ppEnabledLayerNames, {"VK_LAYER_VKFWD_alpha", "VK_LAYER_VKFWD_beta"});
+    check_relative_string_array(request_stream, 0, packed_create_info->ppEnabledExtensionNames, {"VK_EXT_debug_utils", "VK_KHR_surface"});
 
     CHECK(actual->pAllocator == nullptr);
 
-    Blob              response_blob;
+    CommandStream     response_stream;
     Command::Response response {.return_value = expected.response_result, .pInstance = &expected.response_instance};
-    REQUIRE(Command::pack_response(response_blob, response) == VK_SUCCESS);
-    return response_blob;
+    REQUIRE(Command::pack_response(response_stream, response) == VK_SUCCESS);
+    return response_stream;
 }
 
 } // namespace

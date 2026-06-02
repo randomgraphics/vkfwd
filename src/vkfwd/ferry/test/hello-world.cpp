@@ -57,9 +57,9 @@ TEST_CASE("loopback hello world forwards vkCreateInstance through receiver repla
 
     Forwarder::set_transport_creator(LoopbackTransportCreator(loopback.transport));
     // Other forwarder tests may leave deferrable commands queued in the
-    // thread-local blob. The loopback scenario is a single-call replay contract,
+    // thread-local stream. The loopback scenario is a single-call replay contract,
     // so reset the source stream before installing its request.
-    Forwarder::instance().request_blob().reset();
+    Forwarder::instance().request_stream().reset();
 
     VkInstanceCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,

@@ -5,6 +5,9 @@
 # distribution format.
 set(VKFWD_FORWARDER_SOURCES
   generated/forwarder_entrypoints.cpp
+  generated/entry/vkEnumerateInstanceVersion_entry.cpp
+  generated/entry/vkEnumerateInstanceLayerProperties_entry.cpp
+  generated/entry/vkEnumerateInstanceExtensionProperties_entry.cpp
   generated/entry/vkCreateDevice_entry.cpp
   generated/entry/vkCreateInstance_entry.cpp
   generated/entry/vkDestroyDevice_entry.cpp

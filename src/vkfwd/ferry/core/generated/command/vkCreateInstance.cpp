@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <new>
 #include <type_traits>
@@ -61,9 +62,10 @@ SafeArrayView<std::uint8_t> tail_view_from_pointer(SafeArrayView<std::uint8_t> &
     return SafeArrayView<std::uint8_t>(static_cast<std::size_t>(end - target), target);
 }
 
-VkResult pack_allocator(const VkAllocationCallbacks * allocator, Blob & blob, std::size_t pointer_slot_offset, const VkAllocationCallbacks *& pointer_slot) {
+VkResult pack_allocator(const VkAllocationCallbacks * allocator, CommandStream & stream, std::size_t pointer_slot_offset,
+                        const VkAllocationCallbacks *& pointer_slot) {
     (void) allocator;
-    (void) blob;
+    (void) stream;
     // Vulkan allocation callbacks are guest-process function pointers and user
     // data. They have no valid receiver-process address, so the wire contract is
     // to drop them and replay with the receiver's default allocator.
@@ -71,14 +73,14 @@ VkResult pack_allocator(const VkAllocationCallbacks * allocator, Blob & blob, st
 }
 
 template<class Pointer>
-VkResult pack_output_pointer(Pointer value, Blob & blob, std::size_t pointer_slot_offset, Pointer & pointer_slot) {
+VkResult pack_output_pointer(Pointer value, CommandStream & stream, std::size_t pointer_slot_offset, Pointer & pointer_slot) {
     using Pointee = std::remove_pointer_t<Pointer>;
     if (!value) [[unlikely]] { return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }
     try {
         std::size_t target      = 0;
-        auto        destination = blob.grow<Pointee>(1, alignof(Pointee), &target);
+        auto        destination = stream.grow<Pointee>(1, alignof(Pointee), &target);
         if (!destination.set(0, *value)) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output value into blob, size={}", sizeof(Pointee));
+            VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output value into stream, size={}", sizeof(Pointee));
             return VK_ERROR_UNKNOWN;
         }
         return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
@@ -88,12 +90,47 @@ VkResult pack_output_pointer(Pointer value, Blob & blob, std::size_t pointer_slo
     }
 }
 
+VkResult pack_input_string(const char * value, CommandStream & stream, std::size_t pointer_slot_offset, const char *& pointer_slot) {
+    if (!value) [[unlikely]] { return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }
+    try {
+        const std::size_t size        = std::strlen(value) + 1;
+        std::size_t       target      = 0;
+        auto              destination = stream.grow<char>(size, alignof(char), &target);
+        if (destination.set(0, size, value) != size) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not copy input string, pointer_slot_offset={}", pointer_slot_offset);
+            return VK_ERROR_UNKNOWN;
+        }
+        return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
+    } catch (const std::bad_alloc &) {
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while copying input string, pointer_slot_offset={}", pointer_slot_offset);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+}
+
+template<class Pointer>
+VkResult pack_output_array(Pointer value, std::uint32_t count, CommandStream & stream, std::size_t pointer_slot_offset, Pointer & pointer_slot) {
+    using Pointee = std::remove_pointer_t<Pointer>;
+    if (!value || count == 0) [[unlikely]] { return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }
+    try {
+        std::size_t target      = 0;
+        auto        destination = stream.grow<Pointee>(count, alignof(Pointee), &target);
+        if (destination.set(0, count, value) != count) [[unlikely]] {
+            VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output array, count={}, element_size={}", count, sizeof(Pointee));
+            return VK_ERROR_UNKNOWN;
+        }
+        return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
+    } catch (const std::bad_alloc &) {
+        VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: out of host memory while copying output array, count={}, element_size={}", count,
+                        sizeof(Pointee));
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+}
+
 template<class T>
-VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk, T *& packed_payload) {
-    constexpr std::size_t kPayloadOffset    = command_payload_offset<T>();
-    constexpr std::size_t kCommandSize      = kPayloadOffset + sizeof(T);
-    constexpr std::size_t kPayloadAlignment = alignof(T);
-    constexpr std::size_t kChunkAlignment   = alignof(CommandChunkHeader) > kPayloadAlignment ? alignof(CommandChunkHeader) : kPayloadAlignment;
+VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk,
+                              T *& packed_payload) {
+    constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
+    constexpr std::size_t kCommandSize   = kPayloadOffset + sizeof(T);
 
     // The chunk is one contiguous serialized range. Its fixed header is
     // command id, chunk size including the header, and command revision; payload
@@ -110,7 +147,7 @@ VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t r
     CommandChunkHeader header {};
     try {
         std::size_t command_offset = 0;
-        auto        destination    = blob.grow<std::uint8_t>(kCommandSize, kChunkAlignment, &command_offset);
+        auto        destination    = stream.grow<std::uint8_t>(kCommandSize, CommandStream::kBaseAlignment, &command_offset);
         header.command_id          = static_cast<std::uint32_t>(command_id);
         header.size                = static_cast<std::uint32_t>(kCommandSize);
         header.command_revision    = revision;
@@ -133,20 +170,20 @@ VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t r
 }
 
 template<class T>
-VkResult append_command_chunk(Blob & blob, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk) {
+VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk) {
     T * packed_payload = nullptr;
-    return append_command_chunk(blob, command_id, revision, payload, chunk, packed_payload);
+    return append_command_chunk(stream, command_id, revision, payload, chunk, packed_payload);
 }
 
-VkResult finalize_command_chunk(Blob & blob, CommandChunk & chunk) {
-    const std::size_t command_size = blob.size() - chunk.command_offset;
+VkResult finalize_command_chunk(CommandStream & stream, CommandChunk & chunk) {
+    const std::size_t command_size = stream.size() - chunk.command_offset;
     if (command_size > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
         VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, command_offset={}, command_size={}", chunk.command_offset,
                         command_size);
         return VK_ERROR_UNKNOWN;
     }
 
-    auto   header_view = blob.at<CommandChunkHeader>(chunk.command_offset);
+    auto   header_view = stream.at<CommandChunkHeader>(chunk.command_offset);
     auto * header      = header_view.address();
     if (!header) [[unlikely]] {
         VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, command_offset={}", chunk.command_offset);
@@ -163,7 +200,7 @@ VkResult unpack_command_chunk(SafeArrayView<std::uint8_t> & view, CommandId comm
     constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
     constexpr std::size_t kCommandSize   = kPayloadOffset + sizeof(T);
     auto *                header         = view.size() < sizeof(CommandChunkHeader) ? nullptr : reinterpret_cast<CommandChunkHeader *>(view.address(0));
-    auto *                packed_payload = view.size() < kCommandSize ? nullptr : reinterpret_cast<T *>(view.address(kPayloadOffset));
+    auto *                packed_payload = !header || view.size() < kCommandSize ? nullptr : reinterpret_cast<T *>(view.address(kPayloadOffset));
     if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
         header->size < kCommandSize || view.size() < header->size) [[unlikely]] {
         VKFWD_LOG_ERROR("vkfwd ferry command unpack failed: invalid command view, view_size={}, has_header={}, has_payload={}, command_id={}, "
@@ -179,7 +216,7 @@ VkResult unpack_command_chunk(SafeArrayView<std::uint8_t> & view, CommandId comm
 
 } // namespace
 
-VkResult Command::pack_parameters(Blob & blob, const Parameters & parameters) {
+VkResult Command::pack_parameters(CommandStream & stream, const Parameters & parameters) {
     using Hooks = ::vkfwd::manual::CommandHooks<CommandId::CreateInstance>;
     if constexpr (Hooks::before_pack_enabled) {
         Parameters hook_parameters = parameters;
@@ -187,20 +224,20 @@ VkResult Command::pack_parameters(Blob & blob, const Parameters & parameters) {
 
         Parameters * packed_parameters = nullptr;
         CommandChunk chunk;
-        VkResult     status = append_command_chunk(blob, CommandId::CreateInstance, 1, hook_parameters, chunk, packed_parameters);
+        VkResult     status = append_command_chunk(stream, CommandId::CreateInstance, 1, hook_parameters, chunk, packed_parameters);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
         const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
 
         structure::PackedStruct packed_pCreateInfo;
-        status = structure::pack_VkInstanceCreateInfo(hook_parameters.pCreateInfo, blob, packed_pCreateInfo);
+        status = structure::pack_VkInstanceCreateInfo(hook_parameters.pCreateInfo, stream, packed_pCreateInfo);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
         status = patch_command_pointer(packed_parameters->pCreateInfo, payload_offset + offsetof(Parameters, pCreateInfo), packed_pCreateInfo.offset);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = pack_allocator(hook_parameters.pAllocator, blob, payload_offset + offsetof(Parameters, pAllocator), packed_parameters->pAllocator);
+        status = pack_allocator(hook_parameters.pAllocator, stream, payload_offset + offsetof(Parameters, pAllocator), packed_parameters->pAllocator);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = pack_output_pointer(hook_parameters.pInstance, blob, payload_offset + offsetof(Parameters, pInstance), packed_parameters->pInstance);
+        status = pack_output_pointer(hook_parameters.pInstance, stream, payload_offset + offsetof(Parameters, pInstance), packed_parameters->pInstance);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = finalize_command_chunk(blob, chunk);
+        status = finalize_command_chunk(stream, chunk);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
         if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(); }
@@ -209,20 +246,20 @@ VkResult Command::pack_parameters(Blob & blob, const Parameters & parameters) {
 
         Parameters * packed_parameters = nullptr;
         CommandChunk chunk;
-        VkResult     status = append_command_chunk(blob, CommandId::CreateInstance, 1, parameters, chunk, packed_parameters);
+        VkResult     status = append_command_chunk(stream, CommandId::CreateInstance, 1, parameters, chunk, packed_parameters);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
         const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
 
         structure::PackedStruct packed_pCreateInfo;
-        status = structure::pack_VkInstanceCreateInfo(parameters.pCreateInfo, blob, packed_pCreateInfo);
+        status = structure::pack_VkInstanceCreateInfo(parameters.pCreateInfo, stream, packed_pCreateInfo);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
         status = patch_command_pointer(packed_parameters->pCreateInfo, payload_offset + offsetof(Parameters, pCreateInfo), packed_pCreateInfo.offset);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = pack_allocator(parameters.pAllocator, blob, payload_offset + offsetof(Parameters, pAllocator), packed_parameters->pAllocator);
+        status = pack_allocator(parameters.pAllocator, stream, payload_offset + offsetof(Parameters, pAllocator), packed_parameters->pAllocator);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = pack_output_pointer(parameters.pInstance, blob, payload_offset + offsetof(Parameters, pInstance), packed_parameters->pInstance);
+        status = pack_output_pointer(parameters.pInstance, stream, payload_offset + offsetof(Parameters, pInstance), packed_parameters->pInstance);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = finalize_command_chunk(blob, chunk);
+        status = finalize_command_chunk(stream, chunk);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
         if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(); }
@@ -255,16 +292,16 @@ VkResult Command::unpack_parameters(SafeArrayView<std::uint8_t> & view, const Pa
     return VK_SUCCESS;
 }
 
-VkResult Command::pack_response(Blob & blob, const Response & response) {
+VkResult Command::pack_response(CommandStream & stream, const Response & response) {
     Response *   packed_response = nullptr;
     CommandChunk chunk;
-    VkResult     status = append_command_chunk(blob, CommandId::CreateInstance, 1, response, chunk, packed_response);
+    VkResult     status = append_command_chunk(stream, CommandId::CreateInstance, 1, response, chunk, packed_response);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Response>();
 
-    status = pack_output_pointer(response.pInstance, blob, payload_offset + offsetof(Response, pInstance), packed_response->pInstance);
+    status = pack_output_pointer(response.pInstance, stream, payload_offset + offsetof(Response, pInstance), packed_response->pInstance);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = finalize_command_chunk(blob, chunk);
+    status = finalize_command_chunk(stream, chunk);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     return VK_SUCCESS;
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 
 #include <functional>
 #include <memory>
@@ -17,9 +17,9 @@ public:
 
         // A receiver session is only the transport-to-replay boundary: it
         // inspects one accumulated source-thread stream and returns the matching
-        // response blob. The request remains transport-owned so responders must
+        // response stream. The request remains transport-owned so responders must
         // copy anything they need after this call returns.
-        virtual Blob receive_accumulated_api_calls(const Blob & request_blob) = 0;
+        virtual CommandStream receive_accumulated_api_calls(const CommandStream & request_stream) = 0;
     };
 
     using ApiResponderFactory = std::function<std::unique_ptr<ApiResponder>()>;

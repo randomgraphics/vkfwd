@@ -13,34 +13,32 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace vkfwd::generated::commands::vkCreateInstance {
+namespace vkfwd::generated::commands::vkEnumerateInstanceVersion {
 
 struct Parameters {
-    const VkInstanceCreateInfo *  pCreateInfo = {};
-    const VkAllocationCallbacks * pAllocator  = {};
-    VkInstance *                  pInstance   = {};
+    uint32_t * pApiVersion = {};
 };
 
 struct Response {
-    VkResult     return_value = VK_SUCCESS;
-    VkInstance * pInstance    = {};
+    VkResult   return_value = VK_SUCCESS;
+    uint32_t * pApiVersion  = {};
 };
 
 class Command {
 public:
-    using Parameters = vkfwd::generated::commands::vkCreateInstance::Parameters;
+    using Parameters = vkfwd::generated::commands::vkEnumerateInstanceVersion::Parameters;
 
     static VkResult pack_parameters(CommandStream & stream, const Parameters & parameters);
     static VkResult unpack_parameters(SafeArrayView<std::uint8_t> & view, const Parameters ** parameters);
 
-    using Response = vkfwd::generated::commands::vkCreateInstance::Response;
+    using Response = vkfwd::generated::commands::vkEnumerateInstanceVersion::Response;
 
     static VkResult pack_response(CommandStream & stream, const Response & response);
     static VkResult unpack_response(SafeArrayView<std::uint8_t> & view, const Response ** response);
 };
 
-} // namespace vkfwd::generated::commands::vkCreateInstance
+} // namespace vkfwd::generated::commands::vkEnumerateInstanceVersion
 
-#if __has_include("hook/vkCreateInstanceHook.hpp")
-    #include "hook/vkCreateInstanceHook.hpp"
+#if __has_include("hook/vkEnumerateInstanceVersionHook.hpp")
+    #include "hook/vkEnumerateInstanceVersionHook.hpp"
 #endif

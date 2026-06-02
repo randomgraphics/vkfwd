@@ -12,6 +12,9 @@ import sys
 import xml.etree.ElementTree as ET
 
 TARGET_COMMANDS = (
+    "vkEnumerateInstanceVersion",
+    "vkEnumerateInstanceLayerProperties",
+    "vkEnumerateInstanceExtensionProperties",
     "vkCreateInstance",
     "vkDestroyInstance",
     "vkCreateDevice",
@@ -136,6 +139,8 @@ def collect_structs(root: ET.Element, wanted: set[str]) -> dict[str, dict[str, o
 
 
 def infer_command_level(params: list[dict[str, object]]) -> str:
+    if params and params[0]["type"] == "VkInstance":
+        return "instance"
     if params and params[0]["type"] == "VkPhysicalDevice":
         return "instance"
     if params and params[0]["type"] == "VkDevice":
@@ -404,6 +409,10 @@ def command_needs_response(command: dict[str, object]) -> bool:
     )
 
 
+def command_flushes_without_response(command: dict[str, object]) -> bool:
+    return str(command["name"]) == "vkDestroyInstance"
+
+
 def storage_struct_content(command: dict[str, object]) -> str:
     return """
 struct ParameterStorage {};
@@ -491,7 +500,7 @@ struct Response {{
         response_methods = f"""
   using Response = vkfwd::generated::commands::{namespace}::Response;
 
-  static VkResult pack_response(Blob& blob,
+  static VkResult pack_response(CommandStream& stream,
                                 const Response& response);
   static VkResult unpack_response(SafeArrayView<std::uint8_t>& view,
                                   const Response** response);
@@ -504,7 +513,7 @@ struct Response {{
 
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
-#include "blob.hpp"
+#include "command_stream.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -522,7 +531,7 @@ class Command {{
 public:
   using Parameters = vkfwd::generated::commands::{namespace}::Parameters;
 
-  static VkResult pack_parameters(Blob& blob,
+  static VkResult pack_parameters(CommandStream& stream,
                                   const Parameters& parameters);
   static VkResult unpack_parameters(SafeArrayView<std::uint8_t>& view,
                                     const Parameters** parameters);
@@ -586,11 +595,11 @@ SafeArrayView<std::uint8_t> tail_view_from_pointer(SafeArrayView<std::uint8_t>& 
 }}
 
 VkResult pack_allocator(const VkAllocationCallbacks* allocator,
-                        Blob& blob,
+                        CommandStream& stream,
                         std::size_t pointer_slot_offset,
                         const VkAllocationCallbacks*& pointer_slot) {{
   (void)allocator;
-  (void)blob;
+  (void)stream;
   // Vulkan allocation callbacks are guest-process function pointers and user
   // data. They have no valid receiver-process address, so the wire contract is
   // to drop them and replay with the receiver's default allocator.
@@ -598,14 +607,14 @@ VkResult pack_allocator(const VkAllocationCallbacks* allocator,
 }}
 
 template<class Pointer>
-VkResult pack_output_pointer(Pointer value, Blob& blob, std::size_t pointer_slot_offset, Pointer& pointer_slot) {{
+VkResult pack_output_pointer(Pointer value, CommandStream& stream, std::size_t pointer_slot_offset, Pointer& pointer_slot) {{
   using Pointee = std::remove_pointer_t<Pointer>;
   if (!value) [[unlikely]] {{ return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }}
   try {{
     std::size_t target = 0;
-    auto destination = blob.grow<Pointee>(1, alignof(Pointee), &target);
+    auto destination = stream.grow<Pointee>(1, alignof(Pointee), &target);
     if (!destination.set(0, *value)) [[unlikely]] {{
-      VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output value into blob, size={{}}", sizeof(Pointee));
+      VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output value into stream, size={{}}", sizeof(Pointee));
       return VK_ERROR_UNKNOWN;
     }}
     return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
@@ -615,13 +624,45 @@ VkResult pack_output_pointer(Pointer value, Blob& blob, std::size_t pointer_slot
   }}
 }}
 
+VkResult pack_input_string(const char* value, CommandStream& stream, std::size_t pointer_slot_offset, const char*& pointer_slot) {{
+  if (!value) [[unlikely]] {{ return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }}
+  try {{
+    const std::size_t size = std::strlen(value) + 1;
+    std::size_t target = 0;
+    auto destination = stream.grow<char>(size, alignof(char), &target);
+    if (destination.set(0, size, value) != size) [[unlikely]] {{
+      VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not copy input string, pointer_slot_offset={{}}", pointer_slot_offset);
+      return VK_ERROR_UNKNOWN;
+    }}
+    return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
+  }} catch (const std::bad_alloc&) {{
+    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while copying input string, pointer_slot_offset={{}}", pointer_slot_offset);
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+template<class Pointer>
+VkResult pack_output_array(Pointer value, std::uint32_t count, CommandStream& stream, std::size_t pointer_slot_offset, Pointer& pointer_slot) {{
+  using Pointee = std::remove_pointer_t<Pointer>;
+  if (!value || count == 0) [[unlikely]] {{ return patch_command_pointer(pointer_slot, pointer_slot_offset, 0); }}
+  try {{
+    std::size_t target = 0;
+    auto destination = stream.grow<Pointee>(count, alignof(Pointee), &target);
+    if (destination.set(0, count, value) != count) [[unlikely]] {{
+      VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: could not copy output array, count={{}}, element_size={{}}", count, sizeof(Pointee));
+      return VK_ERROR_UNKNOWN;
+    }}
+    return patch_command_pointer(pointer_slot, pointer_slot_offset, target);
+  }} catch (const std::bad_alloc&) {{
+    VKFWD_LOG_ERROR("vkfwd ferry command response pack failed: out of host memory while copying output array, count={{}}, element_size={{}}", count, sizeof(Pointee));
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
 template<class T>
-VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk, T*& packed_payload) {{
+VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk, T*& packed_payload) {{
   constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
   constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
-  constexpr std::size_t kPayloadAlignment = alignof(T);
-  constexpr std::size_t kChunkAlignment =
-      alignof(CommandChunkHeader) > kPayloadAlignment ? alignof(CommandChunkHeader) : kPayloadAlignment;
 
     // The chunk is one contiguous serialized range. Its fixed header is
     // command id, chunk size including the header, and command revision; payload
@@ -638,7 +679,7 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
   CommandChunkHeader header{{}};
   try {{
     std::size_t command_offset = 0;
-    auto destination = blob.grow<std::uint8_t>(kCommandSize, kChunkAlignment, &command_offset);
+    auto destination = stream.grow<std::uint8_t>(kCommandSize, CommandStream::kBaseAlignment, &command_offset);
     header.command_id = static_cast<std::uint32_t>(command_id);
     header.size = static_cast<std::uint32_t>(kCommandSize);
     header.command_revision = revision;
@@ -661,20 +702,20 @@ VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t re
 }}
 
 template<class T>
-VkResult append_command_chunk(Blob& blob, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk) {{
+VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk) {{
   T* packed_payload = nullptr;
-  return append_command_chunk(blob, command_id, revision, payload, chunk, packed_payload);
+  return append_command_chunk(stream, command_id, revision, payload, chunk, packed_payload);
 }}
 
-VkResult finalize_command_chunk(Blob& blob, CommandChunk& chunk) {{
-  const std::size_t command_size = blob.size() - chunk.command_offset;
+VkResult finalize_command_chunk(CommandStream& stream, CommandChunk& chunk) {{
+  const std::size_t command_size = stream.size() - chunk.command_offset;
   if (command_size > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {{
     VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, command_offset={{}}, command_size={{}}",
                     chunk.command_offset, command_size);
     return VK_ERROR_UNKNOWN;
   }}
 
-  auto header_view = blob.at<CommandChunkHeader>(chunk.command_offset);
+  auto header_view = stream.at<CommandChunkHeader>(chunk.command_offset);
   auto* header = header_view.address();
   if (!header) [[unlikely]] {{
     VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, command_offset={{}}", chunk.command_offset);
@@ -691,7 +732,9 @@ VkResult unpack_command_chunk(SafeArrayView<std::uint8_t>& view, CommandId comma
   constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
   constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
   auto* header = view.size() < sizeof(CommandChunkHeader) ? nullptr : reinterpret_cast<CommandChunkHeader*>(view.address(0));
-  auto* packed_payload = view.size() < kCommandSize ? nullptr : reinterpret_cast<T*>(view.address(kPayloadOffset));
+  auto* packed_payload = !header || view.size() < kCommandSize
+      ? nullptr
+      : reinterpret_cast<T*>(view.address(kPayloadOffset));
   if (!header || !packed_payload || header->command_id != static_cast<std::uint32_t>(command_id) || header->command_revision != revision ||
       header->size < kCommandSize || view.size() < header->size) [[unlikely]] {{
     VKFWD_LOG_ERROR(
@@ -712,12 +755,31 @@ def parameter_is_copied_input_pointer(parameter: dict[str, object]) -> bool:
     return int(parameter["pointer_depth"]) == 1 and (
         str(parameter["type"])
         in {
+            "char",
             "VkInstanceCreateInfo",
             "VkDeviceCreateInfo",
             "VkAllocationCallbacks",
         }
         or parameter["direction"] == "output"
     )
+
+
+def parameter_is_output_array(parameter: dict[str, object]) -> bool:
+    return (
+        parameter["direction"] == "output"
+        and int(parameter["pointer_depth"]) == 1
+        and bool(parameter.get("len"))
+    )
+
+
+def output_array_count_expression(
+    command: dict[str, object], parameter: dict[str, object], source_name: str
+) -> str:
+    length_name = str(parameter.get("len") or "")
+    valid_names = {str(candidate["name"]) for candidate in command["parameters"]}
+    if length_name not in valid_names:
+        return "0u"
+    return f"{source_name}.{length_name} ? *{source_name}.{length_name} : 0u"
 
 
 def command_pointer_pack_lines(
@@ -733,14 +795,31 @@ def command_pointer_pack_lines(
         if ptype == "VkAllocationCallbacks":
             lines.extend(
                 [
-                    f"  status = pack_allocator({source_name}.{name}, blob, {slot}, packed_parameters->{name});",
+                    f"  status = pack_allocator({source_name}.{name}, stream, {slot}, packed_parameters->{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                ]
+            )
+        elif ptype == "char" and parameter["direction"] == "input":
+            lines.extend(
+                [
+                    f"  status = pack_input_string({source_name}.{name}, stream, {slot}, packed_parameters->{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                ]
+            )
+        elif parameter_is_output_array(parameter):
+            count_expression = output_array_count_expression(
+                command, parameter, source_name
+            )
+            lines.extend(
+                [
+                    f"  status = pack_output_array({source_name}.{name}, {count_expression}, stream, {slot}, packed_parameters->{name});",
                     "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
                 ]
             )
         elif parameter["direction"] == "output":
             lines.extend(
                 [
-                    f"  status = pack_output_pointer({source_name}.{name}, blob, {slot}, packed_parameters->{name});",
+                    f"  status = pack_output_pointer({source_name}.{name}, stream, {slot}, packed_parameters->{name});",
                     "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
                 ]
             )
@@ -748,7 +827,7 @@ def command_pointer_pack_lines(
             lines.extend(
                 [
                     f"  structure::PackedStruct packed_{name};",
-                    f"  status = structure::pack_{ptype}({source_name}.{name}, blob, packed_{name});",
+                    f"  status = structure::pack_{ptype}({source_name}.{name}, stream, packed_{name});",
                     "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
                     f"  status = patch_command_pointer(packed_parameters->{name}, {slot}, packed_{name}.offset);",
                     "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
@@ -792,9 +871,20 @@ def response_pointer_pack_lines(command: dict[str, object]) -> list[str]:
         name = str(parameter["name"])
         ptype = str(parameter["type"])
         slot = f"payload_offset + offsetof(Response, {name})"
+        if parameter_is_output_array(parameter):
+            count_expression = output_array_count_expression(
+                command, parameter, "response"
+            )
+            lines.extend(
+                [
+                    f"  status = pack_output_array(response.{name}, {count_expression}, stream, {slot}, packed_response->{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                ]
+            )
+            continue
         lines.extend(
             [
-                f"  status = pack_output_pointer(response.{name}, blob, {slot}, packed_response->{name});",
+                f"  status = pack_output_pointer(response.{name}, stream, {slot}, packed_response->{name});",
                 "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
             ]
         )
@@ -825,11 +915,11 @@ def command_pack_body(
     return f"""
   Parameters* packed_parameters = nullptr;
   CommandChunk chunk;
-  VkResult status = append_command_chunk(blob, CommandId::{enum_name}, {COMMAND_REVISION}, {source_name}, chunk, packed_parameters);
+  VkResult status = append_command_chunk(stream, CommandId::{enum_name}, {COMMAND_REVISION}, {source_name}, chunk, packed_parameters);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
   const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
 {pointer_lines}
-  status = finalize_command_chunk(blob, chunk);
+  status = finalize_command_chunk(stream, chunk);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
 """
 
@@ -870,15 +960,15 @@ def command_source_content(
         if response_recover_lines:
             response_recover_lines = "\n" + response_recover_lines
         response_methods = f"""
-VkResult Command::pack_response(Blob& blob,
+VkResult Command::pack_response(CommandStream& stream,
                                 const Response& response) {{
   Response* packed_response = nullptr;
   CommandChunk chunk;
-  VkResult status = append_command_chunk(blob, CommandId::{enum_name}, {COMMAND_REVISION}, response, chunk, packed_response);
+  VkResult status = append_command_chunk(stream, CommandId::{enum_name}, {COMMAND_REVISION}, response, chunk, packed_response);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
   const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Response>();
 {response_pack_lines}
-  status = finalize_command_chunk(blob, chunk);
+  status = finalize_command_chunk(stream, chunk);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
   return VK_SUCCESS;
 }}
@@ -904,6 +994,7 @@ VkResult Command::unpack_response(SafeArrayView<std::uint8_t>& view,
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <new>
 #include <type_traits>
@@ -911,7 +1002,7 @@ VkResult Command::unpack_response(SafeArrayView<std::uint8_t>& view,
 namespace vkfwd::generated::commands::{namespace} {{
 {helpers_block}
 
-VkResult Command::pack_parameters(Blob& blob,
+VkResult Command::pack_parameters(CommandStream& stream,
                                   const Parameters& parameters) {{
   using Hooks = ::vkfwd::manual::CommandHooks<CommandId::{enum_name}>;
   if constexpr (Hooks::before_pack_enabled) {{
@@ -1127,6 +1218,9 @@ using PointerToFunctionPointer = PFN_vkVoidFunction*;
 
 struct GlobalDispatchTable {{
   PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
+  PFN_vkEnumerateInstanceVersion enumerate_instance_version = nullptr;
+  PFN_vkEnumerateInstanceLayerProperties enumerate_instance_layer_properties = nullptr;
+  PFN_vkEnumerateInstanceExtensionProperties enumerate_instance_extension_properties = nullptr;
   PFN_vkCreateInstance create_instance = nullptr;
 
   void init(PFN_vkGetInstanceProcAddr get_instance_proc_addr);
@@ -1171,7 +1265,7 @@ struct DistributionTable {{
 def dispatch_table_group(command: dict[str, object]) -> str:
     name = str(command["name"])
     parameters = list(command["parameters"])
-    if name == "vkCreateInstance":
+    if command["level"] == "global":
         return "global"
     if parameters and parameters[0]["type"] == "VkDevice":
         return "device"
@@ -1231,6 +1325,15 @@ void GlobalDispatchTable::init(PFN_vkGetInstanceProcAddr get_instance_proc_addr_
 
   // Global commands are loaded before any VkInstance exists, so the Vulkan
   // loader contract requires a null instance handle for these lookups.
+  enumerate_instance_version = get_instance_proc_addr
+      ? typed_proc<PFN_vkEnumerateInstanceVersion>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceVersion"))
+      : nullptr;
+  enumerate_instance_layer_properties = get_instance_proc_addr
+      ? typed_proc<PFN_vkEnumerateInstanceLayerProperties>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceLayerProperties"))
+      : nullptr;
+  enumerate_instance_extension_properties = get_instance_proc_addr
+      ? typed_proc<PFN_vkEnumerateInstanceExtensionProperties>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceExtensionProperties"))
+      : nullptr;
   create_instance = get_instance_proc_addr
       ? typed_proc<PFN_vkCreateInstance>(get_instance_proc_addr(nullptr, "vkCreateInstance"))
       : nullptr;
@@ -1271,6 +1374,15 @@ PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char* name) const {{
   }}
   if (std::strcmp(name, "vkCreateInstance") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(create_instance);
+  }}
+  if (std::strcmp(name, "vkEnumerateInstanceVersion") == 0) {{
+    return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_version);
+  }}
+  if (std::strcmp(name, "vkEnumerateInstanceLayerProperties") == 0) {{
+    return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_layer_properties);
+  }}
+  if (std::strcmp(name, "vkEnumerateInstanceExtensionProperties") == 0) {{
+    return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_extension_properties);
   }}
   return nullptr;
 }}
@@ -1357,6 +1469,9 @@ namespace {{
 
 const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {{
   .get_instance_proc_addr = vkGetInstanceProcAddr,
+  .enumerate_instance_version = {forwarder_entrypoint_name("vkEnumerateInstanceVersion")},
+  .enumerate_instance_layer_properties = {forwarder_entrypoint_name("vkEnumerateInstanceLayerProperties")},
+  .enumerate_instance_extension_properties = {forwarder_entrypoint_name("vkEnumerateInstanceExtensionProperties")},
   .create_instance = {forwarder_entrypoint_name("vkCreateInstance")},
 }};
 
@@ -1400,8 +1515,8 @@ def forwarder_command_source_content(
         output_assignments = "\n" + output_assignments + "\n"
     if command_needs_response(command):
         response_flow = f"""
-  Blob response_blob = forwarder.flush();
-  auto response_view = response_blob.at(0, response_blob.size());
+  CommandStream response_stream = forwarder.flush();
+  auto response_view = response_stream.at(0, response_stream.size());
   const Command::Response* packed_response = nullptr;
   status = Command::unpack_response(response_view, &packed_response);
   if (status != VK_SUCCESS) [[unlikely]] {{
@@ -1413,14 +1528,22 @@ def forwarder_command_source_content(
     Hooks::after_response_unpack(response);
   }}
 {output_assignments}
-  // Synchronous forwarding flushes this thread's pending request blob and
-  // returns a fresh response blob. Generated code only decodes that blob here;
+  // Synchronous forwarding flushes this thread's pending request stream and
+  // returns a fresh response stream. Generated code only decodes that stream here;
   // transport implementations own delivery, replay, and handle mapping policy.
+"""
+    elif command_flushes_without_response(command):
+        response_flow = f"""
+  (void)forwarder.flush();
+
+  // vkDestroyInstance is a lifecycle fence for the source process. It has no
+  // response payload, but it must still drain this thread's deferred destroys
+  // before the application considers the instance gone.
 """
     else:
         response_flow = f"""
   // Deferrable commands have no return value or output parameters, so the
-  // entry point only appends to the thread-local request blob. The next
+  // entry point only appends to the thread-local request stream. The next
   // non-deferrable command is responsible for flushing this thread's pending
   // command sequence through the transport session.
 """
@@ -1455,7 +1578,7 @@ VKAPI_ATTR {command['return_type']} VKAPI_CALL {forwarder_entrypoint_name(str(co
 
   auto& forwarder = ::vkfwd::Forwarder::instance();
   Command::Parameters parameters{parameter_initializer_list(command)};
-  VkResult status = Command::pack_parameters(forwarder.request_blob(), parameters);
+  VkResult status = Command::pack_parameters(forwarder.request_stream(), parameters);
   if (status != VK_SUCCESS) [[unlikely]] {{
 {failure_return}
   }}
@@ -1508,10 +1631,45 @@ def receiver_endpoint_function_name(command: dict[str, object]) -> str:
     return f"{command['name']}_endpoint"
 
 
+def receiver_dispatch_update_lines(command: dict[str, object]) -> list[str]:
+    if str(command["return_type"]) == "void":
+        return []
+    lines: list[str] = []
+    for parameter in command["parameters"]:
+        if parameter["direction"] != "output":
+            continue
+        name = str(parameter["name"])
+        ptype = str(parameter["type"])
+        if ptype == "VkInstance":
+            lines.extend(
+                [
+                    f"  if (return_value == VK_SUCCESS && parameters->{name} && *parameters->{name}) {{",
+                    "    // Successful receiver-side instance creation changes the",
+                    "    // destination dispatch scope. Keep this in ReplayContext so",
+                    "    // tests and transports do not patch host callbacks around the",
+                    "    // generated endpoint contract.",
+                    f"    replay_context.dispatch.instance.init(*parameters->{name}, replay_context.dispatch.global.get_instance_proc_addr);",
+                    "  }",
+                ]
+            )
+        elif ptype == "VkDevice":
+            lines.extend(
+                [
+                    f"  if (return_value == VK_SUCCESS && parameters->{name} && *parameters->{name}) {{",
+                    "    // Device dispatch is receiver-owned state derived from the",
+                    "    // destination device handle. Source-side forwarding must not",
+                    "    // provide or cache these host function pointers.",
+                    f"    replay_context.dispatch.device.init(*parameters->{name}, replay_context.dispatch.instance.get_device_proc_addr);",
+                    "  }",
+                ]
+            )
+    return lines
+
+
 def receiver_endpoint_declarations(metadata: dict[str, object]) -> str:
     return "\n".join(
         "bool "
-        f"{receiver_endpoint_function_name(command)}(const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob, "
+        f"{receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream, "
         "::vkfwd::receiver::ReplayContext& replay_context);"
         for command in metadata["commands"]
     )
@@ -1532,18 +1690,19 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
         call_lines.append(
             f"  const {command['return_type']} return_value = api_function({parameter_names});"
         )
+        call_lines.extend(receiver_dispatch_update_lines(command))
 
     if command_needs_response(command):
         call_lines.extend(
             [
                 f"  Command::Response response {receiver_response_initializer(command)};",
-                "  return Command::pack_response(response_blob, response) == VK_SUCCESS;",
+                "  return Command::pack_response(response_stream, response) == VK_SUCCESS;",
             ]
         )
     else:
         call_lines.append("  return true;")
 
-    return f"""bool {receiver_endpoint_function_name(command)}(const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob,
+    return f"""bool {receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream,
                                ::vkfwd::receiver::ReplayContext& replay_context) {{
   using Command = ::vkfwd::generated::commands::{namespace}::Command;
 
@@ -1551,8 +1710,8 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
   if (!raw_function) {{ return false; }}
   const auto api_function = reinterpret_cast<{pfn_type}>(raw_function);
 
-  auto& mutable_request_blob = const_cast<Blob&>(request_blob);
-  auto request_view = mutable_request_blob.at(request_packet.command_offset, request_packet.command_size);
+  auto& mutable_request_stream = const_cast<CommandStream&>(request_stream);
+  auto request_view = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
   const Command::Parameters* parameters = nullptr;
   if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) {{ return false; }}
 {chr(10).join(call_lines)}
@@ -1563,7 +1722,7 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
 def receiver_endpoint_dispatch_cases(metadata: dict[str, object]) -> str:
     return "\n".join(
         f"  case ::vkfwd::generated::CommandId::{command_enum_name(str(command['name']))}:\n"
-        f"    return {receiver_endpoint_function_name(command)}(request_blob, request_packet, response_blob, replay_context);"
+        f"    return {receiver_endpoint_function_name(command)}(request_stream, request_packet, response_stream, replay_context);"
         for command in metadata["commands"]
     )
 
@@ -1576,7 +1735,7 @@ def receiver_endpoints_header_content(metadata: dict[str, object]) -> str:
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
 // Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 #include "generated/dispatch_table.hpp"
 #include "protocol.hpp"
 #include "replay_context.hpp"
@@ -1585,7 +1744,7 @@ namespace vkfwd::receiver::generated {{
 
 {declarations}
 
-bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob,
+bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream,
                        ::vkfwd::receiver::ReplayContext& replay_context);
 
 }} // namespace vkfwd::receiver::generated
@@ -1612,7 +1771,7 @@ def receiver_endpoints_source_content(metadata: dict[str, object]) -> str:
 namespace vkfwd::receiver::generated {{
 
 {endpoints}
-bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const Blob& request_blob, const CommandChunk& request_packet, Blob& response_blob,
+bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream,
                        ::vkfwd::receiver::ReplayContext& replay_context) {{
   switch (command_id) {{
 {dispatch_cases}
@@ -1641,7 +1800,7 @@ def structure_test_support_content(metadata: dict[str, object]) -> str:
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
 // Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1657,8 +1816,8 @@ std::size_t encoded_offset(Pointer pointer) {{
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }}
 
-inline SafeArrayView<std::uint8_t> view_from(Blob & blob, std::size_t offset) {{
-    return blob.at(offset, blob.size() - offset);
+inline SafeArrayView<std::uint8_t> view_from(CommandStream & stream, std::size_t offset) {{
+    return stream.at(offset, stream.size() - offset);
 }}
 
 template<class Pointer>
@@ -1670,26 +1829,26 @@ bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {{
 }}
 
 template<class Pointer>
-bool points_into_blob(Blob & blob, Pointer pointer) {{
-    auto view = blob.at(0, blob.size());
+bool points_into_blob(CommandStream & stream, Pointer pointer) {{
+    auto view = stream.at(0, stream.size());
     return points_into(view, pointer);
 }}
 
 template<class T>
-const T & object_at(const Blob & blob, std::size_t offset) {{
-    const auto view = blob.at(offset, sizeof(T));
+const T & object_at(const CommandStream & stream, std::size_t offset) {{
+    const auto view = stream.at(offset, sizeof(T));
     REQUIRE(!view.empty());
     return *reinterpret_cast<const T *>(&view.at(0));
 }}
 
-inline void check_relative_string(Blob & blob, std::size_t, const char * value, std::string_view expected) {{
+inline void check_relative_string(CommandStream & stream, std::size_t, const char * value, std::string_view expected) {{
     REQUIRE(value != nullptr);
-    CHECK(points_into_blob(blob, value));
+    CHECK(points_into_blob(stream, value));
     CHECK(std::string_view(value, expected.size()) == expected);
     CHECK(value[expected.size()] == '\\0');
 }}
 
-inline void check_relative_string_array(Blob & blob, std::size_t base_offset, const char * const * encoded_values,
+inline void check_relative_string_array(CommandStream & stream, std::size_t base_offset, const char * const * encoded_values,
                                         std::initializer_list<std::string_view> expected) {{
     if (expected.size() == 0) {{
         CHECK(encoded_values == nullptr);
@@ -1697,12 +1856,12 @@ inline void check_relative_string_array(Blob & blob, std::size_t base_offset, co
     }}
 
     REQUIRE(encoded_values != nullptr);
-    CHECK(points_into_blob(blob, encoded_values));
+    CHECK(points_into_blob(stream, encoded_values));
     std::size_t index = 0;
     for (std::string_view expected_value : expected) {{
         const auto * actual_value = encoded_values[index];
         REQUIRE(actual_value != nullptr);
-        CHECK(points_into_blob(blob, actual_value));
+        CHECK(points_into_blob(stream, actual_value));
         CHECK(std::string_view(actual_value, expected_value.size()) == expected_value);
         CHECK(actual_value[expected_value.size()] == '\\0');
         ++index;
@@ -1710,14 +1869,14 @@ inline void check_relative_string_array(Blob & blob, std::size_t base_offset, co
 }}
 
 template<class T>
-void check_relative_plain_array(Blob & blob, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {{
+void check_relative_plain_array(CommandStream & stream, std::size_t base_offset, const T * encoded_values, std::initializer_list<T> expected) {{
     if (expected.size() == 0) {{
         CHECK(encoded_values == nullptr);
         return;
     }}
 
     REQUIRE(encoded_values != nullptr);
-    CHECK(points_into_blob(blob, encoded_values));
+    CHECK(points_into_blob(stream, encoded_values));
     std::size_t index = 0;
     for (const T & expected_value : expected) {{
         CHECK(encoded_values[index] == expected_value);
@@ -1752,7 +1911,7 @@ namespace vkfwd::generated::structure::test {{
 namespace {{
 
 TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied strings") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkApplicationInfo value {{
         .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -1764,9 +1923,9 @@ TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied st
         .apiVersion         = VK_MAKE_API_VERSION(0, 1, 4, 0),
     }};
 
-    REQUIRE(pack_VkApplicationInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkApplicationInfo(&value, stream, packed) == VK_SUCCESS);
     const VkApplicationInfo * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkApplicationInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -1782,7 +1941,7 @@ TEST_CASE("VkApplicationInfo generated structure pack/unpack preserves copied st
 }}
 
 TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested application info and name arrays") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkApplicationInfo app {{
         .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -1806,9 +1965,9 @@ TEST_CASE("VkInstanceCreateInfo generated structure pack/unpack preserves nested
         .ppEnabledExtensionNames = extensions.data(),
     }};
 
-    REQUIRE(pack_VkInstanceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkInstanceCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkInstanceCreateInfo * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkInstanceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -1855,7 +2014,7 @@ namespace vkfwd::generated::structure::test {{
 namespace {{
 
 TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves priority arrays") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     std::array<float, 2> priorities {{0.25f, 0.75f}};
     VkDeviceQueueCreateInfo value {{
@@ -1867,9 +2026,9 @@ TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves pri
         .pQueuePriorities = priorities.data(),
     }};
 
-    REQUIRE(pack_VkDeviceQueueCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceQueueCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceQueueCreateInfo * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceQueueCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -1884,7 +2043,7 @@ TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves pri
 }}
 
 TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested queue info, names, and features") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     std::array<float, 2> priorities {{0.5f, 1.0f}};
     VkDeviceQueueCreateInfo queue {{
@@ -1913,9 +2072,9 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
         .pEnabledFeatures        = &features,
     }};
 
-    REQUIRE(pack_VkDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceCreateInfo * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -1946,7 +2105,7 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
 }}
 
 TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserves physical device arrays") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     std::array<VkPhysicalDevice, 2> devices {{
         test_handle<VkPhysicalDevice>(0x101),
@@ -1959,9 +2118,9 @@ TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserv
         .pPhysicalDevices    = devices.data(),
     }};
 
-    REQUIRE(pack_VkDeviceGroupDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceGroupDeviceCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceGroupDeviceCreateInfo * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceGroupDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -1975,7 +2134,7 @@ TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserv
 }}
 
 TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack preserves global priority") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkDeviceQueueGlobalPriorityCreateInfo value {{
         .sType          = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO,
@@ -1983,9 +2142,9 @@ TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack
         .globalPriority = VK_QUEUE_GLOBAL_PRIORITY_HIGH,
     }};
 
-    REQUIRE(pack_VkDeviceQueueGlobalPriorityCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceQueueGlobalPriorityCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceQueueGlobalPriorityCreateInfo * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceQueueGlobalPriorityCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -2016,7 +2175,7 @@ namespace vkfwd::generated::structure::test {{
 namespace {{
 
 TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves feature bits") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkPhysicalDeviceFeatures2 value {{
         .sType    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
@@ -2026,9 +2185,9 @@ TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves f
     value.features.robustBufferAccess = VK_TRUE;
     value.features.geometryShader     = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceFeatures2(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceFeatures2(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceFeatures2 * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceFeatures2(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -2040,7 +2199,7 @@ TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves f
 }}
 
 TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack preserves selected feature bits") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkPhysicalDeviceVulkan11Features value {{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -2049,9 +2208,9 @@ TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack pres
     value.storageBuffer16BitAccess = VK_TRUE;
     value.shaderDrawParameters     = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan11Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan11Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan11Features * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan11Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -2063,7 +2222,7 @@ TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack pres
 }}
 
 TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack preserves selected feature bits") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkPhysicalDeviceVulkan12Features value {{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
@@ -2072,9 +2231,9 @@ TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack pres
     value.descriptorIndexing = VK_TRUE;
     value.timelineSemaphore  = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan12Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan12Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan12Features * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan12Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -2086,7 +2245,7 @@ TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack pres
 }}
 
 TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack preserves selected feature bits") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkPhysicalDeviceVulkan13Features value {{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
@@ -2095,9 +2254,9 @@ TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack pres
     value.synchronization2  = VK_TRUE;
     value.dynamicRendering = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan13Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan13Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan13Features * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan13Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -2109,7 +2268,7 @@ TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack pres
 }}
 
 TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack preserves selected feature bits") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkPhysicalDeviceVulkan14Features value {{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
@@ -2118,9 +2277,9 @@ TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack pres
     value.globalPriorityQuery = VK_TRUE;
     value.maintenance6        = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan14Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan14Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan14Features * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan14Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -2132,7 +2291,7 @@ TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack pres
 }}
 
 TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/unpack preserves selected feature bits") {{
-    Blob blob;
+    CommandStream stream;
     PackedStruct packed;
     VkPhysicalDeviceDescriptorIndexingFeatures value {{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
@@ -2141,9 +2300,9 @@ TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/u
     value.descriptorBindingPartiallyBound        = VK_TRUE;
     value.descriptorBindingVariableDescriptorCount = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceDescriptorIndexingFeatures(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceDescriptorIndexingFeatures(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceDescriptorIndexingFeatures * actual = nullptr;
-    Blob flattened = blob.flatten();
+    CommandStream flattened = stream.flatten();
     auto view = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceDescriptorIndexingFeatures(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -2190,7 +2349,7 @@ set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
 
 
 def command_roundtrip_test_content(metadata: dict[str, object]) -> str:
-    return f"""#include "blob.hpp"
+    return f"""#include "command_stream.hpp"
 #include "generated/command/vkCreateDevice.hpp"
 #include "generated/command/vkCreateInstance.hpp"
 #include "generated/command/vkDestroyDevice.hpp"
@@ -2219,12 +2378,12 @@ bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {{
     return target >= begin && target < begin + view.size();
 }}
 
-SafeArrayView<std::uint8_t> full_view(Blob & blob) {{
-    return blob.at(0, blob.size());
+SafeArrayView<std::uint8_t> full_view(CommandStream & stream) {{
+    return stream.at(0, stream.size());
 }}
 
-SafeArrayView<std::uint8_t> tail_view(Blob & blob, std::size_t offset) {{
-    return blob.at(offset, blob.size() - offset);
+SafeArrayView<std::uint8_t> tail_view(CommandStream & stream, std::size_t offset) {{
+    return stream.at(offset, stream.size() - offset);
 }}
 
 template<class T>
@@ -2234,8 +2393,8 @@ constexpr std::size_t command_payload_offset() {{
 }}
 
 template<class T>
-const T * packed_command_payload(Blob & blob) {{
-    const auto view = blob.at(command_payload_offset<T>(), sizeof(T));
+const T * packed_command_payload(CommandStream & stream) {{
+    const auto view = stream.at(command_payload_offset<T>(), sizeof(T));
     REQUIRE(!view.empty());
     return reinterpret_cast<const T *>(view.address(0));
 }}
@@ -2303,9 +2462,9 @@ VkDeviceQueueCreateInfo make_queue_info(const float * priorities, std::uint32_t 
 
 }} // namespace
 
-TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs every pointer into flattened blob") {{
+TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs every pointer into flattened stream") {{
     using Command = commands::vkCreateInstance::Command;
-    Blob blob(64);
+    CommandStream stream(64);
     int allocator_user_data = 0x31;
     auto allocator = test_allocator(&allocator_user_data);
     auto app = make_application_info();
@@ -2328,8 +2487,8 @@ TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs
         .pInstance   = &source_instance,
     }};
 
-    REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-    Blob flattened = blob.flatten();
+    REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
     const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
     CHECK(packed_parameters->pAllocator == nullptr);
     auto view = full_view(flattened);
@@ -2347,9 +2506,9 @@ TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs
     check_string(actual->pCreateInfo->ppEnabledExtensionNames[0], extensions[0]);
 }}
 
-TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs every pointer into flattened blob") {{
+TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs every pointer into flattened stream") {{
     using Command = commands::vkCreateDevice::Command;
-    Blob blob(64);
+    CommandStream stream(64);
     int allocator_user_data = 0x42;
     auto allocator = test_allocator(&allocator_user_data);
     std::array<float, 2> priorities {{0.25f, 0.75f}};
@@ -2378,8 +2537,8 @@ TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs e
         .pDevice        = &source_device,
     }};
 
-    REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-    Blob flattened = blob.flatten();
+    REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
     const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
     CHECK(packed_parameters->pAllocator == nullptr);
     auto view = full_view(flattened);
@@ -2402,13 +2561,13 @@ TEST_CASE("generated destroy command parameter pack flatten unpack drops allocat
 
     {{
         using Command = commands::vkDestroyInstance::Command;
-        Blob blob(64);
+        CommandStream stream(64);
         Command::Parameters parameters {{
             .instance   = test_handle<VkInstance>(0x601),
             .pAllocator = &allocator,
         }};
-        REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
+        REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+        CommandStream flattened = stream.flatten();
         const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
         CHECK(packed_parameters->pAllocator == nullptr);
         auto view = full_view(flattened);
@@ -2421,13 +2580,13 @@ TEST_CASE("generated destroy command parameter pack flatten unpack drops allocat
 
     {{
         using Command = commands::vkDestroyDevice::Command;
-        Blob blob(64);
+        CommandStream stream(64);
         Command::Parameters parameters {{
             .device     = test_handle<VkDevice>(0x602),
             .pAllocator = &allocator,
         }};
-        REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
+        REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+        CommandStream flattened = stream.flatten();
         const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
         CHECK(packed_parameters->pAllocator == nullptr);
         auto view = full_view(flattened);
@@ -2439,17 +2598,17 @@ TEST_CASE("generated destroy command parameter pack flatten unpack drops allocat
     }}
 }}
 
-TEST_CASE("generated create command responses pack flatten unpack reconstruct output pointers into flattened blob") {{
+TEST_CASE("generated create command responses pack flatten unpack reconstruct output pointers into flattened stream") {{
     {{
         using Command = commands::vkCreateInstance::Command;
-        Blob blob(64);
+        CommandStream stream(64);
         VkInstance instance = test_handle<VkInstance>(0x701);
         Command::Response response {{
             .return_value = VK_SUCCESS,
             .pInstance    = &instance,
         }};
-        REQUIRE(Command::pack_response(blob, response) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
+        REQUIRE(Command::pack_response(stream, response) == VK_SUCCESS);
+        CommandStream flattened = stream.flatten();
         auto view = full_view(flattened);
         const Command::Response * actual = nullptr;
         REQUIRE(Command::unpack_response(view, &actual) == VK_SUCCESS);
@@ -2460,14 +2619,14 @@ TEST_CASE("generated create command responses pack flatten unpack reconstruct ou
 
     {{
         using Command = commands::vkCreateDevice::Command;
-        Blob blob(64);
+        CommandStream stream(64);
         VkDevice device = test_handle<VkDevice>(0x702);
         Command::Response response {{
             .return_value = VK_SUCCESS,
             .pDevice      = &device,
         }};
-        REQUIRE(Command::pack_response(blob, response) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
+        REQUIRE(Command::pack_response(stream, response) == VK_SUCCESS);
+        CommandStream flattened = stream.flatten();
         auto view = full_view(flattened);
         const Command::Response * actual = nullptr;
         REQUIRE(Command::unpack_response(view, &actual) == VK_SUCCESS);

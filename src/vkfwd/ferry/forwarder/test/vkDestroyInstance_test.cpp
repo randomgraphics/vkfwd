@@ -27,17 +27,17 @@ Scenario & scenario() {
     return value;
 }
 
-Blob handle_flush(Blob & request_blob) {
+CommandStream handle_flush(CommandStream & request_stream) {
     auto &     expected = scenario();
-    const auto packet   = first_command_chunk(request_blob);
+    const auto packet   = first_command_chunk(request_stream);
 
-    const auto parameters_offset = command_payload_blob_offset<Command::Parameters>(packet);
-    const auto allocator_offset  = field_relative_target_offset(request_blob, parameters_offset, &Command::Parameters::pAllocator);
-    const auto & raw_parameters  = object_at<Command::Parameters>(request_blob, parameters_offset);
-    check_field_relative_pointer(request_blob, parameters_offset, &Command::Parameters::pAllocator, allocator_offset);
+    const auto   parameters_offset = command_payload_blob_offset<Command::Parameters>(packet);
+    const auto   allocator_offset  = field_relative_target_offset(request_stream, parameters_offset, &Command::Parameters::pAllocator);
+    const auto & raw_parameters    = object_at<Command::Parameters>(request_stream, parameters_offset);
+    check_field_relative_pointer(request_stream, parameters_offset, &Command::Parameters::pAllocator, allocator_offset);
     CHECK(raw_parameters.pAllocator == nullptr);
 
-    auto                        command_bytes = command_view(request_blob, packet);
+    auto                        command_bytes = command_view(request_stream, packet);
     const Command::Parameters * actual        = nullptr;
     REQUIRE(Command::unpack_parameters(command_bytes, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -45,8 +45,8 @@ Blob handle_flush(Blob & request_blob) {
     CHECK(actual->pAllocator == nullptr);
 
     // Deferrable generated commands acknowledge successful transport processing
-    // with an empty response blob; there is no response packet to unpack.
-    return Blob {};
+    // with an empty response stream; there is no response packet to unpack.
+    return CommandStream {};
 }
 
 } // namespace
@@ -56,10 +56,11 @@ TEST_CASE("vkDestroyInstance forwarder entry point packs parameters when flushed
     install_pack_unpack_transport(handle_flush);
 
     vkfwd::forwarder::generated::vkDestroyInstance_entry(expected.instance, &expected.allocator);
-    Blob response_blob = Forwarder::instance().flush();
 
+    // vkDestroyInstance is a lifecycle fence: the generated entry point flushes
+    // immediately so receiver-side deferred work observes destruction in order.
     CHECK(transport_state().processed);
-    CHECK(response_blob.size() == 0);
+    CHECK(Forwarder::instance().request_stream().size() == kSourceThreadIdSize);
 }
 
 } // namespace vkfwd::forwarder::test

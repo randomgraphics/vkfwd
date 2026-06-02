@@ -11,6 +11,10 @@
 
 namespace vkfwd::forwarder::generated {
 
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion_entry(uint32_t * pApiVersion);
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties_entry(uint32_t * pPropertyCount, VkLayerProperties * pProperties);
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties_entry(const char * pLayerName, uint32_t * pPropertyCount,
+                                                                            VkExtensionProperties * pProperties);
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance_entry(const VkInstanceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
                                                       VkInstance * pInstance);
 VKAPI_ATTR void VKAPI_CALL     vkDestroyInstance_entry(VkInstance instance, const VkAllocationCallbacks * pAllocator);

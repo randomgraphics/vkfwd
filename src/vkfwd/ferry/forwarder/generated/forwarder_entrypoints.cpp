@@ -11,8 +11,11 @@ namespace vkfwd::forwarder::generated {
 namespace {
 
 const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {
-    .get_instance_proc_addr = vkGetInstanceProcAddr,
-    .create_instance        = vkCreateInstance_entry,
+    .get_instance_proc_addr                  = vkGetInstanceProcAddr,
+    .enumerate_instance_version              = vkEnumerateInstanceVersion_entry,
+    .enumerate_instance_layer_properties     = vkEnumerateInstanceLayerProperties_entry,
+    .enumerate_instance_extension_properties = vkEnumerateInstanceExtensionProperties_entry,
+    .create_instance                         = vkCreateInstance_entry,
 };
 
 const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {

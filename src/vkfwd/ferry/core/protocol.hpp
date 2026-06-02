@@ -7,6 +7,7 @@ namespace vkfwd {
 
 constexpr std::uint32_t kStreamMagic            = 0x564b4657; // "VKFW"
 constexpr std::uint32_t kSupportedSchemaVersion = 1;
+constexpr std::uint32_t kCommandStreamGapMagic  = 0x564b4741; // "VKGA"
 
 using SourceThreadId = std::uint64_t;
 
@@ -25,8 +26,16 @@ struct CommandChunkHeader {
     std::uint32_t command_revision = 0;
 };
 
+struct CommandStreamGapHeader {
+    std::uint32_t magic = kCommandStreamGapMagic;
+    // Total number of filler bytes from this header through the end of the
+    // closed chunk. This record makes chunk tail slack explicit after flattening
+    // so receivers never infer protocol structure from allocator state.
+    std::uint32_t size = 0;
+};
+
 struct CommandChunk {
-    // The chunk range is metadata only; all command bytes live in the Blob passed
+    // The chunk range is metadata only; all command bytes live in the CommandStream passed
     // beside it. Keeping ownership out of the range makes forwarding and replay
     // choose their own storage lifetime without copying packet wrappers around.
     std::size_t   command_offset = 0;

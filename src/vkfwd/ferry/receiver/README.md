@@ -26,7 +26,7 @@ a `ReplayContext`, then registers an API-responder factory with the session. The
 session owns source-thread demultiplexing and responder lifetime. The concrete
 responder validates accumulated request blobs, decodes command chunk headers,
 resolves each generated command id through the replay context's distribution
-table, and returns the response blob for the flushed stream. The replay context
+table, and returns the response stream for the flushed stream. The replay context
 is deliberately mutable because create/destroy commands will update destination
 dispatch tables, source-to-receiver handle maps, scratch allocations, and replay
 error state as endpoint replay becomes complete.
@@ -59,7 +59,7 @@ switches in every endpoint implementation. A better shape is:
   they support.
 - Test endpoints can install a small table for a narrow command subset.
 - A real Vulkan replay endpoint may eventually have many API-specific handlers,
-  but it should not duplicate blob dispatch, unpack, or response packing logic.
+  but it should not duplicate stream dispatch, unpack, or response packing logic.
 
 For the current four-command slice, a generated receiver adapter might have
 handlers for `vkCreateInstance`, `vkDestroyInstance`, `vkCreateDevice`, and
@@ -123,7 +123,7 @@ those handles.
 - How are receiver addresses configured: environment variable, config file,
   command line, or layer setting?
 - What architecture compatibility is supported initially? Same endian and
-  pointer width should be assumed unless the blob schema is made portable.
+  pointer width should be assumed unless the stream schema is made portable.
 - Which commands define the first real replay scope beyond create/destroy
   instance and device?
 - Does the first receiver scheduler serialize globally, or does it implement

@@ -3,7 +3,7 @@
 // Generated structure pack/unpack slice; do not edit by hand.
 // Vulkan API version: 1.4.352
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -15,20 +15,21 @@ struct PackedStruct {
     std::size_t offset = 0;
 };
 
-VkResult pack_VkApplicationInfo(const VkApplicationInfo * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkInstanceCreateInfo(const VkInstanceCreateInfo * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkDeviceQueueCreateInfo(const VkDeviceQueueCreateInfo * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkDeviceGroupDeviceCreateInfo(const VkDeviceGroupDeviceCreateInfo * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkPhysicalDeviceFeatures2(const VkPhysicalDeviceFeatures2 * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkPhysicalDeviceVulkan11Features(const VkPhysicalDeviceVulkan11Features * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkPhysicalDeviceVulkan12Features(const VkPhysicalDeviceVulkan12Features * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkPhysicalDeviceVulkan13Features(const VkPhysicalDeviceVulkan13Features * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkPhysicalDeviceVulkan14Features(const VkPhysicalDeviceVulkan14Features * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkPhysicalDeviceDescriptorIndexingFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures * value, Blob & blob, PackedStruct & packed);
-VkResult pack_VkDeviceQueueGlobalPriorityCreateInfo(const VkDeviceQueueGlobalPriorityCreateInfo * value, Blob & blob, PackedStruct & packed);
-VkResult pack_struct_by_type(const void * value, Blob & blob, PackedStruct & packed);
-VkResult pack_pnext_chain(const void * value, Blob & blob, PackedStruct & packed);
+VkResult pack_VkApplicationInfo(const VkApplicationInfo * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkInstanceCreateInfo(const VkInstanceCreateInfo * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkDeviceQueueCreateInfo(const VkDeviceQueueCreateInfo * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkDeviceCreateInfo(const VkDeviceCreateInfo * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkDeviceGroupDeviceCreateInfo(const VkDeviceGroupDeviceCreateInfo * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkPhysicalDeviceFeatures2(const VkPhysicalDeviceFeatures2 * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkPhysicalDeviceVulkan11Features(const VkPhysicalDeviceVulkan11Features * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkPhysicalDeviceVulkan12Features(const VkPhysicalDeviceVulkan12Features * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkPhysicalDeviceVulkan13Features(const VkPhysicalDeviceVulkan13Features * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkPhysicalDeviceVulkan14Features(const VkPhysicalDeviceVulkan14Features * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_VkPhysicalDeviceDescriptorIndexingFeatures(const VkPhysicalDeviceDescriptorIndexingFeatures * value, CommandStream & stream,
+                                                         PackedStruct & packed);
+VkResult pack_VkDeviceQueueGlobalPriorityCreateInfo(const VkDeviceQueueGlobalPriorityCreateInfo * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_struct_by_type(const void * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_pnext_chain(const void * value, CommandStream & stream, PackedStruct & packed);
 
 VkResult unpack_VkApplicationInfo(SafeArrayView<std::uint8_t> & view, const VkApplicationInfo ** value);
 VkResult unpack_VkInstanceCreateInfo(SafeArrayView<std::uint8_t> & view, const VkInstanceCreateInfo ** value);

@@ -15,7 +15,7 @@ another implementation has the same invariants.
 
 - `core/`: shared wire-format, generated dispatch-table metadata, and
   serialization code linked by the forwarder and receiver. See `core/README.md`
-  before changing protocol, blob, transport, or generated pack/unpack behavior.
+  before changing protocol, stream, transport, or generated pack/unpack behavior.
 - `forwarder/`: Vulkan loader-facing layer entry points and generated wrappers
   that pack source calls into per-thread request blobs. See
   `forwarder/README.md` before changing layer lookup, dispatch tables, or flush
@@ -30,24 +30,27 @@ another implementation has the same invariants.
 
 ## Current Generated Slice
 
-The current generated command slice is intentionally small:
-`vkCreateInstance`, `vkDestroyInstance`, `vkCreateDevice`, and
-`vkDestroyDevice`.
+The current generated command slice is intentionally small, but now includes
+the loader-global enumeration calls needed by basic instance bring-up:
+`vkEnumerateInstanceVersion`, `vkEnumerateInstanceLayerProperties`,
+`vkEnumerateInstanceExtensionProperties`, `vkCreateInstance`,
+`vkDestroyInstance`, `vkCreateDevice`, and `vkDestroyDevice`.
 
 The generated forwarder body shape is:
 
 1. optional manual pre-pack hook
 2. construct generated `Command::Parameters`
-3. pack into this thread's `Forwarder::request_blob()`
-4. for response-bearing commands, flush the request blob through the transport
+3. pack into this thread's `Forwarder::request_stream()`
+4. for response-bearing commands, flush the request stream through the transport
    session
-5. unpack the response blob and copy output parameters back to the caller
+5. unpack the response stream and copy output parameters back to the caller
 6. optional manual post-response hook
 
-Commands without return values or output parameters are currently treated as
-deferrable: they append a command chunk to the thread-local request blob and rely
-on a later response-bearing command, or an explicit test flush, to send that
-stream to the transport session.
+Commands without return values or output parameters are usually deferrable: they
+append a command chunk to the thread-local request stream and rely on a later
+response-bearing command, or an explicit test flush, to send that stream to the
+transport session. `vkDestroyInstance` is the lifecycle exception and flushes
+immediately so receiver-side deferred work observes instance teardown in order.
 
 ## Design Bias
 

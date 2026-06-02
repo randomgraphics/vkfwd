@@ -8,7 +8,7 @@ sends flushed streams through a shared `TransportSession`.
 
 - `layer.cpp`: exported `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`
   implementation for the Vulkan loader.
-- `forwarder.hpp` and `forwarder.cpp`: thread-local request blob and
+- `forwarder.hpp` and `forwarder.cpp`: thread-local request stream and
   transport-session ownership.
 - `../core/generated/dispatch_table.*`: generated function-pointer table types
   and name-lookup methods for commands that vkfwd currently supports. The table
@@ -31,11 +31,19 @@ The forwarder exposes only vkfwd-owned generated entry points. Unknown commands
 return null from `vkGetInstanceProcAddr`/`vkGetDeviceProcAddr` until vkfwd owns
 their generated pack, response, and output-parameter contract.
 
+`vkGetInstanceProcAddr(nullptr, name)` only exposes loader-global commands owned
+by vkfwd. With a non-null instance, `vkGetInstanceProcAddr(instance, name)` may
+also return vkfwd-owned instance and device command trampolines; Vulkan allows
+applications to acquire device command entry points this way before a device is
+created. `vkGetDeviceProcAddr` stays device-scoped and only exposes generated
+device commands for non-null devices.
+
 The generated dispatch tables follow the Vulkan object lifecycle:
 
 - global: initialized before a `VkInstance` exists and holding
   `vkGetInstanceProcAddr` plus loader-global commands such as
-  `vkCreateInstance`
+  `vkEnumerateInstanceVersion`, `vkEnumerateInstanceLayerProperties`,
+  `vkEnumerateInstanceExtensionProperties`, and `vkCreateInstance`
 - instance: initialized after `vkCreateInstance` succeeds and holding
   `vkGetDeviceProcAddr` plus instance-level generated entry points
 - device: initialized after `vkCreateDevice` succeeds and holding device-level
@@ -50,9 +58,9 @@ Receiver-side replay is responsible for destination dispatch.
 
 `Forwarder::instance()` is thread-local. Each thread owns:
 
-- one request `Blob`
+- one request `CommandStream`
 - one stable 64-bit source-thread token embedded at the start of each request
-  blob
+  stream
 - one shared `TransportSession` created from the process-wide transport creator
 
 Configure the transport creator before application worker threads enter Vulkan.
@@ -65,26 +73,29 @@ Response-bearing commands follow this shape:
 
 1. run an optional manual pre-pack hook
 2. copy function arguments into generated `Command::Parameters`
-3. append a command chunk to `Forwarder::request_blob()` after the source-thread
+3. append a command chunk to `Forwarder::request_stream()` after the source-thread
    prefix
-4. call `Forwarder::flush()`, which sends the thread's blob through the transport
+4. call `Forwarder::flush()`, which sends the thread's stream through the transport
    session and resets it with the same prefix
-5. unpack the returned response blob
+5. unpack the returned response stream
 6. copy response-owned output parameter values back to the caller
 7. run an optional manual post-response hook
 8. return the response return value
 
 Deferrable commands currently have no return value and no output parameters.
-They only append their command chunk to the thread-local request blob. A later
+They only append their command chunk to the thread-local request stream. A later
 response-bearing command or an explicit test flush sends the pending stream.
+`vkDestroyInstance` is intentionally not deferred even though it has no response:
+the generated wrapper flushes it as a lifecycle fence so receiver-side replay can
+drain deferred commands before destroying the destination instance.
 
 ## Transport Boundary
 
-`TransportSession::send_accumulated_api_calls()` receives a blob whose first 64
+`TransportSession::send_accumulated_api_calls()` receives a stream whose first 64
 bits are the source-thread token and whose remaining bytes may contain multiple
 command chunks. The transport owns framing, remote or local delivery, replay
 coordination, response correlation, and handle mapping below this boundary. The
-generated forwarder wrapper only knows how to decode the response blob for the
+generated forwarder wrapper only knows how to decode the response stream for the
 last response-bearing command in the flushed stream.
 
 Do not add replay behavior, local Vulkan dispatch, or source-to-destination
@@ -105,7 +116,7 @@ command-specific and document why it is needed.
 
 Handwritten forwarder tests install a test transport session, call selected
 generated Vulkan entry points, validate the forwarding boundary, and return a
-generated response blob when the command requires one. These tests protect
+generated response stream when the command requires one. These tests protect
 entry-point behavior such as flushing, response propagation, and output-value
 copy-back; exhaustive command and structure pack/unpack coverage belongs in the
 generated core round-trip tests.

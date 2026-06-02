@@ -25,13 +25,14 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyInstance_entry(VkInstance instance, const Vk
 
     auto &              forwarder = ::vkfwd::Forwarder::instance();
     Command::Parameters parameters {.instance = instance, .pAllocator = pAllocator};
-    VkResult            status = Command::pack_parameters(forwarder.request_blob(), parameters);
+    VkResult            status = Command::pack_parameters(forwarder.request_stream(), parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return; }
 
-    // Deferrable commands have no return value or output parameters, so the
-    // entry point only appends to the thread-local request blob. The next
-    // non-deferrable command is responsible for flushing this thread's pending
-    // command sequence through the transport session.
+    (void) forwarder.flush();
+
+    // vkDestroyInstance is a lifecycle fence for the source process. It has no
+    // response payload, but it must still drain this thread's deferred destroys
+    // before the application considers the instance gone.
 
     return;
 }

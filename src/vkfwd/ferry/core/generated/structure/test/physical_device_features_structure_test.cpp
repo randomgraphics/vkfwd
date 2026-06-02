@@ -12,7 +12,7 @@ namespace vkfwd::generated::structure::test {
 namespace {
 
 TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves feature bits") {
-    Blob                      blob;
+    CommandStream             stream;
     PackedStruct              packed;
     VkPhysicalDeviceFeatures2 value {
         .sType    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
@@ -22,9 +22,9 @@ TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves f
     value.features.robustBufferAccess = VK_TRUE;
     value.features.geometryShader     = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceFeatures2(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceFeatures2(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceFeatures2 * actual    = nullptr;
-    Blob                              flattened = blob.flatten();
+    CommandStream                     flattened = stream.flatten();
     auto                              view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceFeatures2(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -36,7 +36,7 @@ TEST_CASE("VkPhysicalDeviceFeatures2 generated structure pack/unpack preserves f
 }
 
 TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack preserves selected feature bits") {
-    Blob                             blob;
+    CommandStream                    stream;
     PackedStruct                     packed;
     VkPhysicalDeviceVulkan11Features value {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -45,9 +45,9 @@ TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack pres
     value.storageBuffer16BitAccess = VK_TRUE;
     value.shaderDrawParameters     = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan11Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan11Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan11Features * actual    = nullptr;
-    Blob                                     flattened = blob.flatten();
+    CommandStream                            flattened = stream.flatten();
     auto                                     view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan11Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -59,7 +59,7 @@ TEST_CASE("VkPhysicalDeviceVulkan11Features generated structure pack/unpack pres
 }
 
 TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack preserves selected feature bits") {
-    Blob                             blob;
+    CommandStream                    stream;
     PackedStruct                     packed;
     VkPhysicalDeviceVulkan12Features value {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
@@ -68,9 +68,9 @@ TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack pres
     value.descriptorIndexing = VK_TRUE;
     value.timelineSemaphore  = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan12Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan12Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan12Features * actual    = nullptr;
-    Blob                                     flattened = blob.flatten();
+    CommandStream                            flattened = stream.flatten();
     auto                                     view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan12Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -82,7 +82,7 @@ TEST_CASE("VkPhysicalDeviceVulkan12Features generated structure pack/unpack pres
 }
 
 TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack preserves selected feature bits") {
-    Blob                             blob;
+    CommandStream                    stream;
     PackedStruct                     packed;
     VkPhysicalDeviceVulkan13Features value {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
@@ -91,9 +91,9 @@ TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack pres
     value.synchronization2 = VK_TRUE;
     value.dynamicRendering = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan13Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan13Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan13Features * actual    = nullptr;
-    Blob                                     flattened = blob.flatten();
+    CommandStream                            flattened = stream.flatten();
     auto                                     view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan13Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -105,7 +105,7 @@ TEST_CASE("VkPhysicalDeviceVulkan13Features generated structure pack/unpack pres
 }
 
 TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack preserves selected feature bits") {
-    Blob                             blob;
+    CommandStream                    stream;
     PackedStruct                     packed;
     VkPhysicalDeviceVulkan14Features value {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
@@ -114,9 +114,9 @@ TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack pres
     value.globalPriorityQuery = VK_TRUE;
     value.maintenance6        = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceVulkan14Features(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceVulkan14Features(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceVulkan14Features * actual    = nullptr;
-    Blob                                     flattened = blob.flatten();
+    CommandStream                            flattened = stream.flatten();
     auto                                     view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceVulkan14Features(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -128,7 +128,7 @@ TEST_CASE("VkPhysicalDeviceVulkan14Features generated structure pack/unpack pres
 }
 
 TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/unpack preserves selected feature bits") {
-    Blob                                       blob;
+    CommandStream                              stream;
     PackedStruct                               packed;
     VkPhysicalDeviceDescriptorIndexingFeatures value {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
@@ -137,9 +137,9 @@ TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/u
     value.descriptorBindingPartiallyBound          = VK_TRUE;
     value.descriptorBindingVariableDescriptorCount = VK_TRUE;
 
-    REQUIRE(pack_VkPhysicalDeviceDescriptorIndexingFeatures(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkPhysicalDeviceDescriptorIndexingFeatures(&value, stream, packed) == VK_SUCCESS);
     const VkPhysicalDeviceDescriptorIndexingFeatures * actual    = nullptr;
-    Blob                                               flattened = blob.flatten();
+    CommandStream                                      flattened = stream.flatten();
     auto                                               view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkPhysicalDeviceDescriptorIndexingFeatures(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);

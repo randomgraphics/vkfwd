@@ -9,7 +9,10 @@
 
 | Command | ID | Level | Coverage | Creates |
 | --- | ---: | --- | --- | --- |
+| `vkEnumerateInstanceVersion` | 2065902916 | global | unclassified |  |
+| `vkEnumerateInstanceLayerProperties` | 2945753866 | global | unclassified |  |
+| `vkEnumerateInstanceExtensionProperties` | 1659509659 | global | unclassified |  |
 | `vkCreateInstance` | 2472334652 | global | unclassified | VkInstance |
-| `vkDestroyInstance` | 748278256 | global | unclassified |  |
+| `vkDestroyInstance` | 748278256 | instance | unclassified |  |
 | `vkCreateDevice` | 1470473620 | instance | unclassified | VkDevice |
 | `vkDestroyDevice` | 2054705423 | device | unclassified |  |

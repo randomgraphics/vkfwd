@@ -16,8 +16,11 @@ namespace vkfwd::generated {
 using PointerToFunctionPointer = PFN_vkVoidFunction *;
 
 struct GlobalDispatchTable {
-    PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
-    PFN_vkCreateInstance      create_instance        = nullptr;
+    PFN_vkGetInstanceProcAddr                  get_instance_proc_addr                  = nullptr;
+    PFN_vkEnumerateInstanceVersion             enumerate_instance_version              = nullptr;
+    PFN_vkEnumerateInstanceLayerProperties     enumerate_instance_layer_properties     = nullptr;
+    PFN_vkEnumerateInstanceExtensionProperties enumerate_instance_extension_properties = nullptr;
+    PFN_vkCreateInstance                       create_instance                         = nullptr;
 
     void               init(PFN_vkGetInstanceProcAddr get_instance_proc_addr);
     PFN_vkVoidFunction getProcByName(const char * name) const;

@@ -6,7 +6,7 @@
 
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
-#include "blob.hpp"
+#include "command_stream.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -31,12 +31,12 @@ class Command {
 public:
     using Parameters = vkfwd::generated::commands::vkCreateDevice::Parameters;
 
-    static VkResult pack_parameters(Blob & blob, const Parameters & parameters);
+    static VkResult pack_parameters(CommandStream & stream, const Parameters & parameters);
     static VkResult unpack_parameters(SafeArrayView<std::uint8_t> & view, const Parameters ** parameters);
 
     using Response = vkfwd::generated::commands::vkCreateDevice::Response;
 
-    static VkResult pack_response(Blob & blob, const Response & response);
+    static VkResult pack_response(CommandStream & stream, const Response & response);
     static VkResult unpack_response(SafeArrayView<std::uint8_t> & view, const Response ** response);
 };
 

@@ -67,25 +67,25 @@ Scenario & scenario() {
     return value;
 }
 
-Blob handle_flush(Blob & request_blob) {
+CommandStream handle_flush(CommandStream & request_stream) {
     auto &     expected = scenario();
-    const auto packet   = first_command_chunk(request_blob);
+    const auto packet   = first_command_chunk(request_stream);
 
     const auto   parameters_offset  = command_payload_blob_offset<Command::Parameters>(packet);
-    const auto & raw_parameters     = object_at<Command::Parameters>(request_blob, parameters_offset);
-    const auto   create_info_offset = field_relative_target_offset(request_blob, parameters_offset, &Command::Parameters::pCreateInfo);
-    const auto   allocator_offset   = field_relative_target_offset(request_blob, parameters_offset, &Command::Parameters::pAllocator);
-    check_field_relative_pointer(request_blob, parameters_offset, &Command::Parameters::pCreateInfo, create_info_offset);
-    check_field_relative_pointer(request_blob, parameters_offset, &Command::Parameters::pAllocator, allocator_offset);
+    const auto & raw_parameters     = object_at<Command::Parameters>(request_stream, parameters_offset);
+    const auto   create_info_offset = field_relative_target_offset(request_stream, parameters_offset, &Command::Parameters::pCreateInfo);
+    const auto   allocator_offset   = field_relative_target_offset(request_stream, parameters_offset, &Command::Parameters::pAllocator);
+    check_field_relative_pointer(request_stream, parameters_offset, &Command::Parameters::pCreateInfo, create_info_offset);
+    check_field_relative_pointer(request_stream, parameters_offset, &Command::Parameters::pAllocator, allocator_offset);
     CHECK(raw_parameters.pAllocator == nullptr);
     CHECK(raw_parameters.physicalDevice == expected.physical_device);
-    const auto device_output_offset = field_relative_target_offset(request_blob, parameters_offset, &Command::Parameters::pDevice);
-    check_field_relative_pointer(request_blob, parameters_offset, &Command::Parameters::pDevice, device_output_offset);
+    const auto device_output_offset = field_relative_target_offset(request_stream, parameters_offset, &Command::Parameters::pDevice);
+    check_field_relative_pointer(request_stream, parameters_offset, &Command::Parameters::pDevice, device_output_offset);
 
-    const auto queue_info_offset = field_relative_target_offset(request_blob, create_info_offset, &VkDeviceCreateInfo::pQueueCreateInfos);
-    check_field_relative_pointer(request_blob, create_info_offset, &VkDeviceCreateInfo::pQueueCreateInfos, queue_info_offset);
+    const auto queue_info_offset = field_relative_target_offset(request_stream, create_info_offset, &VkDeviceCreateInfo::pQueueCreateInfos);
+    check_field_relative_pointer(request_stream, create_info_offset, &VkDeviceCreateInfo::pQueueCreateInfos, queue_info_offset);
 
-    auto                        command_bytes = command_view(request_blob, packet);
+    auto                        command_bytes = command_view(request_stream, packet);
     const Command::Parameters * actual        = nullptr;
     REQUIRE(Command::unpack_parameters(command_bytes, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -116,8 +116,8 @@ Blob handle_flush(Blob & request_blob) {
     CHECK(priorities[0] == expected.queue_priorities[0]);
     CHECK(priorities[1] == expected.queue_priorities[1]);
 
-    check_relative_string_array(request_blob, 0, packed_create_info->ppEnabledLayerNames, {"VK_LAYER_VKFWD_device"});
-    check_relative_string_array(request_blob, 0, packed_create_info->ppEnabledExtensionNames, {"VK_KHR_swapchain", "VK_EXT_private_data"});
+    check_relative_string_array(request_stream, 0, packed_create_info->ppEnabledLayerNames, {"VK_LAYER_VKFWD_device"});
+    check_relative_string_array(request_stream, 0, packed_create_info->ppEnabledExtensionNames, {"VK_KHR_swapchain", "VK_EXT_private_data"});
 
     REQUIRE(packed_create_info->pEnabledFeatures != nullptr);
     const auto & packed_features = *packed_create_info->pEnabledFeatures;
@@ -126,10 +126,10 @@ Blob handle_flush(Blob & request_blob) {
 
     CHECK(actual->pAllocator == nullptr);
 
-    Blob              response_blob;
+    CommandStream     response_stream;
     Command::Response response {.return_value = expected.response_result, .pDevice = &expected.response_device};
-    REQUIRE(Command::pack_response(response_blob, response) == VK_SUCCESS);
-    return response_blob;
+    REQUIRE(Command::pack_response(response_stream, response) == VK_SUCCESS);
+    return response_stream;
 }
 
 } // namespace

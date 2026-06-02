@@ -15,7 +15,7 @@ namespace vkfwd::generated::structure::test {
 namespace {
 
 TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves priority arrays") {
-    Blob                    blob;
+    CommandStream           stream;
     PackedStruct            packed;
     std::array<float, 2>    priorities {0.25f, 0.75f};
     VkDeviceQueueCreateInfo value {
@@ -27,9 +27,9 @@ TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves pri
         .pQueuePriorities = priorities.data(),
     };
 
-    REQUIRE(pack_VkDeviceQueueCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceQueueCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceQueueCreateInfo * actual    = nullptr;
-    Blob                            flattened = blob.flatten();
+    CommandStream                   flattened = stream.flatten();
     auto                            view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceQueueCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -44,7 +44,7 @@ TEST_CASE("VkDeviceQueueCreateInfo generated structure pack/unpack preserves pri
 }
 
 TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested queue info, names, and features") {
-    Blob                    blob;
+    CommandStream           stream;
     PackedStruct            packed;
     std::array<float, 2>    priorities {0.5f, 1.0f};
     VkDeviceQueueCreateInfo queue {
@@ -73,9 +73,9 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
         .pEnabledFeatures        = &features,
     };
 
-    REQUIRE(pack_VkDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceCreateInfo * actual    = nullptr;
-    Blob                       flattened = blob.flatten();
+    CommandStream              flattened = stream.flatten();
     auto                       view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -106,7 +106,7 @@ TEST_CASE("VkDeviceCreateInfo generated structure pack/unpack preserves nested q
 }
 
 TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserves physical device arrays") {
-    Blob                            blob;
+    CommandStream                   stream;
     PackedStruct                    packed;
     std::array<VkPhysicalDevice, 2> devices {
         test_handle<VkPhysicalDevice>(0x101),
@@ -119,9 +119,9 @@ TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserv
         .pPhysicalDevices    = devices.data(),
     };
 
-    REQUIRE(pack_VkDeviceGroupDeviceCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceGroupDeviceCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceGroupDeviceCreateInfo * actual    = nullptr;
-    Blob                                  flattened = blob.flatten();
+    CommandStream                         flattened = stream.flatten();
     auto                                  view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceGroupDeviceCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);
@@ -135,7 +135,7 @@ TEST_CASE("VkDeviceGroupDeviceCreateInfo generated structure pack/unpack preserv
 }
 
 TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack preserves global priority") {
-    Blob                                  blob;
+    CommandStream                         stream;
     PackedStruct                          packed;
     VkDeviceQueueGlobalPriorityCreateInfo value {
         .sType          = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO,
@@ -143,9 +143,9 @@ TEST_CASE("VkDeviceQueueGlobalPriorityCreateInfo generated structure pack/unpack
         .globalPriority = VK_QUEUE_GLOBAL_PRIORITY_HIGH,
     };
 
-    REQUIRE(pack_VkDeviceQueueGlobalPriorityCreateInfo(&value, blob, packed) == VK_SUCCESS);
+    REQUIRE(pack_VkDeviceQueueGlobalPriorityCreateInfo(&value, stream, packed) == VK_SUCCESS);
     const VkDeviceQueueGlobalPriorityCreateInfo * actual    = nullptr;
-    Blob                                          flattened = blob.flatten();
+    CommandStream                                 flattened = stream.flatten();
     auto                                          view      = view_from(flattened, packed.offset);
     REQUIRE(unpack_VkDeviceQueueGlobalPriorityCreateInfo(view, &actual) == VK_SUCCESS);
     REQUIRE(actual != nullptr);

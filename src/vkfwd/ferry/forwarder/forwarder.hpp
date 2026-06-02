@@ -1,6 +1,6 @@
 #pragma once
 
-#include "blob.hpp"
+#include "command_stream.hpp"
 #include "transport_session.hpp"
 
 #include <vulkan/vulkan.h>
@@ -25,23 +25,23 @@ public:
     // transport objects.
     static void set_transport_creator(TransportCreator creator);
 
-    Blob & request_blob() {
-        if (request_blob_.size() == 0) { begin_request_stream(); }
-        return request_blob_;
+    CommandStream & request_stream() {
+        if (request_stream_.size() == 0) { begin_request_stream(); }
+        return request_stream_;
     }
 
-    /// Flush the accumulated request blob to the transport session, then reset
-    /// it with the same source-thread prefix. Returns the receiver response blob.
-    Blob flush();
+    /// Flush the accumulated request stream to the transport session, then reset
+    /// it with the same source-thread prefix. Returns the receiver response stream.
+    CommandStream flush();
 
 private:
     Forwarder();
     void begin_request_stream();
 
-    // The Forwarder itself is thread-local, so this blob is already per-thread
+    // The Forwarder itself is thread-local, so this stream is already per-thread
     // state. Deferrable commands append here until a synchronous command flushes
     // it through the shared transport session.
-    Blob request_blob_;
+    CommandStream request_stream_;
 
     std::shared_ptr<TransportSession> transport_;
 

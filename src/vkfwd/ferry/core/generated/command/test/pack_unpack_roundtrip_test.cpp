@@ -1,4 +1,4 @@
-#include "blob.hpp"
+#include "command_stream.hpp"
 #include "generated/command/vkCreateDevice.hpp"
 #include "generated/command/vkCreateInstance.hpp"
 #include "generated/command/vkDestroyDevice.hpp"
@@ -27,13 +27,9 @@ bool points_into(SafeArrayView<std::uint8_t> & view, Pointer pointer) {
     return target >= begin && target < begin + view.size();
 }
 
-SafeArrayView<std::uint8_t> full_view(Blob & blob) {
-    return blob.at(0, blob.size());
-}
+SafeArrayView<std::uint8_t> full_view(CommandStream & stream) { return stream.at(0, stream.size()); }
 
-SafeArrayView<std::uint8_t> tail_view(Blob & blob, std::size_t offset) {
-    return blob.at(offset, blob.size() - offset);
-}
+SafeArrayView<std::uint8_t> tail_view(CommandStream & stream, std::size_t offset) { return stream.at(offset, stream.size() - offset); }
 
 template<class T>
 constexpr std::size_t command_payload_offset() {
@@ -42,8 +38,8 @@ constexpr std::size_t command_payload_offset() {
 }
 
 template<class T>
-const T * packed_command_payload(Blob & blob) {
-    const auto view = blob.at(command_payload_offset<T>(), sizeof(T));
+const T * packed_command_payload(CommandStream & stream) {
+    const auto view = stream.at(command_payload_offset<T>(), sizeof(T));
     REQUIRE(!view.empty());
     return reinterpret_cast<const T *>(view.address(0));
 }
@@ -66,16 +62,16 @@ void check_array(const T * actual, std::initializer_list<T> expected) {
 
 inline void * VKAPI_PTR test_allocation(void *, std::size_t, std::size_t, VkSystemAllocationScope) { return nullptr; }
 inline void * VKAPI_PTR test_reallocation(void *, void *, std::size_t, std::size_t, VkSystemAllocationScope) { return nullptr; }
-inline void VKAPI_PTR test_free(void *, void *) {}
-inline void VKAPI_PTR test_internal_allocation(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {}
-inline void VKAPI_PTR test_internal_free(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {}
+inline void VKAPI_PTR   test_free(void *, void *) {}
+inline void VKAPI_PTR   test_internal_allocation(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {}
+inline void VKAPI_PTR   test_internal_free(void *, std::size_t, VkInternalAllocationType, VkSystemAllocationScope) {}
 
 VkAllocationCallbacks test_allocator(void * user_data) {
     return VkAllocationCallbacks {
-        .pUserData            = user_data,
-        .pfnAllocation        = test_allocation,
-        .pfnReallocation      = test_reallocation,
-        .pfnFree              = test_free,
+        .pUserData             = user_data,
+        .pfnAllocation         = test_allocation,
+        .pfnReallocation       = test_reallocation,
+        .pfnFree               = test_free,
         .pfnInternalAllocation = test_internal_allocation,
         .pfnInternalFree       = test_internal_free,
     };
@@ -111,15 +107,15 @@ VkDeviceQueueCreateInfo make_queue_info(const float * priorities, std::uint32_t 
 
 } // namespace
 
-TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs every pointer into flattened blob") {
+TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs every pointer into flattened stream") {
     using Command = commands::vkCreateInstance::Command;
-    Blob blob(64);
-    int allocator_user_data = 0x31;
-    auto allocator = test_allocator(&allocator_user_data);
-    auto app = make_application_info();
+    CommandStream               stream(64);
+    int                         allocator_user_data = 0x31;
+    auto                        allocator           = test_allocator(&allocator_user_data);
+    auto                        app                 = make_application_info();
     std::array<const char *, 1> layers {"VK_LAYER_VKFWD_instance"};
     std::array<const char *, 1> extensions {"VK_KHR_surface"};
-    VkInstanceCreateInfo create_info {
+    VkInstanceCreateInfo        create_info {
         .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext                   = nullptr,
         .flags                   = VkInstanceCreateFlags {0x4},
@@ -129,18 +125,18 @@ TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs
         .enabledExtensionCount   = static_cast<std::uint32_t>(extensions.size()),
         .ppEnabledExtensionNames = extensions.data(),
     };
-    VkInstance source_instance = test_handle<VkInstance>(0x404);
+    VkInstance          source_instance = test_handle<VkInstance>(0x404);
     Command::Parameters parameters {
         .pCreateInfo = &create_info,
         .pAllocator  = &allocator,
         .pInstance   = &source_instance,
     };
 
-    REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-    Blob flattened = blob.flatten();
-    const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+    REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+    CommandStream flattened         = stream.flatten();
+    const auto *  packed_parameters = packed_command_payload<Command::Parameters>(flattened);
     CHECK(packed_parameters->pAllocator == nullptr);
-    auto view = full_view(flattened);
+    auto                        view   = full_view(flattened);
     const Command::Parameters * actual = nullptr;
     REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
 
@@ -155,16 +151,16 @@ TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs
     check_string(actual->pCreateInfo->ppEnabledExtensionNames[0], extensions[0]);
 }
 
-TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs every pointer into flattened blob") {
+TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs every pointer into flattened stream") {
     using Command = commands::vkCreateDevice::Command;
-    Blob blob(64);
-    int allocator_user_data = 0x42;
-    auto allocator = test_allocator(&allocator_user_data);
-    std::array<float, 2> priorities {0.25f, 0.75f};
-    auto queue = make_queue_info(priorities.data(), static_cast<std::uint32_t>(priorities.size()));
+    CommandStream               stream(64);
+    int                         allocator_user_data = 0x42;
+    auto                        allocator           = test_allocator(&allocator_user_data);
+    std::array<float, 2>        priorities {0.25f, 0.75f};
+    auto                        queue = make_queue_info(priorities.data(), static_cast<std::uint32_t>(priorities.size()));
     std::array<const char *, 1> layers {"VK_LAYER_VKFWD_device"};
     std::array<const char *, 1> extensions {"VK_KHR_swapchain"};
-    VkPhysicalDeviceFeatures features {};
+    VkPhysicalDeviceFeatures    features {};
     features.robustBufferAccess = VK_TRUE;
     VkDeviceCreateInfo create_info {
         .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -178,7 +174,7 @@ TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs e
         .ppEnabledExtensionNames = extensions.data(),
         .pEnabledFeatures        = &features,
     };
-    VkDevice source_device = test_handle<VkDevice>(0x505);
+    VkDevice            source_device = test_handle<VkDevice>(0x505);
     Command::Parameters parameters {
         .physicalDevice = test_handle<VkPhysicalDevice>(0x303),
         .pCreateInfo    = &create_info,
@@ -186,11 +182,11 @@ TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs e
         .pDevice        = &source_device,
     };
 
-    REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-    Blob flattened = blob.flatten();
-    const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+    REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+    CommandStream flattened         = stream.flatten();
+    const auto *  packed_parameters = packed_command_payload<Command::Parameters>(flattened);
     CHECK(packed_parameters->pAllocator == nullptr);
-    auto view = full_view(flattened);
+    auto                        view   = full_view(flattened);
     const Command::Parameters * actual = nullptr;
     REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
 
@@ -205,21 +201,21 @@ TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs e
 }
 
 TEST_CASE("generated destroy command parameter pack flatten unpack drops allocator callbacks") {
-    int allocator_user_data = 0x51;
-    auto allocator = test_allocator(&allocator_user_data);
+    int  allocator_user_data = 0x51;
+    auto allocator           = test_allocator(&allocator_user_data);
 
     {
         using Command = commands::vkDestroyInstance::Command;
-        Blob blob(64);
+        CommandStream       stream(64);
         Command::Parameters parameters {
             .instance   = test_handle<VkInstance>(0x601),
             .pAllocator = &allocator,
         };
-        REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
-        const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+        REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+        CommandStream flattened         = stream.flatten();
+        const auto *  packed_parameters = packed_command_payload<Command::Parameters>(flattened);
         CHECK(packed_parameters->pAllocator == nullptr);
-        auto view = full_view(flattened);
+        auto                        view   = full_view(flattened);
         const Command::Parameters * actual = nullptr;
         REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
         REQUIRE(points_into(view, actual));
@@ -229,16 +225,16 @@ TEST_CASE("generated destroy command parameter pack flatten unpack drops allocat
 
     {
         using Command = commands::vkDestroyDevice::Command;
-        Blob blob(64);
+        CommandStream       stream(64);
         Command::Parameters parameters {
             .device     = test_handle<VkDevice>(0x602),
             .pAllocator = &allocator,
         };
-        REQUIRE(Command::pack_parameters(blob, parameters) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
-        const auto * packed_parameters = packed_command_payload<Command::Parameters>(flattened);
+        REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+        CommandStream flattened         = stream.flatten();
+        const auto *  packed_parameters = packed_command_payload<Command::Parameters>(flattened);
         CHECK(packed_parameters->pAllocator == nullptr);
-        auto view = full_view(flattened);
+        auto                        view   = full_view(flattened);
         const Command::Parameters * actual = nullptr;
         REQUIRE(Command::unpack_parameters(view, &actual) == VK_SUCCESS);
         REQUIRE(points_into(view, actual));
@@ -247,19 +243,19 @@ TEST_CASE("generated destroy command parameter pack flatten unpack drops allocat
     }
 }
 
-TEST_CASE("generated create command responses pack flatten unpack reconstruct output pointers into flattened blob") {
+TEST_CASE("generated create command responses pack flatten unpack reconstruct output pointers into flattened stream") {
     {
         using Command = commands::vkCreateInstance::Command;
-        Blob blob(64);
-        VkInstance instance = test_handle<VkInstance>(0x701);
+        CommandStream     stream(64);
+        VkInstance        instance = test_handle<VkInstance>(0x701);
         Command::Response response {
             .return_value = VK_SUCCESS,
             .pInstance    = &instance,
         };
-        REQUIRE(Command::pack_response(blob, response) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
-        auto view = full_view(flattened);
-        const Command::Response * actual = nullptr;
+        REQUIRE(Command::pack_response(stream, response) == VK_SUCCESS);
+        CommandStream             flattened = stream.flatten();
+        auto                      view      = full_view(flattened);
+        const Command::Response * actual    = nullptr;
         REQUIRE(Command::unpack_response(view, &actual) == VK_SUCCESS);
         REQUIRE(points_into(view, actual));
         REQUIRE(points_into(view, actual->pInstance));
@@ -268,16 +264,16 @@ TEST_CASE("generated create command responses pack flatten unpack reconstruct ou
 
     {
         using Command = commands::vkCreateDevice::Command;
-        Blob blob(64);
-        VkDevice device = test_handle<VkDevice>(0x702);
+        CommandStream     stream(64);
+        VkDevice          device = test_handle<VkDevice>(0x702);
         Command::Response response {
             .return_value = VK_SUCCESS,
             .pDevice      = &device,
         };
-        REQUIRE(Command::pack_response(blob, response) == VK_SUCCESS);
-        Blob flattened = blob.flatten();
-        auto view = full_view(flattened);
-        const Command::Response * actual = nullptr;
+        REQUIRE(Command::pack_response(stream, response) == VK_SUCCESS);
+        CommandStream             flattened = stream.flatten();
+        auto                      view      = full_view(flattened);
+        const Command::Response * actual    = nullptr;
         REQUIRE(Command::unpack_response(view, &actual) == VK_SUCCESS);
         REQUIRE(points_into(view, actual));
         REQUIRE(points_into(view, actual->pDevice));

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "logging.hpp"
+#include "protocol.hpp"
 
 #include <algorithm>
 #include <concepts>
@@ -31,23 +32,24 @@ public:
     T * end() const { return ptr_ ? ptr_ + count_ : nullptr; }
 
     // Views intentionally expose element access through at() instead of a raw
-    // base pointer. Callers that need to reinterpret a complete Blob range must
-    // first hold a non-empty view and then take the address of a checked element.
+    // base pointer. Callers that need to reinterpret a complete CommandStream
+    // range must first hold a non-empty view and then take the address of a
+    // checked element.
     T & at(std::size_t index) const {
         static std::remove_const_t<T> dummy {};
         if (!ptr_ || index >= count_) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd blob view access out of range, index={}, count={}", index, count_);
+            VKFWD_LOG_ERROR("vkfwd command stream view access out of range, index={}, count={}", index, count_);
             return dummy;
         }
         return ptr_[index];
     }
 
     // Returns the address of an element only after the same bounds check used
-    // by at(). This is the preferred way to hand a blob-backed object to code
+    // by at(). This is the preferred way to hand a stream-backed object to code
     // that needs pointer syntax without copying the stored bytes.
     T * address(std::size_t index = 0) const {
         if (!ptr_ || index >= count_) [[unlikely]] {
-            VKFWD_LOG_ERROR("vkfwd blob view address out of range, index={}, count={}", index, count_);
+            VKFWD_LOG_ERROR("vkfwd command stream view address out of range, index={}, count={}", index, count_);
             return nullptr;
         }
         return ptr_ + index;
@@ -89,48 +91,50 @@ private:
     T *         ptr_   = nullptr;
 };
 
-// A growable logical byte stream that owns copied payload bytes in stable
-// chunks. Offsets returned by append/grow are relative to the beginning of this
-// logical stream, not to a particular chunk allocation. That lets command and
-// structure packers replace process-local pointers with moveable offsets while
-// still allowing Blob to split storage internally.
-class Blob {
+// A growable command byte stream that owns copied payload bytes in stable
+// chunks. Shallow command/structure payloads and sized arrays are allocated as
+// one contiguous range; pointer targets may move to later chunks and encode
+// field-relative offsets through any explicit gap records in the stream.
+class CommandStream {
 public:
-    Blob();
-    explicit Blob(std::size_t chunk_size);
-    Blob(const Blob &)                 = delete;
-    Blob & operator=(const Blob &)     = delete;
-    Blob(Blob &&) noexcept             = default;
-    Blob & operator=(Blob &&) noexcept = default;
+    static constexpr std::size_t kBaseAlignment = 128;
+
+    CommandStream();
+    explicit CommandStream(std::size_t chunk_size);
+    CommandStream(const CommandStream &)                 = delete;
+    CommandStream & operator=(const CommandStream &)     = delete;
+    CommandStream(CommandStream &&) noexcept             = default;
+    CommandStream & operator=(CommandStream &&) noexcept = default;
 
     void        reset();
     std::size_t size() const { return size_; }
     // Reports whether the current logical byte stream lives in a single backing
-    // allocation. Consumers may use this to decide whether one whole-blob range
+    // allocation. Consumers may use this to decide whether one whole-stream range
     // can be inspected without stitching chunks together; it is not an allocation
     // policy knob.
     bool is_contiguous() const { return chunks_.size() <= 1; }
 
     // Copies the current logical stream into one backing allocation. Transport
     // implementations use this when their framing layer needs a single byte span
-    // but command packers are still free to grow this blob in multiple chunks.
-    Blob flatten() const;
+    // but command packers are still free to grow this stream in multiple chunks.
+    CommandStream flatten() const;
 
-    // Grows the arena and returns a bounded view over exactly the new allocation.
-    // If requested, offset receives the logical Blob offset after alignment
-    // padding is applied. The returned memory is uninitialized so callers can
-    // avoid redundant clears when immediately serializing Vulkan payload bytes.
+    // Grows the arena and returns a bounded view over the newly appended object
+    // bytes. Alignment is a logical stream rule as well as a physical allocation
+    // rule: the returned offset is aligned so flattening into another
+    // kBaseAlignment-backed CommandStream preserves typed pointer validity.
     SafeArrayView<std::uint8_t> grow(std::size_t size, std::size_t alignment = 1, std::size_t * offset = nullptr);
 
     template<TriviallyCopyable T>
-    SafeArrayView<T> grow(std::size_t count, std::size_t alignment = 1, std::size_t * offset = nullptr) {
+    SafeArrayView<T> grow(std::size_t count, std::size_t alignment = alignof(T), std::size_t * offset = nullptr) {
+        static_assert(kBaseAlignment % alignof(T) == 0, "CommandStream base alignment must satisfy every typed payload alignment");
         if (count > std::numeric_limits<std::size_t>::max() / sizeof(T)) { throw std::bad_array_new_length(); }
-        return grow(count * sizeof(T), std::max(alignment, alignof(T)), offset).template cast<T>();
+        return grow(count * sizeof(T), alignment, offset).template cast<T>();
     }
 
     template<TriviallyCopyable T>
     T & grow() {
-        auto v = grow<T>(1, alignof(T));
+        auto v = grow<T>(1);
         return v.at(0);
     }
 
@@ -139,36 +143,44 @@ public:
 
     template<TriviallyCopyable T>
     SafeArrayView<const T> at(std::size_t offsetInBytes, std::size_t sizeInBytes = sizeof(T)) const {
-        // The typed accessor still uses byte offsets because packed command and
-        // structure payloads may place T at a command-relative byte position
-        // that is not a multiple of sizeof(T). The returned typed view only
-        // covers complete objects; callers must request enough bytes for T.
-        if (sizeInBytes < sizeof(T) || (sizeInBytes % sizeof(T)) != 0) { return {}; }
+        // Typed access is only valid at naturally aligned stream offsets. Gap
+        // records or other unaligned protocol bytes must be read as bytes and
+        // copied into a local object before interpretation.
+        constexpr size_t align_of_t = alignof(T);
+        constexpr size_t size_of_t  = sizeof(T);
+        if (!is_aligned(offsetInBytes, align_of_t) || sizeInBytes < size_of_t || (sizeInBytes % size_of_t) != 0) { return {}; }
         return at(offsetInBytes, sizeInBytes).cast<const T>();
     }
 
     template<TriviallyCopyable T>
     SafeArrayView<T> at(std::size_t offsetInBytes, std::size_t sizeInBytes = sizeof(T)) {
         // Mutable unpackers repair pointer fields in-place, but they still have
-        // to prove that the entire typed payload is backed by one Blob chunk
+        // to prove that the entire typed payload is backed by one CommandStream chunk
         // before exposing a writable view.
-        if (sizeInBytes < sizeof(T) || (sizeInBytes % sizeof(T)) != 0) { return {}; }
+        constexpr size_t align_of_t = alignof(T);
+        constexpr size_t size_of_t  = sizeof(T);
+        if (!is_aligned(offsetInBytes, align_of_t) || sizeInBytes < size_of_t || (sizeInBytes % size_of_t) != 0) { return {}; }
         return at(offsetInBytes, sizeInBytes).cast<T>();
     }
 
 private:
     struct Chunk {
-        std::unique_ptr<std::byte[]> data;
-        std::size_t                  logical_begin   = 0;
-        std::size_t                  capacity        = 0;
-        std::size_t                  allocation_size = 0;
-        std::size_t                  used            = 0;
-        std::size_t                  alignment       = 1;
+        struct AlignedDeleter {
+            void operator()(std::byte * ptr) const noexcept;
+        };
+
+        std::unique_ptr<std::byte[], AlignedDeleter> data;
+        std::size_t                                  logical_begin = 0;
+        std::size_t                                  capacity      = 0;
+        std::size_t                                  used          = 0;
     };
 
     static std::size_t normalize_alignment(std::size_t alignment);
-    static Chunk       allocate_chunk(std::size_t capacity, std::size_t alignment);
-    Chunk &            ensure_chunk(std::size_t size, std::size_t alignment);
+    static std::size_t align_up(std::size_t value, std::size_t alignment);
+    static bool        is_aligned(std::size_t value, std::size_t alignment) { return (value % alignment) == 0; }
+    static Chunk       allocate_chunk(std::size_t capacity);
+    Chunk &            ensure_chunk(std::size_t logical_offset, std::size_t size);
+    void               close_current_chunk();
 
     std::size_t        chunk_size_ = 0;
     std::size_t        size_       = 0;

@@ -8,7 +8,7 @@ on both sides of the forwarding boundary.
 
 - Protocol metadata in `protocol.hpp`: stream magic, schema version, Vulkan API
   version negotiation, command chunk headers, and command chunk ranges.
-- Blob storage in `blob.hpp` and `blob.cpp`: grow-only copied payload storage
+- CommandStream storage in `command_stream.hpp` and `stream.cpp`: grow-only copied payload storage
   with stable logical offsets and bounded views.
 - Transport contracts in `transport_session.hpp` and `receiver_session.hpp`:
   session-scoped handshake and source-thread-token routing for accumulated
@@ -22,7 +22,7 @@ on both sides of the forwarding boundary.
 
 ## Serialization Model
 
-Command and structure serializers copy Vulkan inputs into a `Blob`. Pointers in
+Command and structure serializers copy Vulkan inputs into a `CommandStream`. Pointers in
 packed payloads are not source-process addresses after packing:
 
 - Every non-null pointer slot uses a field-relative byte offset: the encoded
@@ -33,26 +33,26 @@ packed payloads are not source-process addresses after packing:
 Unpack functions take a mutable `SafeArrayView<std::uint8_t>` that starts at the
 serialized command chunk or structure record. They validate that view, repair
 encoded pointer fields in place by adding each offset to its own field address,
-and return a pointer into the same blob-backed storage.
+and return a pointer into the same stream-backed storage.
 
-## Blob Invariants
+## CommandStream Invariants
 
-`Blob` owns copied bytes in stable chunks. Logical offsets are measured from the
-beginning of the blob stream, not from a particular chunk allocation. Generated
+`CommandStream` owns copied bytes in stable chunks. Logical offsets are measured from the
+beginning of the stream stream, not from a particular chunk allocation. Generated
 code may store those offsets in pointer-typed Vulkan fields as an intermediate
 wire representation.
 
-When changing `Blob`, preserve these properties:
+When changing `CommandStream`, preserve these properties:
 
 - `grow()` returns an aligned, bounded view over exactly the newly allocated
-  range; callers that need the logical Blob offset request it from `grow()`
+  range; callers that need the logical CommandStream offset request it from `grow()`
   separately because `SafeArrayView` is only an accessor.
 - `at()` returns a bounded view only when the entire requested range is
   present in one chunk.
 - `is_contiguous()` reports whether the current logical stream is backed by a
-  single allocation; use it for whole-blob inspection decisions, not allocation
+  single allocation; use it for whole-stream inspection decisions, not allocation
   tuning.
-- `flatten()` returns a new Blob whose logical stream is copied into one backing
+- `flatten()` returns a new CommandStream whose logical stream is copied into one backing
   allocation so transports that need a contiguous byte span do not have to know
   about chunk internals.
 - `SafeArrayView` callers access storage through `at()`; code that needs a
@@ -79,13 +79,13 @@ test is specifically about structure `pNext` behavior.
 
 `TransportSession` owns compatibility negotiation and the synchronous forwarding
 boundary. `TransportSession::send_accumulated_api_calls()` sends one source
-thread's accumulated request stream and returns the response blob for the command
-that forced the flush. The request blob begins with a 64-bit source-thread token,
+thread's accumulated request stream and returns the response stream for the command
+that forced the flush. The request stream begins with a 64-bit source-thread token,
 then contains zero or more deferrable commands followed by the command that needs
 a response.
 
 The transportation layer's goal is to carry already-packed vkfwd command bytes
-from a source thread to a receiver replay context, then return the response blob
+from a source thread to a receiver replay context, then return the response stream
 for the command that forced the flush. It should let the rest of ferry treat
 local IPC, remote sockets, in-process tests, and future transports as the same
 contract.
@@ -96,18 +96,24 @@ Required transportation-layer behavior:
   any command bytes are exchanged.
 - Preserve the leading source-thread token so deferrable command ordering remains
   per thread and does not require locks in `Forwarder`.
-- Preserve byte-for-byte blob contents and command-chunk order inside each
-  accumulated stream.
+- Preserve byte-for-byte stream contents and command-chunk order inside each
+  accumulated stream. Alignment padding between chunks is serialized as zero
+  bytes and skipped by receiver-side chunk discovery; command ids must still be
+  read from a valid `CommandChunkHeader`, not guessed from padding.
 - Correlate every synchronous `send_accumulated_api_calls()` with exactly one
-  returned response blob for the last response-bearing command in that flushed
+  returned response stream for the last response-bearing command in that flushed
   stream.
+- Return response bytes in a form that generated forwarder code can inspect as
+  one contiguous serialized command response. Test transports flatten receiver
+  blobs at this boundary because receiver-side packing may use multiple arena
+  chunks for large output arrays.
 - Keep source-thread identity stable enough for receiver-side routing, logging,
   and future diagnostics.
 - Own framing, multiplexing, flow control, retry/shutdown policy, and any
   transport-specific backpressure without leaking those details into generated
   command code.
 - Define clear ownership of request and response blobs: callers retain the
-  request blob object, while transport implementations may copy, move from, or
+  request stream object, while transport implementations may copy, move from, or
   synchronously inspect its bytes only within the documented
   `send_accumulated_api_calls()` contract.
 
@@ -160,7 +166,7 @@ compatibility on every Vulkan call.
 ### Source-Thread Stream Lifecycle
 
 Each source application thread owns a `thread_local Forwarder`, and each
-`Forwarder` prefixes its request blob with one stable 64-bit source-thread token.
+`Forwarder` prefixes its request stream with one stable 64-bit source-thread token.
 `Forwarder` must not know about session pooling, multiplexing, sockets, QUIC
 connections, or USB details.
 
@@ -170,10 +176,10 @@ Forwarder-side stream flow:
 2. Its configured transport creator obtains a good shared session, creating and
    handshaking one if needed.
 3. The forwarder writes its source-thread token as the first 64 bits of the
-   request blob.
-4. `Forwarder::flush()` sends this thread's packed request blob through
+   request stream.
+4. `Forwarder::flush()` sends this thread's packed request stream through
    `TransportSession::send_accumulated_api_calls()` and receives the response
-   blob.
+   stream.
 
 Receiver-side stream flow:
 
@@ -239,7 +245,7 @@ receiver-local allocator policy is added.
   pointer-owned payload such as strings, arrays, or nested structs after
   flattening and unpacking. These tests protect the receiver-side invariant that
   every unpacked pointer resolves to locally valid storage in the flattened
-  blob; command tests add the same coverage for command parameters, responses,
+  stream; command tests add the same coverage for command parameters, responses,
   and output handles passed to host Vulkan entry points.
 - Negative serialization tests should assert failure codes and, where relevant,
   that output pointers are reset to null.

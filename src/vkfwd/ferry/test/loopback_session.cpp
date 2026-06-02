@@ -11,7 +11,7 @@ class LoopbackReceiverSession final : public ReceiverSession {
 public:
     void register_api_responder_factory(ApiResponderFactory factory) override { factory_ = std::move(factory); }
 
-    Blob receive_accumulated_api_calls(const Blob & request_blob) {
+    CommandStream receive_accumulated_api_calls(const CommandStream & request_stream) {
         if (!responder_) {
             if (!factory_) {
                 VKFWD_LOG_ERROR("vkfwd loopback receiver has no API responder factory");
@@ -23,7 +23,7 @@ public:
             VKFWD_LOG_ERROR("vkfwd loopback receiver factory returned no API responder");
             return {};
         }
-        return responder_->receive_accumulated_api_calls(request_blob);
+        return responder_->receive_accumulated_api_calls(request_stream);
     }
 
 private:
@@ -35,12 +35,15 @@ class LoopbackTransportSession final : public TransportSession {
 public:
     explicit LoopbackTransportSession(LoopbackReceiverSession & receiver): receiver_(receiver) {}
 
-    Blob send_accumulated_api_calls(Blob & request) override {
+    CommandStream send_accumulated_api_calls(CommandStream & request) override {
         // The receiver side should observe transport-owned contiguous bytes, not
         // the forwarder's mutable arena chunks. Flattening here makes loopback
         // exercise the same request lifetime boundary as a real backend.
-        Blob flattened = request.flatten();
-        return receiver_.receive_accumulated_api_calls(flattened);
+        CommandStream flattened_request = request.flatten();
+        CommandStream receiver_response = receiver_.receive_accumulated_api_calls(flattened_request);
+        // Loopback is still a transport boundary: both directions should expose
+        // contiguous serialized bytes, not the sender's grow-only arena chunks.
+        return receiver_response.flatten();
     }
 
 private:

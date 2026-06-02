@@ -26,11 +26,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_entry(VkPhysicalDevice physicalDev
 
     auto &              forwarder = ::vkfwd::Forwarder::instance();
     Command::Parameters parameters {.physicalDevice = physicalDevice, .pCreateInfo = pCreateInfo, .pAllocator = pAllocator, .pDevice = pDevice};
-    VkResult            status = Command::pack_parameters(forwarder.request_blob(), parameters);
+    VkResult            status = Command::pack_parameters(forwarder.request_stream(), parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
-    Blob                      response_blob   = forwarder.flush();
-    auto                      response_view   = response_blob.at(0, response_blob.size());
+    CommandStream             response_stream = forwarder.flush();
+    auto                      response_view   = response_stream.at(0, response_stream.size());
     const Command::Response * packed_response = nullptr;
     status                                    = Command::unpack_response(response_view, &packed_response);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
@@ -40,8 +40,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_entry(VkPhysicalDevice physicalDev
 
     if (pDevice && response.pDevice && response.pDevice != pDevice) { *pDevice = *response.pDevice; }
 
-    // Synchronous forwarding flushes this thread's pending request blob and
-    // returns a fresh response blob. Generated code only decodes that blob here;
+    // Synchronous forwarding flushes this thread's pending request stream and
+    // returns a fresh response stream. Generated code only decodes that stream here;
     // transport implementations own delivery, replay, and handle mapping policy.
 
     return response.return_value;

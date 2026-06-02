@@ -3,10 +3,10 @@
     "api": "vulkan,vulkansc",
     "coverage_state": "unclassified",
     "creates_handles": [],
-    "dispatch_parameter": null,
+    "dispatch_parameter": "instance",
     "errorcodes": [],
     "id": 748278256,
-    "level": "global",
+    "level": "instance",
     "name": "vkDestroyInstance",
     "parameters": [
       {
