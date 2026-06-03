@@ -146,7 +146,7 @@ void entry(const Options & options) {
     device.waitIdle();
 }
 
-}
+} // namespace vkfwd::sample::triangle
 
 #ifndef UNIT_TEST
 int main() { vkfwd::sample::triangle::entry({}); }

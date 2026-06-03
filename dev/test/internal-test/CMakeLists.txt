@@ -33,9 +33,9 @@ add_executable(vkfwd_internal_tests
 
 target_link_libraries(vkfwd_internal_tests
   PRIVATE
-    vkfwd_receiver
-    vkfwd_forwarder_static
-    vkfwd_core
+    vkfwd_ferry_receiver
+    vkfwd_ferry_forwarder_static
+    vkfwd_ferry_core
     Catch2::Catch2WithMain)
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/src/third_party/rapid-vulkan/inc/rapid-vulkan/rapid-vulkan.cpp")
