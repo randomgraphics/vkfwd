@@ -127,30 +127,29 @@ VkResult pack_output_array(Pointer value, std::uint32_t count, CommandStream & s
 }
 
 template<class T>
-VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk,
-                              T *& packed_payload) {
+VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std::uint32_t revision, const T & payload, Range & range, T *& packed_payload) {
     constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
     constexpr std::size_t kCommandSize   = kPayloadOffset + sizeof(T);
 
-    // The chunk is one contiguous serialized range. Its fixed header is
-    // command id, chunk size including the header, and command revision; payload
-    // starts at an aligned offset after those fields.
+    // The chunk is one contiguous serialized range. Its fixed header is command
+    // id, chunk size including the header, and command revision; payload starts
+    // at an aligned offset after those fields.
     if constexpr (kCommandSize > std::numeric_limits<std::uint32_t>::max()) {
         VKFWD_LOG_ERROR("vkfwd ferry command pack failed: command chunk is too large, command_id={}, command_size={}", static_cast<std::uint32_t>(command_id),
                         kCommandSize);
         return VK_ERROR_UNKNOWN;
     }
 
-    chunk          = CommandChunk {.command_offset = 0, .command_size = 0};
+    range          = Range {.offset = 0, .size = 0};
     packed_payload = nullptr;
 
     CommandChunkHeader header {};
     try {
-        std::size_t command_offset = 0;
-        auto        destination    = stream.grow<std::uint8_t>(kCommandSize, CommandStream::kBaseAlignment, &command_offset);
-        header.command_id          = static_cast<std::uint32_t>(command_id);
-        header.size                = static_cast<std::uint32_t>(kCommandSize);
-        header.command_revision    = revision;
+        std::size_t offset      = 0;
+        auto        destination = stream.grow<std::uint8_t>(kCommandSize, CommandStream::kBaseAlignment, &offset);
+        header.command_id       = static_cast<std::uint32_t>(command_id);
+        header.size             = static_cast<std::uint32_t>(kCommandSize);
+        header.command_revision = revision;
 
         if (destination.set(0, sizeof(header), reinterpret_cast<const std::uint8_t *>(&header)) != sizeof(header) ||
             destination.set(kPayloadOffset, sizeof(payload), reinterpret_cast<const std::uint8_t *>(&payload)) != sizeof(payload)) [[unlikely]] {
@@ -158,9 +157,9 @@ VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std:
                             static_cast<std::uint32_t>(command_id), kCommandSize);
             return VK_ERROR_UNKNOWN;
         }
-        chunk.command_offset = command_offset;
-        chunk.command_size   = header.size;
-        packed_payload       = reinterpret_cast<T *>(&destination.at(kPayloadOffset));
+        range.offset   = offset;
+        range.size     = header.size;
+        packed_payload = reinterpret_cast<T *>(&destination.at(kPayloadOffset));
     } catch (const std::bad_alloc &) {
         VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={}, payload_size={}",
                         static_cast<std::uint32_t>(command_id), sizeof(T));
@@ -170,28 +169,27 @@ VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std:
 }
 
 template<class T>
-VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std::uint32_t revision, const T & payload, CommandChunk & chunk) {
+VkResult append_command_chunk(CommandStream & stream, CommandId command_id, std::uint32_t revision, const T & payload, Range & range) {
     T * packed_payload = nullptr;
-    return append_command_chunk(stream, command_id, revision, payload, chunk, packed_payload);
+    return append_command_chunk(stream, command_id, revision, payload, range, packed_payload);
 }
 
-VkResult finalize_command_chunk(CommandStream & stream, CommandChunk & chunk) {
-    const std::size_t command_size = stream.size() - chunk.command_offset;
+VkResult finalize_command_chunk(CommandStream & stream, Range & range) {
+    const std::size_t command_size = stream.size() - range.offset;
     if (command_size > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, command_offset={}, command_size={}", chunk.command_offset,
-                        command_size);
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, offset={}, size={}", range.offset, command_size);
         return VK_ERROR_UNKNOWN;
     }
 
-    auto   header_view = stream.at<CommandChunkHeader>(chunk.command_offset);
+    auto   header_view = stream.at<CommandChunkHeader>(range.offset);
     auto * header      = header_view.address();
     if (!header) [[unlikely]] {
-        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, command_offset={}", chunk.command_offset);
+        VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, offset={}", range.offset);
         return VK_ERROR_UNKNOWN;
     }
 
-    header->size       = static_cast<std::uint32_t>(command_size);
-    chunk.command_size = header->size;
+    header->size = static_cast<std::uint32_t>(command_size);
+    range.size   = header->size;
     return VK_SUCCESS;
 }
 
@@ -223,10 +221,10 @@ VkResult Command::pack_parameters(CommandStream & stream, const Parameters & par
         Hooks::before_pack(hook_parameters);
 
         Parameters * packed_parameters = nullptr;
-        CommandChunk chunk;
-        VkResult     status = append_command_chunk(stream, CommandId::EnumerateInstanceLayerProperties, 1, hook_parameters, chunk, packed_parameters);
+        Range        range;
+        VkResult     status = append_command_chunk(stream, CommandId::EnumerateInstanceLayerProperties, 1, hook_parameters, range, packed_parameters);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
+        const std::size_t payload_offset = range.offset + command_payload_offset<Parameters>();
 
         status = pack_output_pointer(hook_parameters.pPropertyCount, stream, payload_offset + offsetof(Parameters, pPropertyCount),
                                      packed_parameters->pPropertyCount);
@@ -234,7 +232,7 @@ VkResult Command::pack_parameters(CommandStream & stream, const Parameters & par
         status = pack_output_array(hook_parameters.pProperties, hook_parameters.pPropertyCount ? *hook_parameters.pPropertyCount : 0u, stream,
                                    payload_offset + offsetof(Parameters, pProperties), packed_parameters->pProperties);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = finalize_command_chunk(stream, chunk);
+        status = finalize_command_chunk(stream, range);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
         if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(); }
@@ -242,10 +240,10 @@ VkResult Command::pack_parameters(CommandStream & stream, const Parameters & par
     } else {
 
         Parameters * packed_parameters = nullptr;
-        CommandChunk chunk;
-        VkResult     status = append_command_chunk(stream, CommandId::EnumerateInstanceLayerProperties, 1, parameters, chunk, packed_parameters);
+        Range        range;
+        VkResult     status = append_command_chunk(stream, CommandId::EnumerateInstanceLayerProperties, 1, parameters, range, packed_parameters);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
+        const std::size_t payload_offset = range.offset + command_payload_offset<Parameters>();
 
         status =
             pack_output_pointer(parameters.pPropertyCount, stream, payload_offset + offsetof(Parameters, pPropertyCount), packed_parameters->pPropertyCount);
@@ -253,7 +251,7 @@ VkResult Command::pack_parameters(CommandStream & stream, const Parameters & par
         status = pack_output_array(parameters.pProperties, parameters.pPropertyCount ? *parameters.pPropertyCount : 0u, stream,
                                    payload_offset + offsetof(Parameters, pProperties), packed_parameters->pProperties);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
-        status = finalize_command_chunk(stream, chunk);
+        status = finalize_command_chunk(stream, range);
         if (status != VK_SUCCESS) [[unlikely]] { return status; }
 
         if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(); }
@@ -279,18 +277,18 @@ VkResult Command::unpack_parameters(SafeArrayView<std::uint8_t> & view, const Pa
 }
 
 VkResult Command::pack_response(CommandStream & stream, const Response & response) {
-    Response *   packed_response = nullptr;
-    CommandChunk chunk;
-    VkResult     status = append_command_chunk(stream, CommandId::EnumerateInstanceLayerProperties, 1, response, chunk, packed_response);
+    Response * packed_response = nullptr;
+    Range      range;
+    VkResult   status = append_command_chunk(stream, CommandId::EnumerateInstanceLayerProperties, 1, response, range, packed_response);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Response>();
+    const std::size_t payload_offset = range.offset + command_payload_offset<Response>();
 
     status = pack_output_pointer(response.pPropertyCount, stream, payload_offset + offsetof(Response, pPropertyCount), packed_response->pPropertyCount);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     status = pack_output_array(response.pProperties, response.pPropertyCount ? *response.pPropertyCount : 0u, stream,
                                payload_offset + offsetof(Response, pProperties), packed_response->pProperties);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
-    status = finalize_command_chunk(stream, chunk);
+    status = finalize_command_chunk(stream, range);
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     return VK_SUCCESS;
 }

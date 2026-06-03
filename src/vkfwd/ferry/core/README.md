@@ -81,7 +81,7 @@ test is specifically about structure `pNext` behavior.
 boundary. `TransportSession::send_accumulated_api_calls()` sends one source
 thread's accumulated request stream and returns the response stream for the command
 that forced the flush. The request stream begins with a fixed
-`CommandStream::StreamHeader` carrying the stream id, then contains
+`RequestStreamHeader` carrying the stream id, then contains
 zero or more deferrable commands followed by the command that needs a response.
 
 The transportation layer's goal is to carry already-packed vkfwd command bytes
@@ -94,7 +94,7 @@ Required transportation-layer behavior:
 
 - Negotiate `HandshakeRequest` compatibility once per `TransportSession` before
   any command bytes are exchanged.
-- Preserve the leading `CommandStream::StreamHeader` so deferrable command
+- Preserve the leading `RequestStreamHeader` so deferrable command
   ordering remains per thread and does not require locks in `Forwarder`.
 - Preserve byte-for-byte stream contents and command-chunk order inside each
   accumulated stream. Alignment padding between chunks is serialized as zero
@@ -166,7 +166,7 @@ compatibility on every Vulkan call.
 ### Source-Thread Stream Lifecycle
 
 Each source application thread owns a `thread_local Forwarder`, and each
-`Forwarder` prefixes its request stream with one stable `CommandStream::StreamHeader`.
+`Forwarder` prefixes its request stream with one stable `RequestStreamHeader`.
 `Forwarder` must not know about session pooling, multiplexing, sockets, QUIC
 connections, or USB details.
 
@@ -175,8 +175,8 @@ Forwarder-side stream flow:
 1. `Forwarder` is constructed on first Vulkan call from a source thread.
 2. Its configured transport creator obtains a good shared session, creating and
    handshaking one if needed.
-3. The forwarder writes its stream id into the fixed request-stream
-   header.
+3. The forwarder constructs its request stream with the stream id already stored
+   in the fixed request-stream header.
 4. `Forwarder::flush()` sends this thread's packed request stream through
    `TransportSession::send_accumulated_api_calls()` and receives the response
    stream.

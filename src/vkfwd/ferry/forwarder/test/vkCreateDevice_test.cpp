@@ -69,7 +69,7 @@ Scenario & scenario() {
 
 CommandStream handle_flush(CommandStream & request_stream) {
     auto &     expected = scenario();
-    const auto packet   = first_command_chunk(request_stream);
+    const auto packet   = first_command_range(request_stream);
 
     const auto   parameters_offset  = command_payload_blob_offset<Command::Parameters>(packet);
     const auto & raw_parameters     = object_at<Command::Parameters>(request_stream, parameters_offset);

@@ -77,6 +77,9 @@ commands = {
     create_device["command"]["name"]: create_device["command"],
 }
 assert manifest["commands"] == [
+    "vkEnumerateInstanceVersion",
+    "vkEnumerateInstanceLayerProperties",
+    "vkEnumerateInstanceExtensionProperties",
     "vkCreateInstance",
     "vkDestroyInstance",
     "vkCreateDevice",

@@ -36,33 +36,33 @@ public:
     explicit DispatchingApiResponder(receiver::ReplayContext & replay_context): replay_context_(replay_context) {}
 
     CommandStream receive_accumulated_api_calls(const CommandStream & request_stream) override {
-        if (request_stream.size() < sizeof(CommandStream::StreamHeader)) {
-            VKFWD_LOG_ERROR("vkfwd receiver: request stream is missing stream header, size={}", request_stream.size());
-            return {};
-        }
-        const auto header_view = request_stream.at<CommandStream::StreamHeader>(0);
-        const auto header      = header_view.address();
-        if (!header || header->magic != CommandStream::StreamHeader {}.magic || header->revision != CommandStream::StreamHeader {}.revision) {
-            VKFWD_LOG_ERROR("vkfwd receiver: request stream has invalid header");
-            return {};
-        }
-
         CommandStream response_stream;
 
-        std::size_t offset = sizeof(CommandStream::StreamHeader);
+        if (request_stream.size() < sizeof(RequestStreamHeader)) {
+            VKFWD_LOG_ERROR("vkfwd receiver: request stream is missing stream header, size={}", request_stream.size());
+            return response_stream;
+        }
+        const auto header_view = request_stream.at<RequestStreamHeader>(0);
+        const auto header      = header_view.address();
+        if (!header || header->magic != RequestStreamHeader {}.magic || header->revision != RequestStreamHeader {}.revision) {
+            VKFWD_LOG_ERROR("vkfwd receiver: request stream has invalid header");
+            return response_stream;
+        }
+
+        std::size_t offset = sizeof(RequestStreamHeader);
         while (offset < request_stream.size()) {
             while (offset < request_stream.size()) {
                 CommandStreamGapHeader gap {};
                 if (read_gap_header(request_stream, offset, gap)) {
                     if (gap.size < sizeof(CommandStreamGapHeader)) {
                         VKFWD_LOG_ERROR("vkfwd receiver: invalid stream gap size, offset={}, size={}", offset, gap.size);
-                        return {};
+                        return response_stream;
                     }
                     std::size_t next_offset = 0;
                     if (!checked_add(offset, gap.size, next_offset) || next_offset > request_stream.size()) {
                         VKFWD_LOG_ERROR("vkfwd receiver: stream gap exceeds request stream, offset={}, size={}, request_size={}", offset, gap.size,
                                         request_stream.size());
-                        return {};
+                        return response_stream;
                     }
                     offset = next_offset;
                     continue;
@@ -81,28 +81,28 @@ public:
             const auto header      = header_view.address();
             if (!header) {
                 VKFWD_LOG_ERROR("vkfwd receiver: could not read command chunk header, offset={}, request_size={}", offset, request_stream.size());
-                return {};
+                return response_stream;
             }
             if (header->size < sizeof(CommandChunkHeader)) {
                 VKFWD_LOG_ERROR("vkfwd receiver: invalid command chunk size, offset={}, command_id={}, size={}", offset, header->command_id, header->size);
-                return {};
+                return response_stream;
             }
 
             std::size_t next_offset = 0;
             if (!checked_add(offset, header->size, next_offset) || next_offset > request_stream.size()) {
                 VKFWD_LOG_ERROR("vkfwd receiver: command chunk exceeds request stream, offset={}, command_id={}, size={}, request_size={}", offset,
                                 header->command_id, header->size, request_stream.size());
-                return {};
+                return response_stream;
             }
 
-            const auto         command_id = static_cast<generated::CommandId>(header->command_id);
-            const CommandChunk request_packet {
-                .command_offset = offset,
-                .command_size   = header->size,
+            const auto  command_id = static_cast<generated::CommandId>(header->command_id);
+            const Range request_range {
+                .offset = offset,
+                .size   = header->size,
             };
-            if (!receiver::generated::call_api_endpoint(command_id, request_stream, request_packet, response_stream, replay_context_)) {
+            if (!receiver::generated::call_api_endpoint(command_id, request_stream, request_range, response_stream, replay_context_)) {
                 VKFWD_LOG_ERROR("vkfwd receiver: failed to dispatch API endpoint, command_id={}", header->command_id);
-                return {};
+                return response_stream;
             }
 
             offset = next_offset;

@@ -1,5 +1,9 @@
 # Agent Instructions
 
+## Testing Rule
+
+Use `cit` for repository tests. Do not run `ctest` in this repository.
+
 ## Commenting Rule
 
 When editing this repository, add or preserve comments that explain design

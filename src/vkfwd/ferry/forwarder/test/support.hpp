@@ -45,15 +45,15 @@ inline void install_pack_unpack_transport(FlushHandler handler) {
     state.handler   = handler;
     state.processed = false;
     Forwarder::set_transport_creator(make_pack_unpack_transport_session);
-    Forwarder::instance().request_stream().reset();
+    Forwarder::instance().reset_request_stream();
 }
 
-inline CommandChunk first_command_chunk(const CommandStream & request_stream) {
+inline Range first_command_range(const CommandStream & request_stream) {
     // Transport tests reconstruct chunk metadata from the stream header because
     // the forwarding boundary only transports stream bytes. The fixed request
     // header carries stream routing; closed chunk tails are explicit gap
     // records and ordinary alignment padding is skipped by offset math.
-    std::size_t offset = sizeof(CommandStream::StreamHeader);
+    std::size_t offset = sizeof(RequestStreamHeader);
     while (offset < request_stream.size()) {
         const auto gap_view = request_stream.at(offset, sizeof(CommandStreamGapHeader));
         if (!gap_view.empty()) {
@@ -75,7 +75,7 @@ inline CommandChunk first_command_chunk(const CommandStream & request_stream) {
             const auto * header      = reinterpret_cast<const CommandChunkHeader *>(&header_view.at(0));
             const auto   next_offset = offset + header->size;
             if (header->size >= sizeof(CommandChunkHeader) && next_offset >= offset && next_offset <= request_stream.size()) {
-                return CommandChunk {.command_offset = offset, .command_size = header->size};
+                return Range {.offset = offset, .size = header->size};
             }
         }
         break;
@@ -89,9 +89,7 @@ std::size_t encoded_offset(Pointer pointer) {
     return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(pointer));
 }
 
-inline SafeArrayView<std::uint8_t> command_view(CommandStream & stream, const CommandChunk & packet) {
-    return stream.at(packet.command_offset, packet.command_size);
-}
+inline SafeArrayView<std::uint8_t> command_view(CommandStream & stream, const Range & packet) { return stream.at(packet.offset, packet.size); }
 
 template<class T>
 constexpr std::size_t command_payload_offset() {
@@ -100,8 +98,8 @@ constexpr std::size_t command_payload_offset() {
 }
 
 template<class T>
-std::size_t command_payload_blob_offset(const CommandChunk & packet) {
-    return packet.command_offset + command_payload_offset<T>();
+std::size_t command_payload_blob_offset(const Range & packet) {
+    return packet.offset + command_payload_offset<T>();
 }
 
 template<class Pointer>

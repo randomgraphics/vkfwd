@@ -56,7 +56,7 @@ immediately so receiver-side deferred work observes instance teardown in order.
 
 The implementation bias is to generate most Vulkan API handling and submit
 intercepted accumulated request streams to a `TransportSession`. Each request
-stream begins with a fixed `CommandStream::StreamHeader` carrying the source
+stream begins with a fixed `RequestStreamHeader` carrying the source
 stream id, so per-stream routing is part of the byte stream instead of a
 separate transport object. The forwarder
 does not call a local Vulkan driver and does not keep per-instance or per-device

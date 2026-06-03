@@ -11,22 +11,22 @@
 
 namespace vkfwd::receiver::generated {
 
-bool vkEnumerateInstanceVersion_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+bool vkEnumerateInstanceVersion_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                                          ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkEnumerateInstanceLayerProperties_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+bool vkEnumerateInstanceLayerProperties_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                                                  ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkEnumerateInstanceExtensionProperties_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+bool vkEnumerateInstanceExtensionProperties_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                                                      ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkCreateInstance_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+bool vkCreateInstance_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                                ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkDestroyInstance_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+bool vkDestroyInstance_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                                 ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkCreateDevice_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+bool vkCreateDevice_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                              ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkDestroyDevice_endpoint(const CommandStream & request_stream, const CommandChunk & request_packet, CommandStream & response_stream,
+bool vkDestroyDevice_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                               ::vkfwd::receiver::ReplayContext & replay_context);
 
-bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream & request_stream, const CommandChunk & request_packet,
+bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream & request_stream, const Range & request_range,
                        CommandStream & response_stream, ::vkfwd::receiver::ReplayContext & replay_context);
 
 } // namespace vkfwd::receiver::generated

@@ -660,26 +660,26 @@ VkResult pack_output_array(Pointer value, std::uint32_t count, CommandStream& st
 }}
 
 template<class T>
-VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk, T*& packed_payload) {{
+VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::uint32_t revision, const T& payload, Range& range, T*& packed_payload) {{
   constexpr std::size_t kPayloadOffset = command_payload_offset<T>();
   constexpr std::size_t kCommandSize = kPayloadOffset + sizeof(T);
 
-    // The chunk is one contiguous serialized range. Its fixed header is
-    // command id, chunk size including the header, and command revision; payload
-    // starts at an aligned offset after those fields.
+  // The chunk is one contiguous serialized range. Its fixed header is command
+  // id, chunk size including the header, and command revision; payload starts
+  // at an aligned offset after those fields.
   if constexpr (kCommandSize > std::numeric_limits<std::uint32_t>::max()) {{
     VKFWD_LOG_ERROR("vkfwd ferry command pack failed: command chunk is too large, command_id={{}}, command_size={{}}",
                     static_cast<std::uint32_t>(command_id), kCommandSize);
     return VK_ERROR_UNKNOWN;
   }}
 
-  chunk = CommandChunk{{.command_offset = 0, .command_size = 0}};
+  range = Range{{.offset = 0, .size = 0}};
   packed_payload = nullptr;
 
   CommandChunkHeader header{{}};
   try {{
-    std::size_t command_offset = 0;
-    auto destination = stream.grow<std::uint8_t>(kCommandSize, CommandStream::kBaseAlignment, &command_offset);
+    std::size_t offset = 0;
+    auto destination = stream.grow<std::uint8_t>(kCommandSize, CommandStream::kBaseAlignment, &offset);
     header.command_id = static_cast<std::uint32_t>(command_id);
     header.size = static_cast<std::uint32_t>(kCommandSize);
     header.command_revision = revision;
@@ -690,8 +690,8 @@ VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::
                       static_cast<std::uint32_t>(command_id), kCommandSize);
       return VK_ERROR_UNKNOWN;
     }}
-    chunk.command_offset = command_offset;
-    chunk.command_size = header.size;
+    range.offset = offset;
+    range.size = header.size;
     packed_payload = reinterpret_cast<T*>(&destination.at(kPayloadOffset));
   }} catch (const std::bad_alloc&) {{
     VKFWD_LOG_ERROR("vkfwd ferry command pack failed: out of host memory while creating command chunk, command_id={{}}, payload_size={{}}",
@@ -702,28 +702,28 @@ VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::
 }}
 
 template<class T>
-VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::uint32_t revision, const T& payload, CommandChunk& chunk) {{
+VkResult append_command_chunk(CommandStream& stream, CommandId command_id, std::uint32_t revision, const T& payload, Range& range) {{
   T* packed_payload = nullptr;
-  return append_command_chunk(stream, command_id, revision, payload, chunk, packed_payload);
+  return append_command_chunk(stream, command_id, revision, payload, range, packed_payload);
 }}
 
-VkResult finalize_command_chunk(CommandStream& stream, CommandChunk& chunk) {{
-  const std::size_t command_size = stream.size() - chunk.command_offset;
+VkResult finalize_command_chunk(CommandStream& stream, Range& range) {{
+  const std::size_t command_size = stream.size() - range.offset;
   if (command_size > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {{
-    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, command_offset={{}}, command_size={{}}",
-                    chunk.command_offset, command_size);
+    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: finalized command chunk is too large, offset={{}}, size={{}}",
+                    range.offset, command_size);
     return VK_ERROR_UNKNOWN;
   }}
 
-  auto header_view = stream.at<CommandChunkHeader>(chunk.command_offset);
+  auto header_view = stream.at<CommandChunkHeader>(range.offset);
   auto* header = header_view.address();
   if (!header) [[unlikely]] {{
-    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, command_offset={{}}", chunk.command_offset);
+    VKFWD_LOG_ERROR("vkfwd ferry command pack failed: could not rewrite command chunk size, offset={{}}", range.offset);
     return VK_ERROR_UNKNOWN;
   }}
 
   header->size = static_cast<std::uint32_t>(command_size);
-  chunk.command_size = header->size;
+  range.size = header->size;
   return VK_SUCCESS;
 }}
 
@@ -914,12 +914,12 @@ def command_pack_body(
         pointer_lines = "\n" + pointer_lines
     return f"""
   Parameters* packed_parameters = nullptr;
-  CommandChunk chunk;
-  VkResult status = append_command_chunk(stream, CommandId::{enum_name}, {COMMAND_REVISION}, {source_name}, chunk, packed_parameters);
+  Range range;
+  VkResult status = append_command_chunk(stream, CommandId::{enum_name}, {COMMAND_REVISION}, {source_name}, range, packed_parameters);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
-  const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Parameters>();
+  const std::size_t payload_offset = range.offset + command_payload_offset<Parameters>();
 {pointer_lines}
-  status = finalize_command_chunk(stream, chunk);
+  status = finalize_command_chunk(stream, range);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
 """
 
@@ -963,12 +963,12 @@ def command_source_content(
 VkResult Command::pack_response(CommandStream& stream,
                                 const Response& response) {{
   Response* packed_response = nullptr;
-  CommandChunk chunk;
-  VkResult status = append_command_chunk(stream, CommandId::{enum_name}, {COMMAND_REVISION}, response, chunk, packed_response);
+  Range range;
+  VkResult status = append_command_chunk(stream, CommandId::{enum_name}, {COMMAND_REVISION}, response, range, packed_response);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
-  const std::size_t payload_offset = chunk.command_offset + command_payload_offset<Response>();
+  const std::size_t payload_offset = range.offset + command_payload_offset<Response>();
 {response_pack_lines}
-  status = finalize_command_chunk(stream, chunk);
+  status = finalize_command_chunk(stream, range);
   if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
   return VK_SUCCESS;
 }}
@@ -1669,7 +1669,7 @@ def receiver_dispatch_update_lines(command: dict[str, object]) -> list[str]:
 def receiver_endpoint_declarations(metadata: dict[str, object]) -> str:
     return "\n".join(
         "bool "
-        f"{receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream, "
+        f"{receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream, "
         "::vkfwd::receiver::ReplayContext& replay_context);"
         for command in metadata["commands"]
     )
@@ -1702,7 +1702,7 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
     else:
         call_lines.append("  return true;")
 
-    return f"""bool {receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream,
+    return f"""bool {receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream,
                                ::vkfwd::receiver::ReplayContext& replay_context) {{
   using Command = ::vkfwd::generated::commands::{namespace}::Command;
 
@@ -1711,7 +1711,7 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
   const auto api_function = reinterpret_cast<{pfn_type}>(raw_function);
 
   auto& mutable_request_stream = const_cast<CommandStream&>(request_stream);
-  auto request_view = mutable_request_stream.at(request_packet.command_offset, request_packet.command_size);
+  auto request_view = mutable_request_stream.at(request_range.offset, request_range.size);
   const Command::Parameters* parameters = nullptr;
   if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) {{ return false; }}
 {chr(10).join(call_lines)}
@@ -1722,7 +1722,7 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
 def receiver_endpoint_dispatch_cases(metadata: dict[str, object]) -> str:
     return "\n".join(
         f"  case ::vkfwd::generated::CommandId::{command_enum_name(str(command['name']))}:\n"
-        f"    return {receiver_endpoint_function_name(command)}(request_stream, request_packet, response_stream, replay_context);"
+        f"    return {receiver_endpoint_function_name(command)}(request_stream, request_range, response_stream, replay_context);"
         for command in metadata["commands"]
     )
 
@@ -1744,7 +1744,7 @@ namespace vkfwd::receiver::generated {{
 
 {declarations}
 
-bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream,
+bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream,
                        ::vkfwd::receiver::ReplayContext& replay_context);
 
 }} // namespace vkfwd::receiver::generated
@@ -1771,7 +1771,7 @@ def receiver_endpoints_source_content(metadata: dict[str, object]) -> str:
 namespace vkfwd::receiver::generated {{
 
 {endpoints}
-bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const CommandChunk& request_packet, CommandStream& response_stream,
+bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream,
                        ::vkfwd::receiver::ReplayContext& replay_context) {{
   switch (command_id) {{
 {dispatch_cases}

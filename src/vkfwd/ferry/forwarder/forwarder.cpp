@@ -3,7 +3,6 @@
 #include "logging.hpp"
 
 #include <atomic>
-#include <cassert>
 #include <memory>
 #include <utility>
 
@@ -47,7 +46,7 @@ Forwarder::TransportCreator & transport_creator_slot() {
 
 std::shared_ptr<TransportSession> shared_transport_instance() {
     // All thread-local forwarders share the negotiated session. Per-thread
-    // ordering is represented by the StreamHeader embedded in each accumulated
+    // ordering is represented by the RequestStreamHeader embedded in each accumulated
     // request stream, not by separate per-thread transport objects.
     auto & session = shared_transport_slot();
     if (!session) { session = transport_creator_slot()(); }
@@ -72,19 +71,33 @@ void Forwarder::set_transport_creator(TransportCreator creator) {
     shared_transport_slot().reset();
 }
 
-Forwarder::Forwarder(): transport_(shared_transport_instance()), stream_id_(next_stream_id()) { request_stream_.reset(stream_id_); }
+Forwarder::Forwarder(): stream_id_(next_stream_id()), transport_(shared_transport_instance()) { reset_request_stream(); }
+
+void Forwarder::reset_request_stream() {
+    request_stream_.reset();
+    // Request routing is protocol framing, not CommandStream storage behavior.
+    // Rewriting it here keeps response streams empty while preserving the
+    // per-source-thread FIFO identity expected by transports and receivers.
+    RequestStreamHeader header {
+        .stream_id = stream_id_,
+    };
+    request_stream_.grow<RequestStreamHeader>(1, alignof(RequestStreamHeader)).set(0, header);
+}
 
 CommandStream Forwarder::flush() {
-    assert(stream_id_ != 0);
-    if (request_stream_.size() == 0) { request_stream_.reset(stream_id_); }
     // Configuration normally happens before application threads enter Vulkan,
     // but in-process tests replace the transport between cases. Refreshing at
     // the flush boundary keeps existing thread-local Forwarders aligned with
     // the current process-wide session without moving transport policy into
     // generated entry points.
-    transport_                    = shared_transport_instance();
-    CommandStream response_stream = transport_ ? transport_->send_accumulated_api_calls(request_stream_) : CommandStream {};
-    request_stream_.reset();
+    transport_ = shared_transport_instance();
+    if (!transport_) {
+        VKFWD_LOG_ERROR("vkfwd forwarder transport creator failed to produce a session; dropping accumulated API stream, size={}", request_stream_.size());
+        reset_request_stream();
+        return {};
+    }
+    auto response_stream = transport_->send_accumulated_api_calls(request_stream_);
+    reset_request_stream();
     return response_stream;
 }
 

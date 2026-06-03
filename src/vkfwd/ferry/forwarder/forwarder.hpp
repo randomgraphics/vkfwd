@@ -20,14 +20,12 @@ public:
 
     // Configure this before worker threads enter Vulkan. Each thread-local
     // Forwarder calls the creator from its constructor and reuses the process
-    // transport session. Each request stream starts with a fixed StreamHeader,
+    // transport session. Each request stream starts with a fixed RequestStreamHeader,
     // so Forwarder does not allocate per-thread transport objects.
     static void set_transport_creator(TransportCreator creator);
 
-    CommandStream & request_stream() {
-        if (request_stream_.size() == 0) { request_stream_.reset(stream_id_); }
-        return request_stream_;
-    }
+    CommandStream & request_stream() { return request_stream_; }
+    void            reset_request_stream();
 
     /// Flush the accumulated request stream to the transport session, then reset
     /// it with the same source-thread header. Returns the receiver response stream.
@@ -37,13 +35,12 @@ private:
     Forwarder();
 
     // The Forwarder itself is thread-local, so this stream is already per-thread
-    // state. Deferrable commands append here until a synchronous command flushes
-    // it through the shared transport session.
+    // state. Forwarder owns the request framing invariant: every accumulated
+    // request stream starts with a RequestStreamHeader carrying this id.
+    StreamId      stream_id_ = 0;
     CommandStream request_stream_;
 
     std::shared_ptr<TransportSession> transport_;
-
-    StreamId stream_id_ = 0;
 };
 
 } // namespace vkfwd

@@ -111,7 +111,7 @@ TEST_CASE("rapid-vulkan instance smoke passes direct and with vkfwd loopback", "
     Receiver receiver(*loopback.receiver, replay_context);
 
     Forwarder::set_transport_creator(LoopbackTransportCreator(loopback.transport));
-    Forwarder::instance().request_stream().reset();
+    Forwarder::instance().reset_request_stream();
 
     create_and_destroy_rapid_vulkan_instance(::vkGetInstanceProcAddr);
 }

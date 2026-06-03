@@ -14,32 +14,22 @@ struct TwoBytes {
     std::uint8_t second = 0;
 };
 
-TEST_CASE("command stream reset can preserve a fixed request header") {
-    constexpr StreamId kStreamId = 0x1234;
-    CommandStream      stream(128);
-
-    stream.reset(kStreamId);
-    REQUIRE(stream.size() == sizeof(CommandStream::StreamHeader));
-    auto header_view = stream.at<CommandStream::StreamHeader>(0);
-    REQUIRE(!header_view.empty());
-    CHECK(header_view.at(0).magic == CommandStream::StreamHeader {}.magic);
-    CHECK(header_view.at(0).revision == CommandStream::StreamHeader {}.revision);
-    CHECK(header_view.at(0).stream_id == kStreamId);
+TEST_CASE("command stream reset clears storage without protocol framing") {
+    CommandStream stream(128);
+    CHECK(stream.size() == 0);
 
     stream.grow<std::uint32_t>() = 0xbeef;
+    REQUIRE(stream.size() >= sizeof(std::uint32_t));
     stream.reset();
 
-    REQUIRE(stream.size() == sizeof(CommandStream::StreamHeader));
-    header_view = stream.at<CommandStream::StreamHeader>(0);
-    REQUIRE(!header_view.empty());
-    CHECK(header_view.at(0).stream_id == kStreamId);
+    CHECK(stream.size() == 0);
 }
 
 TEST_CASE("command stream closes chunks with explicit gap records") {
     CommandStream stream(128);
 
     const std::array<std::uint8_t, CommandStream::kMinimumChunkSize - sizeof(CommandStreamGapHeader)> first_bytes {};
-    auto                                first = stream.grow(first_bytes.size());
+    auto                                                                                              first = stream.grow(first_bytes.size());
     REQUIRE(first.set(0, first_bytes.size(), first_bytes.data()) == first_bytes.size());
 
     const std::array<std::uint8_t, 4> second_bytes {0x40, 0x50, 0x60, 0x70};
