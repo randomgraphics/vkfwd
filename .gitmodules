@@ -22,3 +22,8 @@
 	url = ../rapid-vulkan.git
 	shallow = true
 	branch = main
+[submodule "src/third_party/glfw"]
+	path = src/third_party/glfw
+	url = https://github.com/glfw/glfw.git
+	branch = 3.4
+	shallow = true

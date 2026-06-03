@@ -10,6 +10,7 @@ when the dependency does not need to be compiled into the forwarding layer.
 Current shallow submodules:
 
 - `fmt`: fmtlib/fmt `12.1.0`
+- `glfw`: glfw/glfw `3.4`, the latest stable GLFW 3 release.
 - `spdlog`: gabime/spdlog `v1.17.0`
 - `rapid-vulkan`: randomgraphics/rapid-vulkan, a header-only C++17 Vulkan
   wrapper imported as source but not wired into the build until vkfwd code
@@ -28,7 +29,7 @@ Reference-only submodules:
 Initialize with:
 
 ```sh
-git submodule update --init --depth 1 src/third_party/fmt src/third_party/spdlog src/third_party/rapid-vulkan
+git submodule update --init --depth 1 src/third_party/fmt src/third_party/glfw src/third_party/spdlog src/third_party/rapid-vulkan
 ```
 
 Fetch the reference-only submodule separately when it is useful:
