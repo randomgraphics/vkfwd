@@ -112,10 +112,6 @@ TEST_CASE("rapid-vulkan instance smoke passes direct and with vkfwd loopback", "
 
     Forwarder::set_transport_creator(LoopbackTransportCreator(loopback.transport));
     Forwarder::instance().request_stream().reset();
-    // Forwarder streams always start with a source-thread token. Tests that
-    // clear a thread-local stream must restore that framing byte-for-byte before
-    // generated entry points append command chunks for the receiver.
-    Forwarder::instance().request_stream().grow<SourceThreadId>() = 0;
 
     create_and_destroy_rapid_vulkan_instance(::vkGetInstanceProcAddr);
 }

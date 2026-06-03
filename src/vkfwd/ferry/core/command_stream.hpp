@@ -97,7 +97,16 @@ private:
 // field-relative offsets through any explicit gap records in the stream.
 class CommandStream {
 public:
-    static constexpr std::size_t kBaseAlignment = 128;
+    static constexpr std::size_t kBaseAlignment    = 128;
+    static constexpr std::size_t kMinimumChunkSize = 1024;
+
+    struct StreamHeader {
+        const uint64_t magic     = kStreamMagic;
+        const uint64_t revision  = kSupportedSchemaVersion;
+        uint64_t       stream_id = 0;
+        const uint8_t  padding[kBaseAlignment - sizeof(uint64_t) * 3] = {};
+    };
+    static_assert(sizeof(StreamHeader) == kBaseAlignment, "Stream header must equal base alignment");
 
     CommandStream();
     explicit CommandStream(std::size_t chunk_size);
@@ -106,7 +115,11 @@ public:
     CommandStream(CommandStream &&) noexcept             = default;
     CommandStream & operator=(CommandStream &&) noexcept = default;
 
-    void        reset();
+    // Plain command/response streams reset to empty. Request streams opt into a
+    // leading StreamHeader via reset(stream_id); after that, reset() rewrites
+    // the same envelope so post-flush streams cannot lose routing metadata.
+    void reset();
+    void reset(StreamId stream_id);
     std::size_t size() const { return size_; }
     // Reports whether the current logical byte stream lives in a single backing
     // allocation. Consumers may use this to decide whether one whole-stream range
@@ -181,9 +194,12 @@ private:
     static Chunk       allocate_chunk(std::size_t capacity);
     Chunk &            ensure_chunk(std::size_t logical_offset, std::size_t size);
     void               close_current_chunk();
+    void               write_stream_header();
 
     std::size_t        chunk_size_ = 0;
     std::size_t        size_       = 0;
+    bool               has_stream_header_ = false;
+    StreamId           stream_id_         = 0;
     std::vector<Chunk> chunks_;
 };
 

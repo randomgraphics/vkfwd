@@ -59,8 +59,8 @@ Receiver-side replay is responsible for destination dispatch.
 `Forwarder::instance()` is thread-local. Each thread owns:
 
 - one request `CommandStream`
-- one stable 64-bit source-thread token embedded at the start of each request
-  stream
+- one stable stream id embedded in the fixed header at the start of
+  each request stream
 - one shared `TransportSession` created from the process-wide transport creator
 
 Configure the transport creator before application worker threads enter Vulkan.
@@ -73,10 +73,10 @@ Response-bearing commands follow this shape:
 
 1. run an optional manual pre-pack hook
 2. copy function arguments into generated `Command::Parameters`
-3. append a command chunk to `Forwarder::request_stream()` after the source-thread
-   prefix
+3. append a command chunk to `Forwarder::request_stream()` after the stream
+   header
 4. call `Forwarder::flush()`, which sends the thread's stream through the transport
-   session and resets it with the same prefix
+   session and resets it with the same header
 5. unpack the returned response stream
 6. copy response-owned output parameter values back to the caller
 7. run an optional manual post-response hook
@@ -91,12 +91,12 @@ drain deferred commands before destroying the destination instance.
 
 ## Transport Boundary
 
-`TransportSession::send_accumulated_api_calls()` receives a stream whose first 64
-bits are the source-thread token and whose remaining bytes may contain multiple
-command chunks. The transport owns framing, remote or local delivery, replay
-coordination, response correlation, and handle mapping below this boundary. The
-generated forwarder wrapper only knows how to decode the response stream for the
-last response-bearing command in the flushed stream.
+`TransportSession::send_accumulated_api_calls()` receives a stream whose fixed
+header carries the stream id and whose remaining bytes may contain
+multiple command chunks. The transport owns framing, remote or local delivery,
+replay coordination, response correlation, and handle mapping below this
+boundary. The generated forwarder wrapper only knows how to decode the response
+stream for the last response-bearing command in the flushed stream.
 
 Do not add replay behavior, local Vulkan dispatch, or source-to-destination
 handle maps to this module. Put those policies in concrete transport/receiver

@@ -36,14 +36,20 @@ public:
     explicit DispatchingApiResponder(receiver::ReplayContext & replay_context): replay_context_(replay_context) {}
 
     CommandStream receive_accumulated_api_calls(const CommandStream & request_stream) override {
-        if (request_stream.size() < kSourceThreadIdSize) {
-            VKFWD_LOG_ERROR("vkfwd receiver: request stream is missing source-thread prefix, size={}", request_stream.size());
+        if (request_stream.size() < sizeof(CommandStream::StreamHeader)) {
+            VKFWD_LOG_ERROR("vkfwd receiver: request stream is missing stream header, size={}", request_stream.size());
+            return {};
+        }
+        const auto header_view = request_stream.at<CommandStream::StreamHeader>(0);
+        const auto header      = header_view.address();
+        if (!header || header->magic != CommandStream::StreamHeader {}.magic || header->revision != CommandStream::StreamHeader {}.revision) {
+            VKFWD_LOG_ERROR("vkfwd receiver: request stream has invalid header");
             return {};
         }
 
         CommandStream response_stream;
 
-        std::size_t offset = kSourceThreadIdSize;
+        std::size_t offset = sizeof(CommandStream::StreamHeader);
         while (offset < request_stream.size()) {
             while (offset < request_stream.size()) {
                 CommandStreamGapHeader gap {};

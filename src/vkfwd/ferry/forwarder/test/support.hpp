@@ -50,10 +50,10 @@ inline void install_pack_unpack_transport(FlushHandler handler) {
 
 inline CommandChunk first_command_chunk(const CommandStream & request_stream) {
     // Transport tests reconstruct chunk metadata from the stream header because
-    // the forwarding boundary only transports stream bytes. The first 64 bits
-    // are reserved for source-thread routing; closed chunk tails are explicit
-    // gap records and ordinary alignment padding is skipped by offset math.
-    std::size_t offset = kSourceThreadIdSize;
+    // the forwarding boundary only transports stream bytes. The fixed request
+    // header carries stream routing; closed chunk tails are explicit gap
+    // records and ordinary alignment padding is skipped by offset math.
+    std::size_t offset = sizeof(CommandStream::StreamHeader);
     while (offset < request_stream.size()) {
         const auto gap_view = request_stream.at(offset, sizeof(CommandStreamGapHeader));
         if (!gap_view.empty()) {

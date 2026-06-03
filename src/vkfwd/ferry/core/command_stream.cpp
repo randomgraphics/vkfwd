@@ -9,7 +9,6 @@
 namespace vkfwd {
 namespace {
 
-constexpr std::size_t kMinimumChunkSize = 1;
 constexpr std::size_t kDefaultChunkSize = 4096;
 
 std::size_t checked_add(std::size_t lhs, std::size_t rhs) {
@@ -26,6 +25,13 @@ CommandStream::CommandStream(std::size_t chunk_size): chunk_size_(std::max(chunk
 void CommandStream::reset() {
     chunks_.clear();
     size_ = 0;
+    if (has_stream_header_) { write_stream_header(); }
+}
+
+void CommandStream::reset(StreamId stream_id) {
+    has_stream_header_ = true;
+    stream_id_         = stream_id;
+    reset();
 }
 
 void CommandStream::Chunk::AlignedDeleter::operator()(std::byte * ptr) const noexcept {
@@ -174,6 +180,17 @@ void CommandStream::close_current_chunk() {
     }
     chunk.used = chunk.capacity;
     size_      = checked_add(chunk.logical_begin, chunk.used);
+}
+
+void CommandStream::write_stream_header() {
+    StreamHeader header {
+        .stream_id = stream_id_,
+    };
+    // Request-stream framing is stored as ordinary stream-owned bytes so
+    // flattening, transport copying, and receiver parsing all observe exactly
+    // the same base-aligned envelope.
+    auto destination = grow<StreamHeader>(1, kBaseAlignment);
+    destination.set(0, header);
 }
 
 } // namespace vkfwd

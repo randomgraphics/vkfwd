@@ -9,10 +9,7 @@ constexpr std::uint32_t kStreamMagic            = 0x564b4657; // "VKFW"
 constexpr std::uint32_t kSupportedSchemaVersion = 1;
 constexpr std::uint32_t kCommandStreamGapMagic  = 0x564b4741; // "VKGA"
 
-using SourceThreadId = std::uint64_t;
-
-constexpr std::size_t kSourceThreadIdOffset = 0;
-constexpr std::size_t kSourceThreadIdSize   = sizeof(SourceThreadId);
+using StreamId = std::uint64_t;
 
 struct VulkanApiVersion {
     std::uint16_t major = 0;

@@ -80,9 +80,9 @@ test is specifically about structure `pNext` behavior.
 `TransportSession` owns compatibility negotiation and the synchronous forwarding
 boundary. `TransportSession::send_accumulated_api_calls()` sends one source
 thread's accumulated request stream and returns the response stream for the command
-that forced the flush. The request stream begins with a 64-bit source-thread token,
-then contains zero or more deferrable commands followed by the command that needs
-a response.
+that forced the flush. The request stream begins with a fixed
+`CommandStream::StreamHeader` carrying the stream id, then contains
+zero or more deferrable commands followed by the command that needs a response.
 
 The transportation layer's goal is to carry already-packed vkfwd command bytes
 from a source thread to a receiver replay context, then return the response stream
@@ -94,8 +94,8 @@ Required transportation-layer behavior:
 
 - Negotiate `HandshakeRequest` compatibility once per `TransportSession` before
   any command bytes are exchanged.
-- Preserve the leading source-thread token so deferrable command ordering remains
-  per thread and does not require locks in `Forwarder`.
+- Preserve the leading `CommandStream::StreamHeader` so deferrable command
+  ordering remains per thread and does not require locks in `Forwarder`.
 - Preserve byte-for-byte stream contents and command-chunk order inside each
   accumulated stream. Alignment padding between chunks is serialized as zero
   bytes and skipped by receiver-side chunk discovery; command ids must still be
@@ -107,7 +107,7 @@ Required transportation-layer behavior:
   one contiguous serialized command response. Test transports flatten receiver
   blobs at this boundary because receiver-side packing may use multiple arena
   chunks for large output arrays.
-- Keep source-thread identity stable enough for receiver-side routing, logging,
+- Keep stream identity stable enough for receiver-side routing, logging,
   and future diagnostics.
 - Own framing, multiplexing, flow control, retry/shutdown policy, and any
   transport-specific backpressure without leaking those details into generated
@@ -166,7 +166,7 @@ compatibility on every Vulkan call.
 ### Source-Thread Stream Lifecycle
 
 Each source application thread owns a `thread_local Forwarder`, and each
-`Forwarder` prefixes its request stream with one stable 64-bit source-thread token.
+`Forwarder` prefixes its request stream with one stable `CommandStream::StreamHeader`.
 `Forwarder` must not know about session pooling, multiplexing, sockets, QUIC
 connections, or USB details.
 
@@ -175,8 +175,8 @@ Forwarder-side stream flow:
 1. `Forwarder` is constructed on first Vulkan call from a source thread.
 2. Its configured transport creator obtains a good shared session, creating and
    handshaking one if needed.
-3. The forwarder writes its source-thread token as the first 64 bits of the
-   request stream.
+3. The forwarder writes its stream id into the fixed request-stream
+   header.
 4. `Forwarder::flush()` sends this thread's packed request stream through
    `TransportSession::send_accumulated_api_calls()` and receives the response
    stream.
@@ -186,7 +186,7 @@ Receiver-side stream flow:
 1. Receiver owns one accepted `TransportSession`.
 2. Receiver reads each accumulated request stream from the transport.
 3. `Receiver` registers an API-responder factory with `ReceiverSession`.
-4. A concrete `ReceiverSession` reads the leading source-thread token and
+4. A concrete `ReceiverSession` reads the leading stream header and
    creates or reuses a responder for that token.
 5. The responder owns per-source-thread request sequencing, generated command-id
    dispatch, and any implementation-owned replay state.
@@ -207,14 +207,14 @@ The frame metadata should include at least:
 
 - Session or protocol magic.
 - Schema or frame version.
-- Source-thread id.
+- Stream id.
 - Request sequence id.
 - Message type: open, request, response, error, close, control.
 - Flags: needs response, barrier, replay failure, transport failure.
 - Payload byte size.
 
-For `TransportSession::send_accumulated_api_calls()`, the source-thread id plus a
-request sequence id is what lets the forwarder block one source thread for its
+For `TransportSession::send_accumulated_api_calls()`, the stream id plus a
+request sequence id is what lets the forwarder block one source stream for its
 response while other source-thread streams continue to make progress.
 
 ## Generated Core Code

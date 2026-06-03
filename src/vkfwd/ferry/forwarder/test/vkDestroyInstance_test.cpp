@@ -60,7 +60,7 @@ TEST_CASE("vkDestroyInstance forwarder entry point packs parameters when flushed
     // vkDestroyInstance is a lifecycle fence: the generated entry point flushes
     // immediately so receiver-side deferred work observes destruction in order.
     CHECK(transport_state().processed);
-    CHECK(Forwarder::instance().request_stream().size() == kSourceThreadIdSize);
+    CHECK(Forwarder::instance().request_stream().size() == sizeof(CommandStream::StreamHeader));
 }
 
 } // namespace vkfwd::forwarder::test

@@ -12,7 +12,7 @@ on generated command unpacking rehydrating serialized offsets into
 receiver-side pointers before calling Vulkan.
 
 The loopback transport shares one session with the forwarder because forwarding
-state is process-wide and source-thread identity is carried in the request
-stream prefix. Each `send_accumulated_api_calls()` call still flattens the
+state is process-wide and stream identity is carried in the request
+stream header. Each `send_accumulated_api_calls()` call still flattens the
 caller-owned request stream before handing it to the receiver, preserving the
 transport lifetime boundary that real backends must honor.

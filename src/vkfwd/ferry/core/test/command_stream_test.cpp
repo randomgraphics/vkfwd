@@ -14,10 +14,31 @@ struct TwoBytes {
     std::uint8_t second = 0;
 };
 
+TEST_CASE("command stream reset can preserve a fixed request header") {
+    constexpr StreamId kStreamId = 0x1234;
+    CommandStream      stream(128);
+
+    stream.reset(kStreamId);
+    REQUIRE(stream.size() == sizeof(CommandStream::StreamHeader));
+    auto header_view = stream.at<CommandStream::StreamHeader>(0);
+    REQUIRE(!header_view.empty());
+    CHECK(header_view.at(0).magic == CommandStream::StreamHeader {}.magic);
+    CHECK(header_view.at(0).revision == CommandStream::StreamHeader {}.revision);
+    CHECK(header_view.at(0).stream_id == kStreamId);
+
+    stream.grow<std::uint32_t>() = 0xbeef;
+    stream.reset();
+
+    REQUIRE(stream.size() == sizeof(CommandStream::StreamHeader));
+    header_view = stream.at<CommandStream::StreamHeader>(0);
+    REQUIRE(!header_view.empty());
+    CHECK(header_view.at(0).stream_id == kStreamId);
+}
+
 TEST_CASE("command stream closes chunks with explicit gap records") {
     CommandStream stream(128);
 
-    const std::array<std::uint8_t, 120> first_bytes {};
+    const std::array<std::uint8_t, CommandStream::kMinimumChunkSize - sizeof(CommandStreamGapHeader)> first_bytes {};
     auto                                first = stream.grow(first_bytes.size());
     REQUIRE(first.set(0, first_bytes.size(), first_bytes.data()) == first_bytes.size());
 
@@ -27,7 +48,7 @@ TEST_CASE("command stream closes chunks with explicit gap records") {
     REQUIRE(second.set(0, second_bytes.size(), second_bytes.data()) == second_bytes.size());
 
     REQUIRE_FALSE(stream.is_contiguous());
-    CHECK(second_offset == CommandStream::kBaseAlignment);
+    CHECK(second_offset == CommandStream::kMinimumChunkSize);
 
     CommandStream flattened = stream.flatten();
     REQUIRE(flattened.is_contiguous());
@@ -38,7 +59,7 @@ TEST_CASE("command stream closes chunks with explicit gap records") {
     REQUIRE(!gap_bytes.empty());
     std::memcpy(&gap, gap_bytes.address(0), sizeof(gap));
     CHECK(gap.magic == kCommandStreamGapMagic);
-    CHECK(gap.size == CommandStream::kBaseAlignment - first_bytes.size());
+    CHECK(gap.size == CommandStream::kMinimumChunkSize - first_bytes.size());
 
     const auto second_view = flattened.at(second_offset, second_bytes.size());
     REQUIRE(!second_view.empty());
@@ -48,13 +69,13 @@ TEST_CASE("command stream closes chunks with explicit gap records") {
 TEST_CASE("command stream keeps sized arrays contiguous") {
     CommandStream stream(128);
 
-    auto prefix = stream.grow<std::uint8_t>(120);
-    REQUIRE(prefix.size() == 120);
+    auto prefix = stream.grow<std::uint8_t>(CommandStream::kMinimumChunkSize - sizeof(CommandStreamGapHeader));
+    REQUIRE(prefix.size() == CommandStream::kMinimumChunkSize - sizeof(CommandStreamGapHeader));
 
     std::size_t second_offset = 0;
     auto        second        = stream.grow<std::uint32_t>(3, alignof(std::uint32_t), &second_offset);
     REQUIRE(second.size() == 3);
-    CHECK(second_offset == CommandStream::kBaseAlignment);
+    CHECK(second_offset == CommandStream::kMinimumChunkSize);
 }
 
 TEST_CASE("typed stream access uses byte offsets") {

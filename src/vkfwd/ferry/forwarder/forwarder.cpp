@@ -47,16 +47,16 @@ Forwarder::TransportCreator & transport_creator_slot() {
 
 std::shared_ptr<TransportSession> shared_transport_instance() {
     // All thread-local forwarders share the negotiated session. Per-thread
-    // ordering is represented by the source-thread token prefixed into each
-    // accumulated request stream, not by separate per-thread transport objects.
+    // ordering is represented by the StreamHeader embedded in each accumulated
+    // request stream, not by separate per-thread transport objects.
     auto & session = shared_transport_slot();
     if (!session) { session = transport_creator_slot()(); }
     if (!session) { session = make_unconfigured_transport(); }
     return session;
 }
 
-SourceThreadId next_source_thread_id() {
-    static std::atomic<SourceThreadId> next {1};
+StreamId next_stream_id() {
+    static std::atomic<StreamId> next {1};
     return next.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -72,17 +72,11 @@ void Forwarder::set_transport_creator(TransportCreator creator) {
     shared_transport_slot().reset();
 }
 
-Forwarder::Forwarder(): transport_(shared_transport_instance()), thread_id_(next_source_thread_id()) { begin_request_stream(); }
-
-void Forwarder::begin_request_stream() {
-    // The receiver demultiplexes accumulated streams from one shared transport
-    // session by reading this fixed-width prefix before any command chunk bytes.
-    request_stream_.grow<SourceThreadId>() = thread_id_;
-}
+Forwarder::Forwarder(): transport_(shared_transport_instance()), stream_id_(next_stream_id()) { request_stream_.reset(stream_id_); }
 
 CommandStream Forwarder::flush() {
-    assert(thread_id_ != 0);
-    if (request_stream_.size() == 0) { begin_request_stream(); }
+    assert(stream_id_ != 0);
+    if (request_stream_.size() == 0) { request_stream_.reset(stream_id_); }
     // Configuration normally happens before application threads enter Vulkan,
     // but in-process tests replace the transport between cases. Refreshing at
     // the flush boundary keeps existing thread-local Forwarders aligned with
@@ -91,7 +85,6 @@ CommandStream Forwarder::flush() {
     transport_                    = shared_transport_instance();
     CommandStream response_stream = transport_ ? transport_->send_accumulated_api_calls(request_stream_) : CommandStream {};
     request_stream_.reset();
-    begin_request_stream();
     return response_stream;
 }
 

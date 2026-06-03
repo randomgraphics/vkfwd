@@ -55,9 +55,10 @@ immediately so receiver-side deferred work observes instance teardown in order.
 ## Design Bias
 
 The implementation bias is to generate most Vulkan API handling and submit
-intercepted accumulated request streams to a `TransportSession`. The first 64
-bits of each request stream identify the source thread, so per-thread routing is
-part of the byte stream instead of a separate transport object. The forwarder
+intercepted accumulated request streams to a `TransportSession`. Each request
+stream begins with a fixed `CommandStream::StreamHeader` carrying the source
+stream id, so per-stream routing is part of the byte stream instead of a
+separate transport object. The forwarder
 does not call a local Vulkan driver and does not keep per-instance or per-device
 dispatch state beyond shared generated dispatch tables. Local replay, remote
 transport, response synthesis, source-to-receiver handle mapping, and
