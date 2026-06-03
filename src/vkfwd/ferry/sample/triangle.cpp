@@ -1,7 +1,14 @@
 #define RAPID_VULKAN_IMPLEMENTATION
 #include <rapid-vulkan/rapid-vulkan.h>
-#include <iostream>
+
+#include "loopback_runtime.hpp"
+
 #include <cmath>
+#include <cstring>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <thread>
 
 namespace vkfwd::sample::triangle {
@@ -45,16 +52,24 @@ struct GLFWInit {
 struct Options {
     vk::Instance                    inst      = VK_NULL_HANDLE;
     uint32_t                        headless  = 0; // Set to non-zero to enable headless mode. The value is number of frames to render.
+    bool                            use_vkfwd = false;
     rapid_vulkan::Device::Verbosity verbosity = rapid_vulkan::Device::BRIEF;
 };
 
 void entry(const Options & options) {
     // Standard boilerplate of creating instance, device, swapchain, etc. It is basically the same as triangle.cpp.
     using namespace rapid_vulkan;
-    auto                      instance = options.inst;
-    std::unique_ptr<Instance> instancePtr;
+    auto                                                   instance = options.inst;
+    std::unique_ptr<Instance>                              instancePtr;
+    std::unique_ptr<::vkfwd::sample::VkfwdLoopbackRuntime> vkfwd;
     if (!instance) {
-        instancePtr = std::make_unique<Instance>(Instance::ConstructParameters {}.setValidation(Instance::BREAK_ON_VK_ERROR));
+        Instance::ConstructParameters cp {};
+        cp.setValidation(options.use_vkfwd ? Instance::VALIDATION_DISABLED : Instance::BREAK_ON_VK_ERROR);
+        if (options.use_vkfwd) {
+            vkfwd                  = std::make_unique<::vkfwd::sample::VkfwdLoopbackRuntime>();
+            cp.getInstanceProcAddr = ::vkfwd::Forwarder::getInstanceProcAddr;
+        }
+        instancePtr = std::make_unique<Instance>(cp);
         instance    = instancePtr->handle();
     }
     auto device         = Device(Device::ConstructParameters {instance}.setPrintVkInfo(options.verbosity));
@@ -149,5 +164,25 @@ void entry(const Options & options) {
 } // namespace vkfwd::sample::triangle
 
 #ifndef UNIT_TEST
-int main() { vkfwd::sample::triangle::entry({}); }
+int main(int argc, char ** argv) {
+    vkfwd::sample::triangle::Options options;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg(argv[i]);
+        if (arg == "--vkfwd") {
+            options.use_vkfwd = true;
+        } else if (arg == "--no-vkfwd") {
+            options.use_vkfwd = false;
+        } else if (arg.rfind("--headless=", 0) == 0) {
+            options.headless = static_cast<uint32_t>(std::stoul(std::string(arg.substr(std::strlen("--headless=")))));
+        } else if (arg == "--help" || arg == "-h") {
+            std::cout << "usage: triangle [--vkfwd|--no-vkfwd] [--headless=N]\n";
+            return 0;
+        } else {
+            std::cerr << "unknown argument: " << arg << "\n";
+            return 2;
+        }
+    }
+
+    vkfwd::sample::triangle::entry(options);
+}
 #endif

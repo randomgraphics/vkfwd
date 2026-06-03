@@ -31,6 +31,12 @@ target_link_libraries(vkfwd_ferry_core
     fmt::fmt
     spdlog::spdlog)
 
+if(UNIX AND NOT APPLE)
+  target_link_libraries(vkfwd_ferry_core
+    PUBLIC
+      dl)
+endif()
+
 target_compile_definitions(vkfwd_ferry_core
   PRIVATE
     VKFWD_VERSION="${PROJECT_VERSION}")

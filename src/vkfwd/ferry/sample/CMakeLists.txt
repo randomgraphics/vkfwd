@@ -6,5 +6,9 @@ target_compile_definitions(triangle PRIVATE
 target_link_libraries(triangle PRIVATE
     vkfwd_ferry_core
     vkfwd_ferry_receiver
-    vkfwd_ferry_forwarder
+    vkfwd_ferry_forwarder_static
     glfw)
+
+if(UNIX AND NOT APPLE)
+  target_link_libraries(triangle PRIVATE dl)
+endif()

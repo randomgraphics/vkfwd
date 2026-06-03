@@ -1,8 +1,7 @@
-# Forwarder code is compiled once and packaged two ways: a static archive for
-# unit/integration tests that need to drive layer entry points in-process, and
-# the Vulkan loader-facing shared object. The shared object still owns the ABI
-# boundary; the static archive is a test/linking convenience, not a second layer
-# distribution format.
+# Forwarder implementation code is shared by a static test archive and the
+# Vulkan loader-facing shared object. The layer ABI shim itself is linked only
+# into the shared object; in-process tests call Forwarder::get*ProcAddr directly
+# so they do not depend on exported SO symbols.
 set(VKFWD_FORWARDER_SOURCES
   generated/forwarder_entrypoints.cpp
   generated/entry/vkEnumerateInstanceVersion_entry.cpp
@@ -12,8 +11,7 @@ set(VKFWD_FORWARDER_SOURCES
   generated/entry/vkCreateInstance_entry.cpp
   generated/entry/vkDestroyDevice_entry.cpp
   generated/entry/vkDestroyInstance_entry.cpp
-  forwarder.cpp
-  layer.cpp)
+  forwarder.cpp)
 
 add_library(vkfwd_ferry_forwarder_objects OBJECT
   ${VKFWD_FORWARDER_SOURCES})
@@ -55,7 +53,8 @@ target_link_libraries(vkfwd_ferry_forwarder_static
     vkfwd_ferry_core)
 
 add_library(vkfwd_ferry_forwarder SHARED
-  $<TARGET_OBJECTS:vkfwd_ferry_forwarder_objects>)
+  $<TARGET_OBJECTS:vkfwd_ferry_forwarder_objects>
+  layer.cpp)
 
 target_link_libraries(vkfwd_ferry_forwarder
   PRIVATE

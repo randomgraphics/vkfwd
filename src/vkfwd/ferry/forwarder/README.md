@@ -6,10 +6,12 @@ sends flushed streams through a shared `TransportSession`.
 
 ## Responsibilities
 
-- `layer.cpp`: exported `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`
-  implementation for the Vulkan loader.
+- `layer.cpp`: Vulkan loader ABI shim that exports the public
+  `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` symbols for the layer
+  shared object only.
 - `forwarder.hpp` and `forwarder.cpp`: thread-local request stream and
-  transport-session ownership.
+  transport-session ownership, plus vkfwd-owned getprocaddr lookup used by both
+  the layer shim and in-process tests.
 - `../core/generated/dispatch_table.*`: generated function-pointer table types
   and name-lookup methods for commands that vkfwd currently supports. The table
   code intentionally does not declare API entry points so table shape stays
@@ -30,6 +32,11 @@ sends flushed streams through a shared `TransportSession`.
 The forwarder exposes only vkfwd-owned generated entry points. Unknown commands
 return null from `vkGetInstanceProcAddr`/`vkGetDeviceProcAddr` until vkfwd owns
 their generated pack, response, and output-parameter contract.
+
+`Forwarder::getInstanceProcAddr` and `Forwarder::getDeviceProcAddr` own this
+lookup policy. The shared layer's exported symbols are thin ABI wrappers around
+those methods; static in-process consumers should call the `Forwarder` methods
+directly instead of depending on layer-exported symbols.
 
 `vkGetInstanceProcAddr(nullptr, name)` only exposes loader-global commands owned
 by vkfwd. With a non-null instance, `vkGetInstanceProcAddr(instance, name)` may

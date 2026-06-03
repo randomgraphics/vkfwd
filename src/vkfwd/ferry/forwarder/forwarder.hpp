@@ -31,6 +31,12 @@ public:
     /// it with the same source-thread header. Returns the receiver response stream.
     CommandStream flush();
 
+    /// The forwared function pointer querier
+    ///@{
+    static PFN_vkVoidFunction VKAPI_CALL getInstanceProcAddr(VkInstance instance, const char * name);
+    static PFN_vkVoidFunction VKAPI_CALL getDeviceProcAddr(VkDevice device, const char * name);
+    ///@}
+
 private:
     Forwarder();
 

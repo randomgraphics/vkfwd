@@ -37,23 +37,3 @@ target_link_libraries(vkfwd_internal_tests
     vkfwd_ferry_forwarder_static
     vkfwd_ferry_core
     Catch2::Catch2WithMain)
-
-if(EXISTS "${PROJECT_SOURCE_DIR}/src/third_party/rapid-vulkan/inc/rapid-vulkan/rapid-vulkan.cpp")
-  target_sources(vkfwd_internal_tests
-    PRIVATE
-      "${PROJECT_SOURCE_DIR}/src/third_party/rapid-vulkan/inc/rapid-vulkan/rapid-vulkan.cpp")
-
-  target_include_directories(vkfwd_internal_tests
-    PRIVATE
-      "${PROJECT_SOURCE_DIR}/src/third_party/rapid-vulkan/inc")
-
-  target_compile_definitions(vkfwd_internal_tests
-    PRIVATE
-      RAPID_VULKAN_ENABLE_GLFW3=0)
-
-  if(UNIX AND NOT APPLE)
-    target_link_libraries(vkfwd_internal_tests
-      PRIVATE
-        dl)
-  endif()
-endif()
