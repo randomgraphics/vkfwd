@@ -8,7 +8,7 @@ on both sides of the forwarding boundary.
 
 - Protocol metadata in `protocol.hpp`: stream magic, schema version, Vulkan API
   version negotiation, command chunk headers, and command chunk ranges.
-- CommandStream storage in `command_stream.hpp` and `stream.cpp`: grow-only copied payload storage
+- CommandStream storage in `command_stream.hpp` and `command_stream.cpp`: grow-only copied payload storage
   with stable logical offsets and bounded views.
 - Transport contracts in `transport_session.hpp` and `receiver_session.hpp`:
   session-scoped handshake and source-thread-token routing for accumulated
