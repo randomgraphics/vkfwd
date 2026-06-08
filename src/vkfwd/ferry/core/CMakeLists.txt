@@ -5,6 +5,7 @@
 add_library(vkfwd_ferry_core STATIC
   command_stream.cpp
   memory_map/manager.cpp
+  memory_map/memory_type_registry.cpp
   generated/command/vkAllocateMemory.cpp
   generated/command/vkBindBufferMemory.cpp
   generated/command/vkCreateBuffer.cpp
