@@ -3,4 +3,5 @@
 # in later phases.
 set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
   memory_type_registry_test.cpp
-  vm_primitives_test.cpp)
+  vm_primitives_test.cpp
+  wire_format_test.cpp)
