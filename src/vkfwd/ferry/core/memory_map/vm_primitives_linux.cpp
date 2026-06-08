@@ -31,6 +31,12 @@ std::size_t host_page_size() {
 }
 
 void * reserve(std::size_t size) {
+    // Tests may inject a one-shot failure to exercise OOM cleanup paths that
+    // the real kernel would only produce under address-space exhaustion.
+    if (auto hook = g_test_reserve_failure_hook) {
+        g_test_reserve_failure_hook = nullptr;
+        return hook(size);
+    }
     // MAP_NORESERVE: do not charge the reservation against the OS commit limit
     // (/proc/sys/vm/overcommit_memory). A 4 GiB PROT_NONE reservation here
     // must cost ~0 swap; only the mprotect'd sub-range counts toward RSS.
@@ -42,6 +48,10 @@ void * reserve(std::size_t size) {
 }
 
 bool commit(void * base, std::size_t size) {
+    if (auto hook = g_test_commit_failure_hook) {
+        g_test_commit_failure_hook = nullptr;
+        return hook(base, size);
+    }
     // Linux has no separate "commit" primitive: mprotect flips an already-
     // reserved range from PROT_NONE to RW. Pages are demand-paged on first
     // touch, so the commit limit only takes the hit as pages are actually

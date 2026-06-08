@@ -31,6 +31,12 @@ std::size_t host_page_size() {
 }
 
 void * reserve(std::size_t size) {
+    // Tests may inject a one-shot failure to exercise OOM cleanup paths that
+    // the real macOS kernel would only produce under address-space exhaustion.
+    if (auto hook = g_test_reserve_failure_hook) {
+        g_test_reserve_failure_hook = nullptr;
+        return hook(size);
+    }
     // No MAP_NORESERVE on macOS: the BSD VM layer already treats a PROT_NONE
     // anonymous mapping as a pure VA reservation that does not charge against
     // physical memory until pages are mapped RW and touched. So MAP_PRIVATE |
@@ -42,6 +48,10 @@ void * reserve(std::size_t size) {
 }
 
 bool commit(void * base, std::size_t size) {
+    if (auto hook = g_test_commit_failure_hook) {
+        g_test_commit_failure_hook = nullptr;
+        return hook(base, size);
+    }
     // mprotect flips the previously-reserved PROT_NONE range to RW. Pages are
     // demand-zero-filled on first touch, so RSS only grows as the source
     // application actually writes through the mapping.

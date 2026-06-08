@@ -45,6 +45,12 @@ std::size_t host_page_size() {
 }
 
 void * reserve(std::size_t size) {
+    // Tests may inject a one-shot failure to exercise OOM cleanup paths that
+    // the real kernel would only produce under address-space exhaustion.
+    if (auto hook = g_test_reserve_failure_hook) {
+        g_test_reserve_failure_hook = nullptr;
+        return hook(size);
+    }
     // MEM_RESERVE + PAGE_NOACCESS: claim VA without charging the system commit
     // limit. A subsequent MEM_COMMIT on a sub-range charges only that
     // sub-range, which is exactly the "reserve allocation_size up front, commit
@@ -53,6 +59,10 @@ void * reserve(std::size_t size) {
 }
 
 bool commit(void * base, std::size_t size) {
+    if (auto hook = g_test_commit_failure_hook) {
+        g_test_commit_failure_hook = nullptr;
+        return hook(base, size);
+    }
     // MEM_COMMIT on an already-reserved range. Windows allows the commit
     // address to be page-aligned (4 KiB) even when the original reservation
     // was rounded to allocation granularity. Returns the base of the committed

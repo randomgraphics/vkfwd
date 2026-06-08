@@ -65,4 +65,14 @@ inline std::size_t page_ceil(std::size_t offset) {
     return (offset + page - 1) & ~(page - 1);
 }
 
+// Test-only failure injection. Production code must leave these null. When
+// set, the next matching call observes the hook and returns the injected
+// failure result; the slot is consumed (reset to nullptr) on use so each
+// injection covers exactly one call. The reserve hook receives the request
+// size; the commit hook receives base+size. Both must NOT perform the real
+// OS operation — they exist purely to simulate kernel-level failure paths
+// that are otherwise unreachable from unit tests.
+inline void * (*g_test_reserve_failure_hook)(std::size_t)      = nullptr;
+inline bool (*g_test_commit_failure_hook)(void *, std::size_t) = nullptr;
+
 } // namespace vkfwd::memory_map::vm

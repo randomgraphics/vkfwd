@@ -65,7 +65,14 @@ set_target_properties(vkfwd_ferry_core PROPERTIES
 
 target_include_directories(vkfwd_ferry_core
   PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR})
+    ${CMAKE_CURRENT_SOURCE_DIR}
+  PRIVATE
+    # Per-strategy ForwarderAllocation subclasses (memory_map/forwarder/) push
+    # manual command chunks through Forwarder::instance(); the symbol resolves
+    # at final link via vkfwd_ferry_forwarder_static. Receiver-only consumers
+    # never reach those subclasses through the factory chain, so the unresolved
+    # reference is harmless for them.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../forwarder)
 
 target_link_libraries(vkfwd_ferry_core
   PUBLIC

@@ -9,4 +9,5 @@ set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
   vkDestroyDevice_test.cpp
   vkAllocateFreeMemory_test.cpp
   vkMapMemory_test.cpp
+  non_coherent_map_test.cpp
   memory_type_registry_hooks_test.cpp)
