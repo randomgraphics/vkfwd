@@ -5,7 +5,7 @@
 namespace vkfwd::memory_map::test {
 namespace {
 
-template <class T>
+template<class T>
 T test_handle(std::uintptr_t v) {
     return reinterpret_cast<T>(v);
 }
@@ -13,17 +13,14 @@ T test_handle(std::uintptr_t v) {
 VkPhysicalDeviceMemoryProperties make_two_type_props() {
     VkPhysicalDeviceMemoryProperties props {};
     props.memoryTypeCount = 2;
-    props.memoryTypes[0] = {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
-    props.memoryTypes[1] = {
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0};
+    props.memoryTypes[0]  = {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
+    props.memoryTypes[1]  = {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0};
     return props;
 }
 
 // The registry is a process singleton; tests reuse it. forget_device drops the
 // per-device association so unrelated tests don't observe each other's records.
-void clear_registry(MemoryTypeRegistry & registry, VkDevice device) {
-    registry.forget_device(device);
-}
+void clear_registry(MemoryTypeRegistry & registry, VkDevice device) { registry.forget_device(device); }
 
 } // namespace
 
@@ -45,8 +42,7 @@ TEST_CASE("MemoryTypeRegistry::resolve returns recorded property flags and atom 
 
     const auto resolved_coherent = registry.resolve(device, 1);
     REQUIRE(resolved_coherent.has_value());
-    CHECK((resolved_coherent->property_flags
-           & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0);
+    CHECK((resolved_coherent->property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0);
 
     clear_registry(registry, device);
 }

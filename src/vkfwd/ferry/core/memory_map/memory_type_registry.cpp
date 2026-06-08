@@ -21,30 +21,25 @@ void MemoryTypeRegistry::forget_device(VkDevice device) {
     device_to_physical_.erase(device);
 }
 
-void MemoryTypeRegistry::record_memory_properties(
-    VkPhysicalDevice physical_device,
-    const VkPhysicalDeviceMemoryProperties & properties) {
+void MemoryTypeRegistry::record_memory_properties(VkPhysicalDevice physical_device, const VkPhysicalDeviceMemoryProperties & properties) {
     if (physical_device == VK_NULL_HANDLE) { return; }
     std::lock_guard lock(mutex_);
     memory_properties_[physical_device] = properties;
 }
 
-void MemoryTypeRegistry::record_non_coherent_atom_size(
-    VkPhysicalDevice physical_device, VkDeviceSize size) {
+void MemoryTypeRegistry::record_non_coherent_atom_size(VkPhysicalDevice physical_device, VkDeviceSize size) {
     if (physical_device == VK_NULL_HANDLE) { return; }
     std::lock_guard lock(mutex_);
     non_coherent_atom_[physical_device] = size;
 }
 
-void MemoryTypeRegistry::record_min_memory_map_alignment(
-    VkPhysicalDevice physical_device, std::size_t alignment) {
+void MemoryTypeRegistry::record_min_memory_map_alignment(VkPhysicalDevice physical_device, std::size_t alignment) {
     if (physical_device == VK_NULL_HANDLE) { return; }
     std::lock_guard lock(mutex_);
     min_memory_map_alignment_[physical_device] = alignment;
 }
 
-std::optional<MemoryTypeRegistry::Resolved>
-MemoryTypeRegistry::resolve(VkDevice device, std::uint32_t memory_type_index) const {
+std::optional<MemoryTypeRegistry::Resolved> MemoryTypeRegistry::resolve(VkDevice device, std::uint32_t memory_type_index) const {
     std::lock_guard lock(mutex_);
 
     const auto device_iter = device_to_physical_.find(device);
