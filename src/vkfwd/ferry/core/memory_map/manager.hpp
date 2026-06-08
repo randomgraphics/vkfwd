@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace vkfwd {
@@ -24,13 +25,25 @@ class MemoryMapForwarder {
 public:
     static MemoryMapForwarder & instance();
 
-    void record_allocation(VkDevice device, VkDeviceMemory memory, VkDeviceSize allocation_size);
+    // record_allocation captures everything a ForwarderAllocation subclass
+    // needs to construct itself. The allocate hook resolves property_flags,
+    // memory_type_index, non_coherent_atom_size, and min_memory_map_alignment
+    // through MemoryTypeRegistry before calling here so the manager itself
+    // does not depend on the registry.
+    void record_allocation(VkDevice device, VkDeviceMemory memory, VkMemoryPropertyFlags property_flags, std::uint32_t memory_type_index,
+                           VkDeviceSize allocation_size, VkDeviceSize non_coherent_atom_size, std::size_t min_memory_map_alignment);
 
     void forget_allocation(VkDeviceMemory memory);
 
     VkResult custom_vkMapMemory_entry(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void ** ppData);
 
     void custom_vkUnmapMemory_entry(VkDevice device, VkDeviceMemory memory);
+
+    // Phase 2 will wire vkFlushMappedMemoryRanges / vkInvalidateMappedMemoryRanges
+    // entry points into these. Phase 0 has no callers; the surface is locked now
+    // so phase 2 only adds plumbing — no manager-shape change at that point.
+    VkResult flush_ranges(VkDevice device, std::uint32_t range_count, const VkMappedMemoryRange * ranges);
+    VkResult invalidate_ranges(VkDevice device, std::uint32_t range_count, const VkMappedMemoryRange * ranges);
 
     /// @brief Test helper to query the recorded allocation size for a given memory handle. Not a public API.
     VkDeviceSize test_get_allocation_size(VkDeviceMemory memory) const;

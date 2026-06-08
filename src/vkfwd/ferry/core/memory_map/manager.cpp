@@ -1,7 +1,10 @@
 #include "memory_map/manager.hpp"
 
 #include "logging.hpp"
+#include "memory_map/forwarder_allocation.hpp"
+#include "memory_map/forwarder_allocation_factory.hpp"
 
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -11,60 +14,120 @@ namespace vkfwd {
 
 class MemoryMapForwarder::Impl {
 public:
-    struct AllocationRecord {
-        VkDevice     device = VK_NULL_HANDLE;
-        VkDeviceSize size   = 0;
-    };
-
-    void record_allocation(VkDevice device, VkDeviceMemory memory, VkDeviceSize allocation_size) {
+    void record_allocation(VkDevice device, VkDeviceMemory memory, VkMemoryPropertyFlags property_flags, std::uint32_t memory_type_index,
+                           VkDeviceSize allocation_size, VkDeviceSize non_coherent_atom_size, std::size_t min_memory_map_alignment) {
         if (memory == VK_NULL_HANDLE) { return; }
 
+        auto allocation = ::vkfwd::memory_map::ForwarderAllocationFactory::create({
+            .device                   = device,
+            .memory                   = memory,
+            .allocation_size          = allocation_size,
+            .memory_type_index        = memory_type_index,
+            .property_flags           = property_flags,
+            .non_coherent_atom_size   = non_coherent_atom_size,
+            .min_memory_map_alignment = min_memory_map_alignment,
+        });
+        // Non-host-visible allocations have no map-manager identity. The
+        // factory returns nullptr; record nothing and let any later map call
+        // on this handle fail at the lookup below.
+        if (!allocation) { return; }
+
         std::lock_guard lock(mutex);
-        // vkMapMemory needs the original allocation extent to resolve
-        // VK_WHOLE_SIZE without asking the receiver for another synchronous query.
-        // The handle remains caller-visible after response copy-back, so this map
-        // is keyed by the same handle the application will later pass to map/free.
-        allocations[memory] = AllocationRecord {
-            .device = device,
-            .size   = allocation_size,
-        };
+        allocations[memory] = std::move(allocation);
     }
 
     void forget_allocation(VkDeviceMemory memory) {
         if (memory == VK_NULL_HANDLE) { return; }
 
         std::lock_guard lock(mutex);
-        // Free is currently deferrable on the transport, but the source process
-        // must stop accepting future maps for this handle as soon as the app frees
-        // it. Receiver replay still observes the serialized vkFreeMemory in order.
+        // unique_ptr destructor releases any staging owned by the subclass.
         allocations.erase(memory);
+    }
+
+    VkResult custom_vkMapMemory_entry(VkDevice /*device*/, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags,
+                                      void ** ppData) {
+        ::vkfwd::memory_map::ForwarderAllocation * allocation = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            const auto      found = allocations.find(memory);
+            if (found == allocations.end()) {
+                // Either the allocation was non-host-visible (factory skipped it)
+                // or vkfwd could not classify it from cache. Either way, return a
+                // visible error so callers can react without dereferencing a
+                // stale receiver-side mapped pointer.
+                if (ppData) { *ppData = nullptr; }
+                VKFWD_LOG_ERROR("vkfwd: MemoryMapForwarder::custom_vkMapMemory_entry called for an unrecorded VkDeviceMemory");
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+            allocation = found->second.get();
+        }
+        return allocation->map(offset, size, flags, ppData);
+    }
+
+    void custom_vkUnmapMemory_entry(VkDevice /*device*/, VkDeviceMemory memory) {
+        ::vkfwd::memory_map::ForwarderAllocation * allocation = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            const auto      found = allocations.find(memory);
+            if (found == allocations.end()) { return; }
+            allocation = found->second.get();
+        }
+        allocation->unmap();
+    }
+
+    VkResult flush_ranges(VkDevice /*device*/, std::uint32_t range_count, const VkMappedMemoryRange * ranges) {
+        if (range_count == 0 || ranges == nullptr) { return VK_SUCCESS; }
+        VkResult aggregated = VK_SUCCESS;
+        // Attempt every range so a single unknown handle does not skip valid
+        // ranges later in the array. Surface only the first failure.
+        for (std::uint32_t i = 0; i < range_count; ++i) {
+            const auto &                               range      = ranges[i];
+            ::vkfwd::memory_map::ForwarderAllocation * allocation = nullptr;
+            {
+                std::lock_guard lock(mutex);
+                const auto      found = allocations.find(range.memory);
+                if (found == allocations.end()) {
+                    if (aggregated == VK_SUCCESS) { aggregated = VK_ERROR_FEATURE_NOT_PRESENT; }
+                    continue;
+                }
+                allocation = found->second.get();
+            }
+            const VkResult r = allocation->flush(range.offset, range.size);
+            if (r != VK_SUCCESS && aggregated == VK_SUCCESS) { aggregated = r; }
+        }
+        return aggregated;
+    }
+
+    VkResult invalidate_ranges(VkDevice /*device*/, std::uint32_t range_count, const VkMappedMemoryRange * ranges) {
+        if (range_count == 0 || ranges == nullptr) { return VK_SUCCESS; }
+        VkResult aggregated = VK_SUCCESS;
+        for (std::uint32_t i = 0; i < range_count; ++i) {
+            const auto &                               range      = ranges[i];
+            ::vkfwd::memory_map::ForwarderAllocation * allocation = nullptr;
+            {
+                std::lock_guard lock(mutex);
+                const auto      found = allocations.find(range.memory);
+                if (found == allocations.end()) {
+                    if (aggregated == VK_SUCCESS) { aggregated = VK_ERROR_FEATURE_NOT_PRESENT; }
+                    continue;
+                }
+                allocation = found->second.get();
+            }
+            const VkResult r = allocation->invalidate(range.offset, range.size);
+            if (r != VK_SUCCESS && aggregated == VK_SUCCESS) { aggregated = r; }
+        }
+        return aggregated;
     }
 
     VkDeviceSize test_get_allocation_size(VkDeviceMemory memory) const {
         std::lock_guard lock(mutex);
         const auto      found = allocations.find(memory);
         if (found == allocations.end()) { return 0; }
-        return found->second.size;
+        return found->second->info().allocation_size;
     }
 
-    VkResult custom_vkMapMemory_entry(VkDevice /*device*/, VkDeviceMemory /*memory*/, VkDeviceSize /*offset*/, VkDeviceSize /*size*/,
-                                      VkMemoryMapFlags /*flags*/, void ** ppData) {
-        // Placeholder: the custom memory-map wire protocol is not yet
-        // implemented. Do not return a receiver-side mapped pointer through the
-        // standard Vulkan response path; it is invalid in the source process.
-        // Return a clear error so callers can detect the boundary rather than
-        // crashing when they dereference a stale receiver-side pointer.
-        if (ppData) { *ppData = nullptr; }
-        VKFWD_LOG_ERROR("vkfwd MemoryMapForwarder: custom_vkMapMemory_entry not yet implemented (placeholder)");
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    }
-
-    void custom_vkUnmapMemory_entry(VkDevice /*device*/, VkDeviceMemory /*memory*/) {
-        // Placeholder: nothing to flush since vkMapMemory never succeeded.
-    }
-
-    mutable std::mutex                                   mutex;
-    std::unordered_map<VkDeviceMemory, AllocationRecord> allocations;
+    mutable std::mutex                                                                            mutex;
+    std::unordered_map<VkDeviceMemory, std::unique_ptr<::vkfwd::memory_map::ForwarderAllocation>> allocations;
 };
 
 // ---- MemoryMapForwarder -----------------------------------------------------
@@ -77,13 +140,12 @@ MemoryMapForwarder & MemoryMapForwarder::instance() {
     return s_instance;
 }
 
-void MemoryMapForwarder::record_allocation(VkDevice device, VkDeviceMemory memory, VkDeviceSize allocation_size) {
-    impl_->record_allocation(device, memory, allocation_size);
+void MemoryMapForwarder::record_allocation(VkDevice device, VkDeviceMemory memory, VkMemoryPropertyFlags property_flags, std::uint32_t memory_type_index,
+                                           VkDeviceSize allocation_size, VkDeviceSize non_coherent_atom_size, std::size_t min_memory_map_alignment) {
+    impl_->record_allocation(device, memory, property_flags, memory_type_index, allocation_size, non_coherent_atom_size, min_memory_map_alignment);
 }
 
 void MemoryMapForwarder::forget_allocation(VkDeviceMemory memory) { impl_->forget_allocation(memory); }
-
-VkDeviceSize MemoryMapForwarder::test_get_allocation_size(VkDeviceMemory memory) const { return impl_->test_get_allocation_size(memory); }
 
 VkResult MemoryMapForwarder::custom_vkMapMemory_entry(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags,
                                                       void ** ppData) {
@@ -92,7 +154,20 @@ VkResult MemoryMapForwarder::custom_vkMapMemory_entry(VkDevice device, VkDeviceM
 
 void MemoryMapForwarder::custom_vkUnmapMemory_entry(VkDevice device, VkDeviceMemory memory) { impl_->custom_vkUnmapMemory_entry(device, memory); }
 
+VkResult MemoryMapForwarder::flush_ranges(VkDevice device, std::uint32_t range_count, const VkMappedMemoryRange * ranges) {
+    return impl_->flush_ranges(device, range_count, ranges);
+}
+
+VkResult MemoryMapForwarder::invalidate_ranges(VkDevice device, std::uint32_t range_count, const VkMappedMemoryRange * ranges) {
+    return impl_->invalidate_ranges(device, range_count, ranges);
+}
+
+VkDeviceSize MemoryMapForwarder::test_get_allocation_size(VkDeviceMemory memory) const { return impl_->test_get_allocation_size(memory); }
+
 // ---- MemoryMapReceiver::Impl ------------------------------------------------
+// Receiver-side rewrite is deferred to task 9 of this plan. The phase-0 shape
+// below is the original placeholder; task 9 swaps it for per-allocation
+// dispatch.
 
 class MemoryMapReceiver::Impl {
 public:

@@ -3,6 +3,7 @@
 #include "generated/command/vkAllocateMemory.hpp"
 #include "generated/forwarder_entrypoints.hpp"
 #include "memory_map/manager.hpp"
+#include "memory_map/memory_type_registry.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,19 +15,38 @@ using AllocateCommand = ::vkfwd::generated::commands::vkAllocateMemory::Command;
 constexpr VkDeviceSize kAllocationSize = 64 * 1024;
 
 struct Scenario {
+    VkPhysicalDevice     physical_device = test_handle<VkPhysicalDevice>(0x401);
     VkDevice             device          = test_handle<VkDevice>(0x501);
     VkDeviceMemory       receiver_memory = test_handle<VkDeviceMemory>(0x601);
     VkMemoryAllocateInfo allocate_info {
-        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext           = nullptr,
-        .allocationSize  = kAllocationSize,
-        .memoryTypeIndex = 2,
+        .sType          = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext          = nullptr,
+        .allocationSize = kAllocationSize,
+        // Use index 0 so the primed memory-properties table (one entry,
+        // host-visible) covers it. Any non-host-visible type would intentionally
+        // not be recorded by the manager and the test's allocation-size
+        // assertion would then fail by design.
+        .memoryTypeIndex = 0,
     };
 };
 
 Scenario & scenario() {
     static Scenario value;
     return value;
+}
+
+void prime_registry(const Scenario & s) {
+    auto & registry = ::vkfwd::memory_map::MemoryTypeRegistry::instance();
+    registry.forget_device(s.device);
+    registry.record_device(s.device, s.physical_device);
+
+    VkPhysicalDeviceMemoryProperties props {};
+    props.memoryTypeCount = 1;
+    props.memoryTypes[0]  = {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
+    registry.record_memory_properties(s.physical_device, props);
+
+    registry.record_non_coherent_atom_size(s.physical_device, 64);
+    registry.record_min_memory_map_alignment(s.physical_device, 4096);
 }
 
 CommandStream handle_allocate_flush(CommandStream & request_stream) {
@@ -52,6 +72,7 @@ TEST_CASE("vkAllocateMemory and vkFreeMemory update memory map allocation record
     auto & manager  = ::vkfwd::MemoryMapForwarder::instance();
     auto & expected = scenario();
     manager.forget_allocation(expected.receiver_memory);
+    prime_registry(expected);
     install_pack_unpack_transport(handle_allocate_flush);
 
     VkDeviceMemory memory = VK_NULL_HANDLE;
