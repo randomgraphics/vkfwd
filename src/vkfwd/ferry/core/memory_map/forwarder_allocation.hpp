@@ -30,13 +30,17 @@ public:
     virtual ~ForwarderAllocation() = default;
 
     virtual VkResult map(VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void ** ppData) = 0;
-    virtual void     unmap()                                                                            = 0;
-    virtual VkResult flush(VkDeviceSize offset, VkDeviceSize size)                                      = 0;
-    virtual VkResult invalidate(VkDeviceSize offset, VkDeviceSize size)                                 = 0;
+    virtual void     unmap()                                                                             = 0;
+    virtual VkResult flush(VkDeviceSize offset, VkDeviceSize size)                                       = 0;
+    virtual VkResult invalidate(VkDeviceSize offset, VkDeviceSize size)                                  = 0;
 
     const CreationInfo & info() const { return info_; }
 
-protected:
+    // Public so std::make_unique can construct subclasses through the
+    // inherited-constructor (`using ForwarderAllocation::ForwarderAllocation;`)
+    // pattern the placeholder subclasses adopt. The class is abstract — the
+    // pure-virtual map/unmap/flush/invalidate prevent direct instantiation
+    // of the base regardless of constructor visibility.
     explicit ForwarderAllocation(const CreationInfo & info): info_(info) {}
 
 private:

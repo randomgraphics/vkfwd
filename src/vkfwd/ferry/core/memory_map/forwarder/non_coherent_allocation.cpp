@@ -14,12 +14,8 @@ VkResult NonCoherentForwarderAllocation::map(VkDeviceSize /*offset*/, VkDeviceSi
 
 void NonCoherentForwarderAllocation::unmap() {}
 
-VkResult NonCoherentForwarderAllocation::flush(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) {
-    return VK_ERROR_FEATURE_NOT_PRESENT;
-}
+VkResult NonCoherentForwarderAllocation::flush(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) { return VK_ERROR_FEATURE_NOT_PRESENT; }
 
-VkResult NonCoherentForwarderAllocation::invalidate(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) {
-    return VK_ERROR_FEATURE_NOT_PRESENT;
-}
+VkResult NonCoherentForwarderAllocation::invalidate(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) { return VK_ERROR_FEATURE_NOT_PRESENT; }
 
 } // namespace vkfwd::memory_map

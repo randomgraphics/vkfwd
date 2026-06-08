@@ -12,12 +12,8 @@ VkResult CoherentForwarderAllocation::map(VkDeviceSize /*offset*/, VkDeviceSize 
 
 void CoherentForwarderAllocation::unmap() {}
 
-VkResult CoherentForwarderAllocation::flush(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) {
-    return VK_ERROR_FEATURE_NOT_PRESENT;
-}
+VkResult CoherentForwarderAllocation::flush(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) { return VK_ERROR_FEATURE_NOT_PRESENT; }
 
-VkResult CoherentForwarderAllocation::invalidate(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) {
-    return VK_ERROR_FEATURE_NOT_PRESENT;
-}
+VkResult CoherentForwarderAllocation::invalidate(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) { return VK_ERROR_FEATURE_NOT_PRESENT; }
 
 } // namespace vkfwd::memory_map
