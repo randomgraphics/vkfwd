@@ -24,8 +24,10 @@ struct CommandHooks<::vkfwd::generated::CommandId::GetPhysicalDeviceProperties> 
         // receiver-side flush/invalidate ranges, and minMemoryMapAlignment
         // gates the source-side mapped-pointer contract.
         if (!response.pProperties) { return; }
-        ::vkfwd::memory_map::MemoryTypeRegistry::instance().record_non_coherent_atom_size(parameters.physicalDevice, response.pProperties->limits.nonCoherentAtomSize);
-        ::vkfwd::memory_map::MemoryTypeRegistry::instance().record_min_memory_map_alignment(parameters.physicalDevice, response.pProperties->limits.minMemoryMapAlignment);
+        ::vkfwd::memory_map::MemoryTypeRegistry::instance().record_non_coherent_atom_size(parameters.physicalDevice,
+                                                                                          response.pProperties->limits.nonCoherentAtomSize);
+        ::vkfwd::memory_map::MemoryTypeRegistry::instance().record_min_memory_map_alignment(parameters.physicalDevice,
+                                                                                            response.pProperties->limits.minMemoryMapAlignment);
     }
 };
 

@@ -6,6 +6,9 @@ add_library(vkfwd_ferry_core STATIC
   command_stream.cpp
   memory_map/manager.cpp
   memory_map/memory_type_registry.cpp
+  memory_map/forwarder_allocation.cpp
+  memory_map/forwarder/non_coherent_allocation.cpp
+  memory_map/forwarder/coherent_allocation.cpp
   generated/command/vkAllocateMemory.cpp
   generated/command/vkBindBufferMemory.cpp
   generated/command/vkCreateBuffer.cpp
