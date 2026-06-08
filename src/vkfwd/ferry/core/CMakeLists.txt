@@ -10,6 +10,9 @@ add_library(vkfwd_ferry_core STATIC
   memory_map/forwarder/non_coherent_allocation.cpp
   memory_map/forwarder/coherent_allocation.cpp
   memory_map/forwarder_allocation_factory.cpp
+  memory_map/receiver_allocation.cpp
+  memory_map/receiver/non_coherent_allocation.cpp
+  memory_map/receiver/coherent_allocation.cpp
   generated/command/vkAllocateMemory.cpp
   generated/command/vkBindBufferMemory.cpp
   generated/command/vkCreateBuffer.cpp
