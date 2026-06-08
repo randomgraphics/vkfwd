@@ -2,7 +2,7 @@
 
 #include "generated/command/vkFreeMemory.hpp"
 #include "generated/forwarder_hooks.hpp"
-#include "memory_map_manager.hpp"
+#include "memory_map/manager.hpp"
 
 namespace vkfwd::forwarder::manual {
 

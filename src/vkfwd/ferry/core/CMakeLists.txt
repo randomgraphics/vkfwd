@@ -4,7 +4,7 @@
 # identical on both sides of the forwarding boundary.
 add_library(vkfwd_ferry_core STATIC
   command_stream.cpp
-  memory_map_manager.cpp
+  memory_map/manager.cpp
   generated/command/vkAllocateMemory.cpp
   generated/command/vkBindBufferMemory.cpp
   generated/command/vkCreateBuffer.cpp

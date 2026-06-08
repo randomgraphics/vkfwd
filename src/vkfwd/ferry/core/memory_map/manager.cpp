@@ -1,4 +1,4 @@
-#include "memory_map_manager.hpp"
+#include "memory_map/manager.hpp"
 
 #include "logging.hpp"
 

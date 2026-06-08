@@ -2,7 +2,7 @@
 
 #include "generated/command/vkAllocateMemory.hpp"
 #include "generated/forwarder_entrypoints.hpp"
-#include "memory_map_manager.hpp"
+#include "memory_map/manager.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
