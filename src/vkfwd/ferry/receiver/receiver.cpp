@@ -1,7 +1,10 @@
 #include "receiver.hpp"
 
+#include "command_id_range.hpp"
+#include "custom_command.hpp"
 #include "generated/endpoints.hpp"
 #include "logging.hpp"
+#include "manual_dispatch.hpp"
 
 #include <cstddef>
 #include <cstring>
@@ -94,13 +97,26 @@ public:
                 return response_stream;
             }
 
-            const auto  command_id = static_cast<generated::CommandId>(header->command_id);
-            const Range request_range {
+            const std::uint32_t raw_command_id = header->command_id;
+            const Range         request_range {
                 .offset = offset,
                 .size   = header->size,
             };
-            if (!receiver::generated::call_api_endpoint(command_id, request_stream, request_range, response_stream, replay_context_)) {
-                VKFWD_LOG_ERROR("vkfwd receiver: failed to dispatch API endpoint, command_id={}", header->command_id);
+            // The 32-bit command_id space is split at kReservedCommandIdBase:
+            // generated Vulkan ids live below it, manual vkfwd ids above.
+            // Branching here keeps the generated dispatcher unaware of the
+            // manual protocol and lets the manual handler reject unknown ids
+            // loudly instead of casting them into a generated-id table miss.
+            bool ok = false;
+            if (raw_command_id >= ::vkfwd::kReservedCommandIdBase) {
+                ok = ::vkfwd::receiver::dispatch_manual_command(static_cast<::vkfwd::manual::CommandId>(raw_command_id), request_stream, request_range,
+                                                                response_stream, replay_context_);
+            } else {
+                const auto command_id = static_cast<generated::CommandId>(raw_command_id);
+                ok                    = receiver::generated::call_api_endpoint(command_id, request_stream, request_range, response_stream, replay_context_);
+            }
+            if (!ok) {
+                VKFWD_LOG_ERROR("vkfwd receiver: failed to dispatch command_id={}", raw_command_id);
                 return response_stream;
             }
 

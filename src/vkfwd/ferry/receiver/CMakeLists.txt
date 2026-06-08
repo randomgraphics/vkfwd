@@ -10,6 +10,7 @@ file(GLOB VKFWD_RECEIVER_ENDPOINT_SOURCES CONFIGURE_DEPENDS
 add_library(vkfwd_ferry_receiver STATIC
   generated/endpoints.cpp
   ${VKFWD_RECEIVER_ENDPOINT_SOURCES}
+  manual_dispatch.cpp
   receiver.cpp)
 
 set_target_properties(vkfwd_ferry_receiver PROPERTIES

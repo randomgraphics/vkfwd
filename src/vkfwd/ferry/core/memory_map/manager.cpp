@@ -194,14 +194,18 @@ public:
         allocations.erase(memory);
     }
 
-    bool custom_vkMapMemory_endpoint(const CommandStream & /*request_stream*/, const Range & /*request_range*/, CommandStream & /*response_stream*/) {
+    bool custom_vkMapMemory_endpoint(const CommandStream & /*request_stream*/, const Range & /*request_range*/, CommandStream & /*response_stream*/,
+                                     ::vkfwd::receiver::ReplayContext & /*replay_context*/) {
         // Phase-0 placeholder. Phase 1 unpacks manual::CommandId::MemoryMap
-        // and delegates into the matching ReceiverAllocation subclass.
+        // and delegates into the matching ReceiverAllocation subclass; the
+        // replay_context parameter is reserved for the source->receiver handle
+        // map and dispatch-table access that subsequent tasks need.
         VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: custom_vkMapMemory_endpoint not yet implemented (placeholder)");
         return false;
     }
 
-    bool custom_vkUnmapMemory_endpoint(const CommandStream & /*request_stream*/, const Range & /*request_range*/, CommandStream & /*response_stream*/) {
+    bool custom_vkUnmapMemory_endpoint(const CommandStream & /*request_stream*/, const Range & /*request_range*/, CommandStream & /*response_stream*/,
+                                       ::vkfwd::receiver::ReplayContext & /*replay_context*/) {
         return false;
     }
 
@@ -220,12 +224,14 @@ void MemoryMapReceiver::record_allocation(VkDevice device, VkDeviceMemory memory
 
 void MemoryMapReceiver::forget_allocation(VkDeviceMemory memory) { impl_->forget_allocation(memory); }
 
-bool MemoryMapReceiver::custom_vkMapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream) {
-    return impl_->custom_vkMapMemory_endpoint(request_stream, request_range, response_stream);
+bool MemoryMapReceiver::custom_vkMapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                                    ::vkfwd::receiver::ReplayContext & replay_context) {
+    return impl_->custom_vkMapMemory_endpoint(request_stream, request_range, response_stream, replay_context);
 }
 
-bool MemoryMapReceiver::custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream) {
-    return impl_->custom_vkUnmapMemory_endpoint(request_stream, request_range, response_stream);
+bool MemoryMapReceiver::custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                                      ::vkfwd::receiver::ReplayContext & replay_context) {
+    return impl_->custom_vkUnmapMemory_endpoint(request_stream, request_range, response_stream, replay_context);
 }
 
 } // namespace vkfwd

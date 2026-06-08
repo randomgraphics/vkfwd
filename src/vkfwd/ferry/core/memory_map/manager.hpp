@@ -5,6 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace vkfwd::receiver {
+struct ReplayContext;
+}
+
 namespace vkfwd {
 
 class CommandStream;
@@ -74,10 +78,14 @@ public:
 
     // custom_* names intentional: these methods handle vkfwd's manual
     // MemoryMap / MemoryUnmap command ids, not standard generated Vulkan
-    // CommandId::MapMemory / CommandId::UnmapMemory chunks.
-    bool custom_vkMapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream);
+    // CommandId::MapMemory / CommandId::UnmapMemory chunks. ReplayContext is
+    // threaded through so endpoint bodies can reach the source->receiver handle
+    // map and the receiver dispatch table without a back-pointer.
+    bool custom_vkMapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                     ::vkfwd::receiver::ReplayContext & replay_context);
 
-    bool custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream);
+    bool custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                       ::vkfwd::receiver::ReplayContext & replay_context);
 
 private:
     class Impl;
