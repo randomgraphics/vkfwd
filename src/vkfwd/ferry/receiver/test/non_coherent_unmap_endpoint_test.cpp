@@ -30,19 +30,19 @@ Handle test_handle(std::uintptr_t value) {
 // function pointer with no closure, so the stub forwards through a static
 // scenario object each TEST_CASE resets at the top.
 struct MapMemoryStub {
-    bool             called          = false;
-    VkDevice         saw_device      = VK_NULL_HANDLE;
-    VkDeviceMemory   saw_memory      = VK_NULL_HANDLE;
-    VkResult         return_value    = VK_SUCCESS;
-    void *           fake_mapped_ptr = nullptr;
+    bool           called          = false;
+    VkDevice       saw_device      = VK_NULL_HANDLE;
+    VkDeviceMemory saw_memory      = VK_NULL_HANDLE;
+    VkResult       return_value    = VK_SUCCESS;
+    void *         fake_mapped_ptr = nullptr;
 };
 
 // Recording state for the unmap_memory PFN. Mirrors MapMemoryStub but real
 // vkUnmapMemory returns void, so there is no return_value to fake.
 struct UnmapMemoryStub {
-    bool             called      = false;
-    VkDevice         saw_device  = VK_NULL_HANDLE;
-    VkDeviceMemory   saw_memory  = VK_NULL_HANDLE;
+    bool           called     = false;
+    VkDevice       saw_device = VK_NULL_HANDLE;
+    VkDeviceMemory saw_memory = VK_NULL_HANDLE;
 };
 
 MapMemoryStub & map_stub() {
@@ -55,7 +55,7 @@ UnmapMemoryStub & unmap_stub() {
     return state;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL stub_vkMapMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize /*offset*/, VkDeviceSize /*size*/,
+VKAPI_ATTR VkResult VKAPI_CALL stub_vkMapMemory(VkDevice device, VkDeviceMemory     memory, VkDeviceSize /*offset*/, VkDeviceSize /*size*/,
                                                 VkMemoryMapFlags /*flags*/, void ** ppData) {
     auto & s     = map_stub();
     s.called     = true;
@@ -157,10 +157,10 @@ void install_stubs(ReplayContext & replay_context) {
 } // namespace
 
 TEST_CASE("MemoryMapReceiver::custom_vkUnmapMemory_endpoint dispatches to driver and clears per-handle entry") {
-    auto & ms              = map_stub();
-    ms                     = MapMemoryStub {};
-    ms.return_value        = VK_SUCCESS;
-    ms.fake_mapped_ptr     = reinterpret_cast<void *>(0xC0FE0000);
+    auto & ms          = map_stub();
+    ms                 = MapMemoryStub {};
+    ms.return_value    = VK_SUCCESS;
+    ms.fake_mapped_ptr = reinterpret_cast<void *>(0xC0FE0000);
 
     auto & us = unmap_stub();
     us        = UnmapMemoryStub {};
@@ -220,7 +220,7 @@ TEST_CASE("MemoryMapReceiver::custom_vkUnmapMemory_endpoint dispatches to driver
     // distinguishing assertion. Instead, simply re-map successfully and
     // confirm the map PFN was called again (proves the receiver did not
     // crash dereferencing a stale entry).
-    ms        = MapMemoryStub {};
+    ms                 = MapMemoryStub {};
     ms.return_value    = VK_SUCCESS;
     ms.fake_mapped_ptr = reinterpret_cast<void *>(0xC0FE1000);
     {
