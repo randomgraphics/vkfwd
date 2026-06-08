@@ -9,13 +9,9 @@ bool NonCoherentReceiverAllocation::map_endpoint(const CommandStream &, const Ra
     return false;
 }
 
-bool NonCoherentReceiverAllocation::unmap_endpoint(const CommandStream &, const Range &, CommandStream &, ::vkfwd::receiver::ReplayContext &) {
-    return false;
-}
+bool NonCoherentReceiverAllocation::unmap_endpoint(const CommandStream &, const Range &, CommandStream &, ::vkfwd::receiver::ReplayContext &) { return false; }
 
-bool NonCoherentReceiverAllocation::flush_endpoint(const CommandStream &, const Range &, CommandStream &, ::vkfwd::receiver::ReplayContext &) {
-    return false;
-}
+bool NonCoherentReceiverAllocation::flush_endpoint(const CommandStream &, const Range &, CommandStream &, ::vkfwd::receiver::ReplayContext &) { return false; }
 
 bool NonCoherentReceiverAllocation::invalidate_endpoint(const CommandStream &, const Range &, CommandStream &, ::vkfwd::receiver::ReplayContext &) {
     return false;

@@ -13,6 +13,7 @@ add_library(vkfwd_ferry_core STATIC
   memory_map/receiver_allocation.cpp
   memory_map/receiver/non_coherent_allocation.cpp
   memory_map/receiver/coherent_allocation.cpp
+  memory_map/receiver_allocation_factory.cpp
   generated/command/vkAllocateMemory.cpp
   generated/command/vkBindBufferMemory.cpp
   generated/command/vkCreateBuffer.cpp
