@@ -69,4 +69,30 @@ struct MemoryTransferRange {
 };
 static_assert(std::is_trivially_copyable_v<MemoryTransferRange>);
 
+// Forwarder-initiated fallback when MemoryTypeRegistry cannot resolve a
+// (device, memoryTypeIndex) at vkAllocateMemory time. The receiver answers
+// with the receiver-driver's authoritative VkPhysicalDeviceMemoryProperties +
+// the two device limits the forwarder needs to construct a ForwarderAllocation
+// that satisfies Vulkan's mapped-pointer alignment contract.
+struct QueryPhysicalDeviceMemoryInfoRequest {
+    std::uint32_t    manager_revision = kMemoryMapManagerRevision;
+    std::uint32_t    pad0             = 0;
+    VkPhysicalDevice physical_device  = VK_NULL_HANDLE;
+};
+static_assert(std::is_trivially_copyable_v<QueryPhysicalDeviceMemoryInfoRequest>);
+static_assert(sizeof(QueryPhysicalDeviceMemoryInfoRequest) == 16);
+
+struct QueryPhysicalDeviceMemoryInfoResponse {
+    std::uint32_t                    manager_revision = kMemoryMapManagerRevision;
+    std::int32_t                     return_value     = VK_SUCCESS;
+    VkPhysicalDeviceMemoryProperties memory_properties {};
+    VkDeviceSize                     non_coherent_atom_size   = 0;
+    std::uint64_t                    min_memory_map_alignment = 0;
+};
+static_assert(std::is_trivially_copyable_v<QueryPhysicalDeviceMemoryInfoResponse>);
+// Intentionally no sizeof assertion: VkPhysicalDeviceMemoryProperties size
+// derives from VK_MAX_MEMORY_TYPES/VK_MAX_MEMORY_HEAPS, which are compile-time
+// constants but vary across Vulkan SDK versions. Trivial-copyability plus
+// matching SDK on both sides is the load-bearing invariant.
+
 } // namespace vkfwd::memory_map::wire

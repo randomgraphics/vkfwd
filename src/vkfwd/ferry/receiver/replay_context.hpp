@@ -38,6 +38,13 @@ struct ReplayContext {
     // way.
     std::unordered_map<VkDevice, VkDevice>             source_to_receiver_device;
     std::unordered_map<VkDeviceMemory, VkDeviceMemory> source_to_receiver_memory;
+
+    // Populated by the vkEnumeratePhysicalDevices after_call hook. Required by
+    // the QueryPhysicalDeviceMemoryInfo manual dispatch path so the receiver
+    // can translate a source VkPhysicalDevice to its receiver-native form
+    // before calling the real vkGetPhysicalDevice{Memory,}Properties PFNs.
+    // Same Phase 1 (h, h) invariant as the other two maps.
+    std::unordered_map<VkPhysicalDevice, VkPhysicalDevice> source_to_receiver_physical_device;
 };
 
 } // namespace vkfwd::receiver

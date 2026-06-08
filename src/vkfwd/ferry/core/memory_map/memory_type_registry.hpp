@@ -40,6 +40,13 @@ public:
     // application Vulkan-order violation.
     std::optional<Resolved> resolve(VkDevice device, std::uint32_t memory_type_index) const;
 
+    // Public accessor for the device->physical mapping used by the
+    // QueryPhysicalDeviceMemoryInfo fallback path (Task 12): when resolve()
+    // misses but vkCreateDevice has run, the forwarder needs to ask the
+    // receiver for the physical-device's memory properties. Returns nullopt
+    // when vkCreateDevice has never been observed for `device`.
+    std::optional<VkPhysicalDevice> physical_device_for(VkDevice device) const;
+
 private:
     MemoryTypeRegistry() = default;
 

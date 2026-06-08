@@ -58,6 +58,51 @@ TEST_CASE("MemoryMapResponse round-trips via memcpy") {
     CHECK(out.effective_size == resp.effective_size);
 }
 
+TEST_CASE("QueryPhysicalDeviceMemoryInfoRequest round-trips via memcpy") {
+    QueryPhysicalDeviceMemoryInfoRequest req {
+        .manager_revision = kMemoryMapManagerRevision,
+        .physical_device  = reinterpret_cast<VkPhysicalDevice>(0xBEEF),
+    };
+
+    std::uint8_t buffer[sizeof(req)] {};
+    std::memcpy(buffer, &req, sizeof(req));
+
+    QueryPhysicalDeviceMemoryInfoRequest out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.manager_revision == req.manager_revision);
+    CHECK(out.physical_device == req.physical_device);
+}
+
+TEST_CASE("QueryPhysicalDeviceMemoryInfoResponse round-trips via memcpy") {
+    QueryPhysicalDeviceMemoryInfoResponse resp {};
+    resp.manager_revision                  = kMemoryMapManagerRevision;
+    resp.return_value                      = VK_SUCCESS;
+    resp.memory_properties.memoryTypeCount = 2;
+    resp.memory_properties.memoryTypes[0]  = {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
+    resp.memory_properties.memoryTypes[1]  = {VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1};
+    resp.memory_properties.memoryHeapCount = 1;
+    resp.memory_properties.memoryHeaps[0]  = {0x10000, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT};
+    resp.non_coherent_atom_size            = 128;
+    resp.min_memory_map_alignment          = 4096;
+
+    std::uint8_t buffer[sizeof(resp)] {};
+    std::memcpy(buffer, &resp, sizeof(resp));
+
+    QueryPhysicalDeviceMemoryInfoResponse out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.manager_revision == resp.manager_revision);
+    CHECK(out.return_value == resp.return_value);
+    CHECK(out.memory_properties.memoryTypeCount == resp.memory_properties.memoryTypeCount);
+    CHECK(out.memory_properties.memoryTypes[0].propertyFlags == resp.memory_properties.memoryTypes[0].propertyFlags);
+    CHECK(out.memory_properties.memoryTypes[1].propertyFlags == resp.memory_properties.memoryTypes[1].propertyFlags);
+    CHECK(out.memory_properties.memoryHeapCount == resp.memory_properties.memoryHeapCount);
+    CHECK(out.memory_properties.memoryHeaps[0].size == resp.memory_properties.memoryHeaps[0].size);
+    CHECK(out.non_coherent_atom_size == resp.non_coherent_atom_size);
+    CHECK(out.min_memory_map_alignment == resp.min_memory_map_alignment);
+}
+
 TEST_CASE("MemoryUnmapRequestHeader round-trips via memcpy") {
     MemoryUnmapRequestHeader header {
         .manager_revision = kMemoryMapManagerRevision,

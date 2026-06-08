@@ -4,6 +4,7 @@
 #include "generated/forwarder_hooks.hpp"
 #include "logging.hpp"
 #include "memory_map/manager.hpp"
+#include "memory_map/memory_info_fallback.hpp"
 #include "memory_map/memory_type_registry.hpp"
 
 namespace vkfwd::forwarder::manual {
@@ -20,16 +21,24 @@ struct CommandHooks<::vkfwd::generated::CommandId::AllocateMemory> {
                                       ::vkfwd::generated::commands::vkAllocateMemory::Command::Response &         response) {
         if (response.return_value != VK_SUCCESS || !parameters.pAllocateInfo || !response.pMemory || *response.pMemory == VK_NULL_HANDLE) { return; }
 
-        const auto resolved = ::vkfwd::memory_map::MemoryTypeRegistry::instance().resolve(parameters.device, parameters.pAllocateInfo->memoryTypeIndex);
+        auto resolved = ::vkfwd::memory_map::MemoryTypeRegistry::instance().resolve(parameters.device, parameters.pAllocateInfo->memoryTypeIndex);
         if (!resolved) {
-            // Phase 0 has only the opportunistic cache. Vulkan does not require
-            // the app to call property queries before allocation, so this is a
-            // vkfwd classification miss rather than an app error. Phase 1 adds
-            // manual::CommandId::QueryPhysicalDeviceMemoryInfo as the fallback.
-            // The allocation is still valid on the receiver — only manager
-            // bookkeeping is skipped, which downgrades vkMapMemory on this
-            // handle to a visible VK_ERROR_FEATURE_NOT_PRESENT.
-            VKFWD_LOG_ERROR("vkfwd: memory_type_registry has no entry for device={} memoryTypeIndex={}; vkAllocateMemory tracked record skipped",
+            // Phase 1 fallback: Vulkan does not require the app to call any
+            // property queries before vkAllocateMemory, so the opportunistic
+            // cache may legitimately miss on the first allocation. Ask the
+            // receiver for the physical-device's memory properties + limits
+            // synchronously, populate the registry, then retry resolve once.
+            ::vkfwd::memory_map::request_memory_info_fallback(parameters.device);
+            resolved = ::vkfwd::memory_map::MemoryTypeRegistry::instance().resolve(parameters.device, parameters.pAllocateInfo->memoryTypeIndex);
+        }
+        if (!resolved) {
+            // Even after the fallback we cannot classify. The allocation is
+            // still valid on the receiver — only manager bookkeeping is
+            // skipped, which downgrades vkMapMemory on this handle to a
+            // visible VK_ERROR_FEATURE_NOT_PRESENT. Common cause: no
+            // vkCreateDevice was observed for this VkDevice, so we don't even
+            // know which physical device to query.
+            VKFWD_LOG_ERROR("vkfwd: memory_type_registry has no entry for device={} memoryTypeIndex={} even after fallback; tracked record skipped",
                             static_cast<void *>(parameters.device), parameters.pAllocateInfo->memoryTypeIndex);
             return;
         }

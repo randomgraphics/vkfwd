@@ -39,6 +39,13 @@ void MemoryTypeRegistry::record_min_memory_map_alignment(VkPhysicalDevice physic
     min_memory_map_alignment_[physical_device] = alignment;
 }
 
+std::optional<VkPhysicalDevice> MemoryTypeRegistry::physical_device_for(VkDevice device) const {
+    std::lock_guard lock(mutex_);
+    const auto      it = device_to_physical_.find(device);
+    if (it == device_to_physical_.end()) { return std::nullopt; }
+    return it->second;
+}
+
 std::optional<MemoryTypeRegistry::Resolved> MemoryTypeRegistry::resolve(VkDevice device, std::uint32_t memory_type_index) const {
     std::lock_guard lock(mutex_);
 
