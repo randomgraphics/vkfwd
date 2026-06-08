@@ -10,4 +10,5 @@ set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
   vkAllocateFreeMemory_test.cpp
   vkMapMemory_test.cpp
   non_coherent_map_test.cpp
+  non_coherent_unmap_test.cpp
   memory_type_registry_hooks_test.cpp)

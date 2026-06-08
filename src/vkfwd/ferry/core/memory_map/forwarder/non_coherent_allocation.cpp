@@ -166,10 +166,60 @@ VkResult NonCoherentForwarderAllocation::map(VkDeviceSize offset, VkDeviceSize s
 }
 
 void NonCoherentForwarderAllocation::unmap() {
-    // Phase 1 Task 8 implements the unmap wire chunk + reservation release.
-    // Today this leaks the reservation by design — leaving it as a no-op
-    // matches the spec contract for unmap (it returns void) without claiming
-    // partial implementation.
+    // Step 1: guard against never-mapped or already-unmapped allocations.
+    // map() leaves reservation_base_ == nullptr on every failure path, so this
+    // check also covers the "map rejected, app called unmap anyway" case.
+    if (reservation_base_ == nullptr) { return; }
+
+    // Step 2: emit a header-only manual MemoryUnmap chunk. range_count == 0
+    // under N2 — any host writes the app cared about should have been
+    // delivered by an earlier vkFlushMappedMemoryRanges (Phase 2). Carrying
+    // mapped_offset/mapped_size lets the receiver release exactly the span it
+    // mapped without consulting its own per-handle bookkeeping.
+    auto & forwarder = ::vkfwd::Forwarder::instance();
+    auto & stream    = forwarder.request_stream();
+
+    const wire::MemoryUnmapRequestHeader request {
+        .manager_revision = kMemoryMapManagerRevision,
+        .range_count      = 0,
+        .device           = info().device,
+        .memory           = info().memory,
+        .mapped_offset    = mapped_offset_,
+        .mapped_size      = mapped_size_,
+        .reserved         = 0,
+        .pad0             = 0,
+    };
+    const VkResult append_result = append_manual_chunk(stream, ::vkfwd::manual::CommandId::MemoryUnmap, request);
+    if (append_result != VK_SUCCESS) {
+        // The chunk could not be queued. We still must release the local VA so
+        // a later map() does not double-reserve; log the divergence so the
+        // receiver-side leak (its mapping is still live) is visible.
+        VKFWD_LOG_ERROR("vkfwd: NonCoherentForwarderAllocation::unmap failed to append chunk; releasing local reservation anyway");
+        vm::release(reservation_base_, static_cast<std::size_t>(info().allocation_size));
+        reservation_base_ = nullptr;
+        mapped_offset_    = 0;
+        mapped_size_      = 0;
+        return;
+    }
+
+    // Step 3: synchronous flush. The N2 unmap response is empty by design;
+    // its only purpose is to gate the local release on the receiver having
+    // actually finished its unmap, so no reader of the staging pages remains
+    // when we release the reservation below.
+    (void) forwarder.flush();
+
+    // Step 4: release the reservation only AFTER flush returns. Doing it
+    // before would let the OS reuse the VA while the receiver is still
+    // touching it (in non-loopback transports the receiver lives in another
+    // process, but the same invariant holds: release ordering is the
+    // forwarder's responsibility).
+    vm::release(reservation_base_, static_cast<std::size_t>(info().allocation_size));
+
+    // Step 5: clear all mapping state so the destructor does not double-free
+    // and a subsequent map() observes a clean slate.
+    reservation_base_ = nullptr;
+    mapped_offset_    = 0;
+    mapped_size_      = 0;
 }
 
 VkResult NonCoherentForwarderAllocation::flush(VkDeviceSize /*offset*/, VkDeviceSize /*size*/) {

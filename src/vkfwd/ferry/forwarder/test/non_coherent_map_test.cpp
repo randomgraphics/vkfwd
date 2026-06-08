@@ -35,13 +35,13 @@ struct Scenario {
     VkMemoryMapFlags      flags                    = 0;
 
     // Response synthesis knobs the per-test setup writes before driving the entry.
-    VkResult     response_status          = VK_SUCCESS;
-    VkDeviceSize response_effective_size  = 0;
-    std::uint32_t response_revision       = kMemoryMapManagerRevision;
-    bool         response_omit_payload    = false;
-    bool         saw_request              = false;
-    std::uint32_t saw_command_id          = 0;
-    std::uint32_t saw_revision            = 0;
+    VkResult         response_status         = VK_SUCCESS;
+    VkDeviceSize     response_effective_size = 0;
+    std::uint32_t    response_revision       = kMemoryMapManagerRevision;
+    bool             response_omit_payload   = false;
+    bool             saw_request             = false;
+    std::uint32_t    saw_command_id          = 0;
+    std::uint32_t    saw_revision            = 0;
     MemoryMapRequest saw_request_payload {};
 };
 
@@ -62,7 +62,7 @@ void record_scenario_allocation(const Scenario & s) {
 CommandStream make_response_stream(const Scenario & s) {
     CommandStream stream;
     if (s.response_omit_payload) { return stream; }
-    auto view = stream.grow<MemoryMapResponse>(1, alignof(MemoryMapResponse));
+    auto              view = stream.grow<MemoryMapResponse>(1, alignof(MemoryMapResponse));
     MemoryMapResponse response {
         .manager_revision = s.response_revision,
         .return_value     = static_cast<std::int32_t>(s.response_status),
@@ -73,9 +73,9 @@ CommandStream make_response_stream(const Scenario & s) {
 }
 
 CommandStream handle_map_flush(CommandStream & request_stream) {
-    auto &      s        = scenario();
-    const Range packet   = first_command_range(request_stream);
-    auto        bytes    = command_view(request_stream, packet);
+    auto &      s      = scenario();
+    const Range packet = first_command_range(request_stream);
+    auto        bytes  = command_view(request_stream, packet);
 
     // CommandChunkHeader sits at the start of the chunk; the MemoryMapRequest
     // payload follows at alignof(MemoryMapRequest) (=8) which equals
@@ -101,11 +101,11 @@ CommandStream handle_must_not_flush(CommandStream & /*request*/) {
 } // namespace
 
 TEST_CASE("NonCoherentForwarderAllocation::map success: reserve+commit, send chunk, write *ppData") {
-    auto & s                   = scenario();
-    s                          = Scenario {};
-    s.offset                   = 256;
-    s.size                     = 4096;
-    s.response_effective_size  = 4096;
+    auto & s                  = scenario();
+    s                         = Scenario {};
+    s.offset                  = 256;
+    s.size                    = 4096;
+    s.response_effective_size = 4096;
 
     record_scenario_allocation(s);
     install_pack_unpack_transport(handle_map_flush);
@@ -198,7 +198,7 @@ TEST_CASE("NonCoherentForwarderAllocation::map: vm::reserve and vm::commit failu
 
         CHECK(result == VK_ERROR_OUT_OF_HOST_MEMORY);
         CHECK(mapped == nullptr);
-        CHECK(vm::g_test_reserve_failure_hook == nullptr);  // hook consumed
+        CHECK(vm::g_test_reserve_failure_hook == nullptr); // hook consumed
         CHECK_FALSE(transport_state().processed);
 
         ::vkfwd::MemoryMapForwarder::instance().forget_allocation(s.memory);
@@ -237,7 +237,7 @@ TEST_CASE("NonCoherentForwarderAllocation::map: receiver rejection releases the 
     s.offset                  = 0;
     s.size                    = 4096;
     s.response_status         = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    s.response_effective_size = 0;  // value irrelevant when status != VK_SUCCESS
+    s.response_effective_size = 0; // value irrelevant when status != VK_SUCCESS
 
     record_scenario_allocation(s);
     install_pack_unpack_transport(handle_map_flush);
@@ -258,9 +258,8 @@ TEST_CASE("NonCoherentForwarderAllocation::map: receiver rejection releases the 
     s.response_effective_size = 4096;
     s.saw_request             = false;
     install_pack_unpack_transport(handle_map_flush);
-    void * mapped_retry = nullptr;
-    const VkResult retry_result =
-        ::vkfwd::forwarder::generated::vkMapMemory_entry(s.device, s.memory, s.offset, s.size, s.flags, &mapped_retry);
+    void *         mapped_retry = nullptr;
+    const VkResult retry_result = ::vkfwd::forwarder::generated::vkMapMemory_entry(s.device, s.memory, s.offset, s.size, s.flags, &mapped_retry);
     CHECK(retry_result == VK_SUCCESS);
     REQUIRE(mapped_retry != nullptr);
     CHECK(s.saw_request);
@@ -276,7 +275,7 @@ TEST_CASE("NonCoherentForwarderAllocation::map: effective_size mismatch returns 
     s.offset                  = 0;
     s.size                    = 4096;
     s.response_status         = VK_SUCCESS;
-    s.response_effective_size = 4096 + 8;  // intentional divergence from the source value
+    s.response_effective_size = 4096 + 8; // intentional divergence from the source value
 
     record_scenario_allocation(s);
     install_pack_unpack_transport(handle_map_flush);
@@ -297,7 +296,7 @@ TEST_CASE("NonCoherentForwarderAllocation::map: response manager_revision mismat
     s.size                    = 4096;
     s.response_status         = VK_SUCCESS;
     s.response_effective_size = 4096;
-    s.response_revision       = kMemoryMapManagerRevision + 42;  // any value != current
+    s.response_revision       = kMemoryMapManagerRevision + 42; // any value != current
 
     record_scenario_allocation(s);
     install_pack_unpack_transport(handle_map_flush);
