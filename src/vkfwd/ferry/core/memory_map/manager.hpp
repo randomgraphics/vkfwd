@@ -63,6 +63,18 @@ public:
     MemoryMapReceiver();
     ~MemoryMapReceiver();
 
+    // Phase 0 leaves these uncalled by generated standard Vulkan endpoint
+    // code. Phase 1 dispatches manual::CommandId::MemoryMap / MemoryUnmap
+    // chunks to the custom endpoint methods below; the per-handle map gets
+    // populated through that path, not through the generated standard
+    // vkAllocateMemory endpoint.
+    void record_allocation(VkDevice device, VkDeviceMemory memory, VkMemoryPropertyFlags property_flags, std::uint32_t memory_type_index,
+                           VkDeviceSize allocation_size, VkDeviceSize non_coherent_atom_size, std::size_t min_memory_map_alignment);
+    void forget_allocation(VkDeviceMemory memory);
+
+    // custom_* names intentional: these methods handle vkfwd's manual
+    // MemoryMap / MemoryUnmap command ids, not standard generated Vulkan
+    // CommandId::MapMemory / CommandId::UnmapMemory chunks.
     bool custom_vkMapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream);
 
     bool custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream);
