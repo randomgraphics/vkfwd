@@ -28,6 +28,10 @@ struct CommandHooks<::vkfwd::generated::CommandId::CreateDevice> {
         // host function pointers.
         if (response.return_value == VK_SUCCESS && parameters.pDevice && *parameters.pDevice) {
             replay_context.dispatch.device.init(*parameters.pDevice, replay_context.dispatch.instance.get_device_proc_addr);
+            // Same forwarder/receiver handle equivalence as vkAllocateMemoryReceiverHook:
+            // future manual command chunks arrive carrying source handles and must
+            // translate through this map before reaching real Vulkan.
+            replay_context.source_to_receiver_device[*parameters.pDevice] = *parameters.pDevice;
         }
     }
 
