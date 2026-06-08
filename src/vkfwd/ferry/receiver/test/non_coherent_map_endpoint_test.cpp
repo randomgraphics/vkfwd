@@ -29,17 +29,17 @@ Handle test_handle(std::uintptr_t value) {
 // function pointer with no closure, so the stub forwards through this static
 // scenario object that each TEST_CASE resets at the top.
 struct MapMemoryStub {
-    bool             called          = false;
-    VkDevice         saw_device      = VK_NULL_HANDLE;
-    VkDeviceMemory   saw_memory      = VK_NULL_HANDLE;
-    VkDeviceSize     saw_offset      = 0;
-    VkDeviceSize     saw_size        = 0;
-    VkMemoryMapFlags saw_flags       = 0;
-    VkResult         return_value    = VK_SUCCESS;
+    bool             called       = false;
+    VkDevice         saw_device   = VK_NULL_HANDLE;
+    VkDeviceMemory   saw_memory   = VK_NULL_HANDLE;
+    VkDeviceSize     saw_offset   = 0;
+    VkDeviceSize     saw_size     = 0;
+    VkMemoryMapFlags saw_flags    = 0;
+    VkResult         return_value = VK_SUCCESS;
     // The driver writes a non-null receiver-process address into *ppData on
     // success. The endpoint must store this internally and never echo it back
     // through the wire — only effective_size and the VkResult travel.
-    void *           fake_mapped_ptr = nullptr;
+    void * fake_mapped_ptr = nullptr;
 };
 
 MapMemoryStub & stub() {
@@ -49,8 +49,8 @@ MapMemoryStub & stub() {
 
 VKAPI_ATTR VkResult VKAPI_CALL stub_vkMapMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags,
                                                 void ** ppData) {
-    auto & s    = stub();
-    s.called    = true;
+    auto & s     = stub();
+    s.called     = true;
     s.saw_device = device;
     s.saw_memory = memory;
     s.saw_offset = offset;
@@ -122,10 +122,10 @@ void install_stub(ReplayContext & replay_context) {
 } // namespace
 
 TEST_CASE("NonCoherentReceiverAllocation::map_endpoint dispatches to driver and packs success response") {
-    auto & s              = stub();
-    s                     = MapMemoryStub {};
-    s.return_value        = VK_SUCCESS;
-    s.fake_mapped_ptr     = reinterpret_cast<void *>(0xC0FE0000);
+    auto & s          = stub();
+    s                 = MapMemoryStub {};
+    s.return_value    = VK_SUCCESS;
+    s.fake_mapped_ptr = reinterpret_cast<void *>(0xC0FE0000);
 
     const VkDevice       source_device   = test_handle<VkDevice>(0xD0D0);
     const VkDevice       receiver_device = test_handle<VkDevice>(0xE0E0);
@@ -145,7 +145,7 @@ TEST_CASE("NonCoherentReceiverAllocation::map_endpoint dispatches to driver and 
     CommandStream request_stream;
     const Range   chunk = append_memory_map_chunk(request_stream, req);
 
-    CommandStream response_stream;
+    CommandStream     response_stream;
     MemoryMapReceiver receiver;
     const bool        ok = receiver.custom_vkMapMemory_endpoint(request_stream, chunk, response_stream, context);
     REQUIRE(ok);
@@ -220,8 +220,8 @@ TEST_CASE("MemoryMapReceiver::custom_vkMapMemory_endpoint rejects manager_revisi
     context.source_to_receiver_memory[source_memory] = receiver_memory;
     install_stub(context);
 
-    MemoryMapRequest req     = make_request(source_device, source_memory);
-    req.manager_revision     = 999; // any value != kMemoryMapManagerRevision
+    MemoryMapRequest req = make_request(source_device, source_memory);
+    req.manager_revision = 999; // any value != kMemoryMapManagerRevision
 
     CommandStream request_stream;
     const Range   chunk = append_memory_map_chunk(request_stream, req);

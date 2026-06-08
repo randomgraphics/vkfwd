@@ -252,9 +252,47 @@ public:
         return found->second->map_endpoint(request_stream, request_range, response_stream, replay_context);
     }
 
-    bool custom_vkUnmapMemory_endpoint(const CommandStream & /*request_stream*/, const Range & /*request_range*/, CommandStream & /*response_stream*/,
-                                       ::vkfwd::receiver::ReplayContext & /*replay_context*/) {
-        return false;
+    bool custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                       ::vkfwd::receiver::ReplayContext & replay_context) {
+        // Peek the MemoryUnmapRequestHeader for the source VkDeviceMemory the
+        // chunk targets. We only need that one field at the manager level; the
+        // allocation's unmap_endpoint re-reads the header and runs the
+        // manager_revision / range_count / handle-translation checks itself.
+        constexpr std::size_t kPayloadAlignment = alignof(::vkfwd::memory_map::wire::MemoryUnmapRequestHeader);
+        constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+        if (request_range.size < kPayloadOffset + sizeof(::vkfwd::memory_map::wire::MemoryUnmapRequestHeader)) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: custom_vkUnmapMemory_endpoint chunk too small ({} bytes)", request_range.size);
+            return false;
+        }
+        const auto view = request_stream.at(request_range.offset + kPayloadOffset, sizeof(::vkfwd::memory_map::wire::MemoryUnmapRequestHeader));
+        if (view.empty()) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: custom_vkUnmapMemory_endpoint request payload not addressable");
+            return false;
+        }
+        ::vkfwd::memory_map::wire::MemoryUnmapRequestHeader hdr {};
+        std::memcpy(&hdr, view.address(0), sizeof(hdr));
+
+        // No lazy creation on unmap. The first map for a VkDeviceMemory is the
+        // only point where the receiver learns classification fields and
+        // constructs an allocation; an unmap of a never-mapped handle therefore
+        // means either a forwarder bug or a stream replay error. Treat it as a
+        // session-fatal protocol error rather than silently no-op'ing.
+        const auto found = allocations.find(hdr.memory);
+        if (found == allocations.end()) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: custom_vkUnmapMemory_endpoint for unrecorded VkDeviceMemory ({})", static_cast<const void *>(hdr.memory));
+            return false;
+        }
+
+        const bool ok = found->second->unmap_endpoint(request_stream, request_range, response_stream, replay_context);
+        if (!ok) { return false; }
+
+        // Erase the entry on successful unmap so the next map of the same
+        // VkDeviceMemory does a fresh lazy-create. This mirrors the
+        // forwarder-side lifecycle (unmap() releases the reservation; the next
+        // map() reserves fresh) and matches the design doc's "the manual
+        // MemoryUnmap chunk is the natural end-of-mapping point".
+        allocations.erase(found);
+        return true;
     }
 
     std::unordered_map<VkDeviceMemory, std::unique_ptr<::vkfwd::memory_map::ReceiverAllocation>> allocations;

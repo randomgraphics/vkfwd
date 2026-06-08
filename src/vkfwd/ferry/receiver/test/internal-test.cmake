@@ -4,4 +4,5 @@
 set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
   handle_map_test.cpp
   manual_dispatch_test.cpp
-  non_coherent_map_endpoint_test.cpp)
+  non_coherent_map_endpoint_test.cpp
+  non_coherent_unmap_endpoint_test.cpp)
