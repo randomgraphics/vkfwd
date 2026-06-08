@@ -8,12 +8,17 @@ namespace vkfwd::memory_map::wire::test {
 
 TEST_CASE("MemoryMapRequest is POD and round-trips via memcpy") {
     MemoryMapRequest req {
-        .manager_revision = kMemoryMapManagerRevision,
-        .device           = reinterpret_cast<VkDevice>(0x1234),
-        .memory           = reinterpret_cast<VkDeviceMemory>(0x5678),
-        .offset           = 0x1000,
-        .size             = VK_WHOLE_SIZE,
-        .flags            = 0,
+        .manager_revision         = kMemoryMapManagerRevision,
+        .memory_type_index        = 3,
+        .device                   = reinterpret_cast<VkDevice>(0x1234),
+        .memory                   = reinterpret_cast<VkDeviceMemory>(0x5678),
+        .offset                   = 0x1000,
+        .size                     = VK_WHOLE_SIZE,
+        .flags                    = 0,
+        .property_flags           = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+        .allocation_size          = 0x100000,
+        .non_coherent_atom_size   = 64,
+        .min_memory_map_alignment = 4096,
     };
 
     std::uint8_t buffer[sizeof(req)] {};
@@ -23,11 +28,16 @@ TEST_CASE("MemoryMapRequest is POD and round-trips via memcpy") {
     std::memcpy(&out, buffer, sizeof(out));
 
     CHECK(out.manager_revision == req.manager_revision);
+    CHECK(out.memory_type_index == req.memory_type_index);
     CHECK(out.device == req.device);
     CHECK(out.memory == req.memory);
     CHECK(out.offset == req.offset);
     CHECK(out.size == req.size);
     CHECK(out.flags == req.flags);
+    CHECK(out.property_flags == req.property_flags);
+    CHECK(out.allocation_size == req.allocation_size);
+    CHECK(out.non_coherent_atom_size == req.non_coherent_atom_size);
+    CHECK(out.min_memory_map_alignment == req.min_memory_map_alignment);
 }
 
 TEST_CASE("MemoryMapResponse round-trips via memcpy") {

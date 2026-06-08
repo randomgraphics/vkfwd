@@ -14,20 +14,28 @@ namespace vkfwd::memory_map::wire {
 // mismatched session is detected on the very first chunk.
 
 struct MemoryMapRequest {
-    std::uint32_t    manager_revision = kMemoryMapManagerRevision;
-    std::uint32_t    pad0             = 0; // alignment placeholder so 64-bit fields below align.
-    VkDevice         device           = VK_NULL_HANDLE;
-    VkDeviceMemory   memory           = VK_NULL_HANDLE;
-    VkDeviceSize     offset           = 0;
-    VkDeviceSize     size             = 0;
-    VkMemoryMapFlags flags            = 0;
-    std::uint32_t    pad1             = 0;
+    std::uint32_t    manager_revision  = kMemoryMapManagerRevision;
+    std::uint32_t    memory_type_index = 0;
+    VkDevice         device            = VK_NULL_HANDLE;
+    VkDeviceMemory   memory            = VK_NULL_HANDLE;
+    VkDeviceSize     offset            = 0;
+    VkDeviceSize     size              = 0; // VK_WHOLE_SIZE allowed; receiver re-resolves and validates.
+    VkMemoryMapFlags flags             = 0;
+    std::uint32_t    pad0              = 0;
+    // Forwarder-resolved classification carried so the receiver can lazily
+    // construct the matching ReceiverAllocation strategy without its own
+    // MemoryTypeRegistry. Stored on every map request (not just the first) so
+    // the receiver does not need to track "have I created the allocation yet".
+    VkMemoryPropertyFlags property_flags           = 0;
+    std::uint32_t         pad1                     = 0;
+    VkDeviceSize          allocation_size          = 0;
+    VkDeviceSize          non_coherent_atom_size   = 0;
+    std::uint64_t         min_memory_map_alignment = 0;
 };
 static_assert(std::is_trivially_copyable_v<MemoryMapRequest>);
-// Lock the wire size: 4+4 + 8+8 + 8+8 + 4+4 = 48 bytes. A future field addition
-// must update this assertion AND bump kMemoryMapManagerRevision; otherwise the
-// receiver silently misinterprets the payload.
-static_assert(sizeof(MemoryMapRequest) == 48);
+// Lock the wire size: 4+4 + 8+8 + 8+8 + 4+4 + 4+4 + 8+8+8 = 80 bytes. Future
+// field additions must update this assertion AND bump kMemoryMapManagerRevision.
+static_assert(sizeof(MemoryMapRequest) == 80);
 
 struct MemoryMapResponse {
     std::uint32_t manager_revision = kMemoryMapManagerRevision;
