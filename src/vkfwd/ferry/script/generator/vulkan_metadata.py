@@ -1808,7 +1808,7 @@ VKAPI_ATTR {ret} VKAPI_CALL {entry}(
 # Commands whose public Vulkan forwarder entry delegates to the manual
 # MemoryMapForwarder, which emits vkfwd custom command ids instead of the
 # generated Vulkan command payload for the same API name.
-FORWARDER_MEMORY_MAP_MANAGED_COMMANDS = set()
+FORWARDER_MEMORY_MAP_MANAGED_COMMANDS = {"vkMapMemory", "vkUnmapMemory"}
 
 # Receiver endpoint groups, in emission order. Each generated command is assigned
 # to exactly one group; endpoint implementations are split into endpoint/<group>.cpp
