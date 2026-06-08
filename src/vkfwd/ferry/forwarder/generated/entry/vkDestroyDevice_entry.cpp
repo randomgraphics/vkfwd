@@ -28,6 +28,8 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice_entry(VkDevice device, const VkAlloca
     VkResult            status = Command::pack_parameters(forwarder.request_stream(), parameters);
     if (status != VK_SUCCESS) [[unlikely]] { return; }
 
+    if constexpr (Hooks::after_pack_enabled) { Hooks::after_pack(parameters); }
+
     // Deferrable commands have no return value or output parameters, so the
     // entry point only appends to the thread-local request stream. The next
     // non-deferrable command is responsible for flushing this thread's pending

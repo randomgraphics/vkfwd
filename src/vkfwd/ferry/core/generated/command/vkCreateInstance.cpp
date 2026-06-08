@@ -6,6 +6,7 @@
 
 #include "logging.hpp"
 #include "generated/structure/core.hpp"
+#include "generated/structure/command_structs.hpp"
 
 #include <cstddef>
 #include <cstdint>

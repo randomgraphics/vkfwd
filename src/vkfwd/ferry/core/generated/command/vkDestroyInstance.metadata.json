@@ -5,7 +5,7 @@
     "creates_handles": [],
     "dispatch_parameter": "instance",
     "errorcodes": [],
-    "id": 748278256,
+    "id": 3375803655,
     "level": "instance",
     "name": "vkDestroyInstance",
     "parameters": [

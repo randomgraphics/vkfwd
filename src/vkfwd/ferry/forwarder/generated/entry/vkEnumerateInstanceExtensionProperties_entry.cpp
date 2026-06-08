@@ -36,7 +36,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties_entry(cons
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     Command::Response response = *packed_response;
 
-    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(response); }
+    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(parameters, response); }
 
     if (pPropertyCount && response.pPropertyCount && response.pPropertyCount != pPropertyCount) { *pPropertyCount = *response.pPropertyCount; }
     if (pProperties && response.pProperties && response.pProperties != pProperties && response.pPropertyCount) {

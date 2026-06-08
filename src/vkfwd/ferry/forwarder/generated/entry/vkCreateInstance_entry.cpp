@@ -36,7 +36,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance_entry(const VkInstanceCreateInfo
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     Command::Response response = *packed_response;
 
-    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(response); }
+    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(parameters, response); }
 
     if (pInstance && response.pInstance && response.pInstance != pInstance) { *pInstance = *response.pInstance; }
 

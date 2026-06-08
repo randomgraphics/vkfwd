@@ -1,0 +1,104 @@
+{
+  "command": {
+    "api": "vulkan,vulkansc",
+    "coverage_state": "unclassified",
+    "creates_handles": [
+      "VkQueue"
+    ],
+    "dispatch_parameter": "device",
+    "errorcodes": [],
+    "id": 3584965915,
+    "level": "device",
+    "name": "vkGetDeviceQueue",
+    "parameters": [
+      {
+        "const": false,
+        "declaration": "VkDevice device",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": "dispatchable",
+        "handle_parent": "VkPhysicalDevice",
+        "len": null,
+        "name": "device",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "VkDevice"
+      },
+      {
+        "const": false,
+        "declaration": "uint32_t queueFamilyIndex",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "queueFamilyIndex",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "uint32_t"
+      },
+      {
+        "const": false,
+        "declaration": "uint32_t queueIndex",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "queueIndex",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "uint32_t"
+      },
+      {
+        "const": false,
+        "declaration": "VkQueue* pQueue",
+        "direction": "output",
+        "externsync": null,
+        "handle_kind": "dispatchable",
+        "handle_parent": "VkDevice",
+        "len": null,
+        "name": "pQueue",
+        "optional": false,
+        "pointer_depth": 1,
+        "type": "VkQueue"
+      }
+    ],
+    "return_type": "void",
+    "revision": 1,
+    "successcodes": []
+  },
+  "generator": {
+    "version": "vkfwd-vulkan-metadata-0.1",
+    "vk_xml": "src/third_party/vulkan/registry/vk.xml",
+    "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
+  },
+  "handles": {
+    "VkDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_DEVICE",
+      "parent": "VkPhysicalDevice"
+    },
+    "VkQueue": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_QUEUE",
+      "parent": "VkDevice"
+    }
+  },
+  "protocol": {
+    "schema_version": 1
+  },
+  "schema": "vkfwd.vulkan-command-metadata.v1",
+  "structs": {},
+  "versions": {
+    "header_version": "352",
+    "upstream_commit": "015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9",
+    "upstream_tag": "v1.4.352",
+    "vulkan_api": {
+      "major": 1,
+      "minor": 4,
+      "patch": 352
+    },
+    "vulkan_api_version": "1.4.352"
+  }
+}

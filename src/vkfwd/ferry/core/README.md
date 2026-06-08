@@ -6,12 +6,14 @@ on both sides of the forwarding boundary.
 
 ## Responsibilities
 
-- Protocol metadata in `protocol.hpp`: stream magic, schema version, Vulkan API
-  version negotiation, command chunk headers, and command chunk ranges.
-- CommandStream storage in `command_stream.hpp` and `command_stream.cpp`: grow-only copied payload storage
-  with stable logical offsets and bounded views.
+- Command stream metadata and storage in `command_stream.hpp` and
+  `command_stream.cpp`: stream magic, schema version, request/command chunk
+  headers, command chunk ranges, and grow-only copied payload storage with
+  stable logical offsets and bounded views.
+- Generated API metadata in `generated/vulkan_api.hpp`: stable command ids and
+  Vulkan API version types/values used by future session compatibility checks.
 - Transport contracts in `transport_session.hpp` and `receiver_session.hpp`:
-  session-scoped handshake and source-thread-token routing for accumulated
+  session-scoped compatibility and source-thread-token routing for accumulated
   command streams.
 - Generated command pack/unpack code in `generated/command/`.
 - Generated dispatch-table types and command-name lookup helpers in
@@ -92,8 +94,6 @@ contract.
 
 Required transportation-layer behavior:
 
-- Negotiate `HandshakeRequest` compatibility once per `TransportSession` before
-  any command bytes are exchanged.
 - Preserve the leading `RequestStreamHeader` so deferrable command
   ordering remains per thread and does not require locks in `Forwarder`.
 - Preserve byte-for-byte stream contents and command-chunk order inside each
@@ -132,8 +132,8 @@ receiver code.
 
 The default remote deployment should make the receiver listen and the forwarder
 connect. A receiver process starts on the destination device, binds a configured
-address, accepts a transport connection, completes the session handshake, and
-then accepts accumulated request streams.
+address, accepts a transport connection, validates any required session
+compatibility metadata, and then accepts accumulated request streams.
 
 For USB4 or Thunderbolt cable use, prefer OS-provided USB4/TB networking first,
 then run the same process transport over that IP link. The core transport
@@ -152,16 +152,15 @@ Session creation sequence:
 1. Receiver creates a listening transport backend.
 2. Forwarder creates or reuses a process-wide remote session for the receiver
    address.
-3. Both sides exchange `HandshakeRequest` data from `protocol.hpp`.
-4. Receiver validates schema version, Vulkan major version, and Vulkan minor
-   compatibility before accepting command traffic.
-5. The session records local and remote handshake data in `TransportSessionInfo`.
-6. Only after compatibility succeeds can the forwarder send accumulated request
+3. Receiver validates any transport-level compatibility metadata before
+   accepting command traffic.
+4. Only after compatibility succeeds can the forwarder send accumulated request
    streams.
 
-Handshake is session-scoped. The intent is to let many thread-local forwarders
-share one negotiated remote-device connection without rechecking schema
-compatibility on every Vulkan call.
+Compatibility is session-scoped. The intent is to let many thread-local
+forwarders share one negotiated remote-device connection without rechecking
+schema compatibility on every Vulkan call. The concrete negotiation messages are
+deliberately left out until a transport backend needs them.
 
 ### Source-Thread Stream Lifecycle
 
@@ -224,15 +223,77 @@ generated tests are produced by
 `src/vkfwd/ferry/script/generator/vulkan_metadata.py`. Update the generator and
 regenerate instead of editing these files directly.
 
+Generated command headers may stay per command so each Vulkan API keeps a stable
+typed `Parameters` and `Response` contract. Generated command implementation
+sources should be grouped by the ferry-wide API-domain policy in
+`../README.md`, with normal groups around 25-60 APIs and a hard split before a
+group grows past roughly 75 APIs. Do not add a new compiled core `.cpp` per
+command as the default expansion path.
+
+Generated structure serializers should follow the separate structure grouping
+policy in `../README.md`. Structure groups are organized around nested pointer
+graphs, pNext contracts, and Vulkan object domains rather than mirroring command
+groups exactly. Shared pNext and common pointer-offset helpers belong in
+`generated/structure/core` files; command create-info graphs should live in
+domain structure groups such as pipeline, descriptor, image, sync, or
+memory/buffer as the API surface expands. Every copied pointer, nested array,
+and pNext handoff must have matching generated pack/unpack tests.
+
 Manual hook files under `hook/` may customize command behavior. Hook code must
 document the command-specific invariant it is protecting, especially around
 pointer ownership, lifetime, and source-to-receiver handle assumptions.
 
-Generated command packers intentionally drop `VkAllocationCallbacks` parameters
-and encode those slots as null. Allocation callbacks contain guest-process
-function pointers and user data, so they cannot be marshalled into a receiver
-process; replay must use the receiver's default allocator unless a future
-receiver-local allocator policy is added.
+Forwarder-side memory allocation bookkeeping is owned by
+`MemoryMapForwarder`: successful `vkAllocateMemory` records the caller-visible
+`VkDeviceMemory` allocation size, and accepted `vkFreeMemory` removes that
+record. The registry exists only to resolve future source-side map ranges such
+as `VK_WHOLE_SIZE`; it is not a receiver handle map and does not transfer Vulkan
+memory ownership.
+
+`vkMapMemory` and `vkUnmapMemory` are the exception to standard generated
+command forwarding. The public Vulkan entry points delegate to
+`MemoryMapForwarder::custom_vkMapMemory_entry` /
+`custom_vkUnmapMemory_entry`, which use vkfwd-owned manual command ids instead
+of generated Vulkan `CommandId::MapMemory` / `CommandId::UnmapMemory` payloads.
+The receiver mapped pointer stays private to `MemoryMapReceiver`; only
+source-owned staging pointers are returned to the application.
+
+## Mapped Memory Correspondence
+
+The mapped-memory design — why `vkMapMemory` cannot return the receiver's
+mapped pointer, what state the forwarder/receiver each own, the chosen N2
+non-coherent strategy and C2 coherent strategy (with their rejected
+alternatives), the manual `vkfwd::manual::CommandId::MemoryMap` /
+`MemoryUnmap` / `QueryPhysicalDeviceMemoryInfo` wire protocol, the
+reserve+commit source-side staging layout, and the phase-by-phase landing
+plan — is documented in **`doc/memory_map_management.md`**. Treat that
+document as the single source of truth; do not duplicate decisions here.
+
+Local invariants that affect any code in this directory:
+
+- `vkMapMemory` and `vkUnmapMemory` are **not** forwarded via the standard
+  generated `CommandId::MapMemory` / `CommandId::UnmapMemory` payloads.
+  Public Vulkan entry points delegate to
+  `MemoryMapForwarder::custom_vkMapMemory_entry` /
+  `custom_vkUnmapMemory_entry`, which emit manual command ids. Receiver
+  hooks for the standard generated map/unmap commands must fail closed.
+- Receiver-side mapped pointers stay private to `MemoryMapReceiver` /
+  `ReceiverAllocation`. They must never be serialized into a response or
+  exposed on the manager's public surface.
+- `MemoryMapForwarder`'s per-handle map is bookkeeping for range
+  resolution (e.g., `VK_WHOLE_SIZE`); it is not a source-to-receiver
+  handle map.
+- The manual command id partition with generated ids is enforced
+  structurally via `command_id_range.hpp::kReservedCommandIdBase` plus
+  per-command `static_assert`s; do not bypass it by introducing untagged
+  manual ids elsewhere.
+
+Generated command packers intentionally drop `VkAllocationCallbacks`
+parameters and encode those slots as null. Allocation callbacks contain
+guest-process function pointers and user data, so they cannot be
+marshalled into a receiver process; replay must use the receiver's
+default allocator unless a future receiver-local allocator policy is
+added.
 
 ## Testing Guidance
 
@@ -241,6 +302,13 @@ receiver-local allocator policy is added.
 - Keep generated structure tests under `core/generated/structure/test/`.
 - Keep generated command pack/flatten/unpack round-trip tests under
   `core/generated/command/test/`.
+- Generate command and structure tests in the same domain groups as the generated
+  implementation sources. Do not create a test source per API when grouped
+  tests can provide the same dedicated `TEST_CASE` coverage.
+- Structure tests should be grouped by structure serializer group, not by command
+  group. A command may reference structures from several serializer groups; the
+  structure tests should stay with the structure group that owns the pointer and
+  pNext invariants.
 - Structure tests should validate both the top-level typed view and any copied
   pointer-owned payload such as strings, arrays, or nested structs after
   flattening and unpacking. These tests protect the receiver-side invariant that

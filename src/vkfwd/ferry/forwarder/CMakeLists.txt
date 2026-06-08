@@ -4,13 +4,41 @@
 # so they do not depend on exported SO symbols.
 set(VKFWD_FORWARDER_SOURCES
   generated/forwarder_entrypoints.cpp
+  generated/entry/vkAllocateMemory_entry.cpp
+  generated/entry/vkBindBufferMemory_entry.cpp
+  generated/entry/vkCreateBuffer_entry.cpp
+  generated/entry/vkCreateDescriptorSetLayout_entry.cpp
   generated/entry/vkEnumerateInstanceVersion_entry.cpp
   generated/entry/vkEnumerateInstanceLayerProperties_entry.cpp
   generated/entry/vkEnumerateInstanceExtensionProperties_entry.cpp
+  generated/entry/vkCreateGraphicsPipelines_entry.cpp
   generated/entry/vkCreateDevice_entry.cpp
   generated/entry/vkCreateInstance_entry.cpp
+  generated/entry/vkCreatePipelineLayout_entry.cpp
+  generated/entry/vkCreateRenderPass_entry.cpp
+  generated/entry/vkCreateSemaphore_entry.cpp
+  generated/entry/vkCreateShaderModule_entry.cpp
+  generated/entry/vkDestroyBuffer_entry.cpp
+  generated/entry/vkDestroyDescriptorSetLayout_entry.cpp
   generated/entry/vkDestroyDevice_entry.cpp
   generated/entry/vkDestroyInstance_entry.cpp
+  generated/entry/vkDestroyPipelineLayout_entry.cpp
+  generated/entry/vkDestroyPipeline_entry.cpp
+  generated/entry/vkDestroyRenderPass_entry.cpp
+  generated/entry/vkDestroySemaphore_entry.cpp
+  generated/entry/vkDestroyShaderModule_entry.cpp
+  generated/entry/vkDeviceWaitIdle_entry.cpp
+  generated/entry/vkEnumerateDeviceExtensionProperties_entry.cpp
+  generated/entry/vkEnumeratePhysicalDevices_entry.cpp
+  generated/entry/vkFreeMemory_entry.cpp
+  generated/entry/vkGetBufferMemoryRequirements_entry.cpp
+  generated/entry/vkGetDeviceQueue_entry.cpp
+  generated/entry/vkGetPhysicalDeviceFeatures_entry.cpp
+  generated/entry/vkGetPhysicalDeviceMemoryProperties_entry.cpp
+  generated/entry/vkGetPhysicalDeviceProperties_entry.cpp
+  generated/entry/vkGetPhysicalDeviceQueueFamilyProperties_entry.cpp
+  generated/entry/vkMapMemory_entry.cpp
+  generated/entry/vkUnmapMemory_entry.cpp
   forwarder.cpp)
 
 add_library(vkfwd_ferry_forwarder_objects OBJECT

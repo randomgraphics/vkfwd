@@ -4,14 +4,44 @@
 # identical on both sides of the forwarding boundary.
 add_library(vkfwd_ferry_core STATIC
   command_stream.cpp
+  memory_map_manager.cpp
+  generated/command/vkAllocateMemory.cpp
+  generated/command/vkBindBufferMemory.cpp
+  generated/command/vkCreateBuffer.cpp
+  generated/command/vkCreateDescriptorSetLayout.cpp
   generated/command/vkEnumerateInstanceVersion.cpp
   generated/command/vkEnumerateInstanceLayerProperties.cpp
   generated/command/vkEnumerateInstanceExtensionProperties.cpp
+  generated/command/vkCreateGraphicsPipelines.cpp
   generated/command/vkCreateDevice.cpp
   generated/command/vkCreateInstance.cpp
+  generated/command/vkCreatePipelineLayout.cpp
+  generated/command/vkCreateRenderPass.cpp
+  generated/command/vkCreateSemaphore.cpp
+  generated/command/vkCreateShaderModule.cpp
+  generated/command/vkDestroyBuffer.cpp
+  generated/command/vkDestroyDescriptorSetLayout.cpp
   generated/command/vkDestroyDevice.cpp
   generated/command/vkDestroyInstance.cpp
+  generated/command/vkDestroyPipeline.cpp
+  generated/command/vkDestroyPipelineLayout.cpp
+  generated/command/vkDestroyRenderPass.cpp
+  generated/command/vkDestroySemaphore.cpp
+  generated/command/vkDestroyShaderModule.cpp
+  generated/command/vkDeviceWaitIdle.cpp
+  generated/command/vkEnumerateDeviceExtensionProperties.cpp
+  generated/command/vkEnumeratePhysicalDevices.cpp
+  generated/command/vkFreeMemory.cpp
+  generated/command/vkGetBufferMemoryRequirements.cpp
+  generated/command/vkGetDeviceQueue.cpp
+  generated/command/vkGetPhysicalDeviceFeatures.cpp
+  generated/command/vkGetPhysicalDeviceMemoryProperties.cpp
+  generated/command/vkGetPhysicalDeviceProperties.cpp
+  generated/command/vkGetPhysicalDeviceQueueFamilyProperties.cpp
+  generated/command/vkMapMemory.cpp
+  generated/command/vkUnmapMemory.cpp
   generated/dispatch_table.cpp
+  generated/structure/command_structs.cpp
   generated/structure/core.cpp
   hook/vkCreateDeviceHook.cpp
   logging.cpp)

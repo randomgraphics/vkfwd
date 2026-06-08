@@ -1,16 +1,10 @@
 #pragma once
 
 #include "command_stream.hpp"
-#include "protocol.hpp"
 
 #include <memory>
 
 namespace vkfwd {
-
-struct TransportSessionInfo {
-    HandshakeRequest local_handshake;
-    HandshakeRequest remote_handshake;
-};
 
 class TransportSession {
 public:

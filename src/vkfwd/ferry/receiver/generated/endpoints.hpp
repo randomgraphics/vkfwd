@@ -6,25 +6,9 @@
 
 #include "command_stream.hpp"
 #include "generated/dispatch_table.hpp"
-#include "protocol.hpp"
 #include "replay_context.hpp"
 
 namespace vkfwd::receiver::generated {
-
-bool vkEnumerateInstanceVersion_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
-                                         ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkEnumerateInstanceLayerProperties_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
-                                                 ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkEnumerateInstanceExtensionProperties_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
-                                                     ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkCreateInstance_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
-                               ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkDestroyInstance_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
-                                ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkCreateDevice_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
-                             ::vkfwd::receiver::ReplayContext & replay_context);
-bool vkDestroyDevice_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
-                              ::vkfwd::receiver::ReplayContext & replay_context);
 
 bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream & request_stream, const Range & request_range,
                        CommandStream & response_stream, ::vkfwd::receiver::ReplayContext & replay_context);

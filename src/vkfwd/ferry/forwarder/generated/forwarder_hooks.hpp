@@ -11,13 +11,17 @@ namespace vkfwd::forwarder::manual {
 template<vkfwd::generated::CommandId>
 struct CommandHooks {
     static constexpr bool before_pack_enabled           = false;
+    static constexpr bool after_pack_enabled            = false;
     static constexpr bool after_response_unpack_enabled = false;
 
     template<class... Args>
     static constexpr void before_pack(Args &...) noexcept {}
 
     template<class Parameters>
-    static constexpr void after_response_unpack(Parameters &) noexcept {}
+    static constexpr void after_pack(const Parameters &) noexcept {}
+
+    template<class Parameters, class Response>
+    static constexpr void after_response_unpack(const Parameters &, Response &) noexcept {}
 };
 
 } // namespace vkfwd::forwarder::manual

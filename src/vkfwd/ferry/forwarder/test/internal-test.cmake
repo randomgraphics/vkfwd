@@ -6,4 +6,6 @@ set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
   vkCreateInstance_test.cpp
   vkDestroyInstance_test.cpp
   vkCreateDevice_test.cpp
-  vkDestroyDevice_test.cpp)
+  vkDestroyDevice_test.cpp
+  vkAllocateFreeMemory_test.cpp
+  vkMapMemory_test.cpp)

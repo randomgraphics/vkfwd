@@ -17,13 +17,58 @@ TARGET_COMMANDS = (
     "vkEnumerateInstanceExtensionProperties",
     "vkCreateInstance",
     "vkDestroyInstance",
+    "vkEnumeratePhysicalDevices",
+    "vkGetPhysicalDeviceProperties",
+    "vkGetPhysicalDeviceFeatures",
+    "vkGetPhysicalDeviceQueueFamilyProperties",
+    "vkGetPhysicalDeviceMemoryProperties",
+    "vkEnumerateDeviceExtensionProperties",
     "vkCreateDevice",
     "vkDestroyDevice",
+    "vkGetDeviceQueue",
+    "vkDeviceWaitIdle",
+    "vkCreateBuffer",
+    "vkDestroyBuffer",
+    "vkGetBufferMemoryRequirements",
+    "vkAllocateMemory",
+    "vkFreeMemory",
+    "vkBindBufferMemory",
+    "vkMapMemory",
+    "vkUnmapMemory",
+    "vkCreateShaderModule",
+    "vkDestroyShaderModule",
+    "vkCreateDescriptorSetLayout",
+    "vkDestroyDescriptorSetLayout",
+    "vkCreatePipelineLayout",
+    "vkDestroyPipelineLayout",
+    "vkCreateRenderPass",
+    "vkDestroyRenderPass",
+    "vkCreateGraphicsPipelines",
+    "vkDestroyPipeline",
+    "vkCreateSemaphore",
+    "vkDestroySemaphore",
 )
+SUPPORTED_COMMAND_STRUCT_PARAMETERS = {
+    "VkInstanceCreateInfo",
+    "VkDeviceCreateInfo",
+    "VkBufferCreateInfo",
+    "VkMemoryAllocateInfo",
+    "VkShaderModuleCreateInfo",
+    "VkDescriptorSetLayoutCreateInfo",
+    "VkPipelineLayoutCreateInfo",
+    "VkRenderPassCreateInfo",
+    "VkGraphicsPipelineCreateInfo",
+    "VkSemaphoreCreateInfo",
+}
 GENERATOR_VERSION = "vkfwd-vulkan-metadata-0.1"
 SCHEMA_VERSION = 1
 COMMAND_REVISION = 1
-COMMAND_ID_SALT = "vkfwd.vulkan.command-id.v1:"
+# v2 of the id scheme constrains the hash output to stay strictly below
+# RESERVED_COMMAND_ID_BASE so the upper region is permanently available to
+# vkfwd-owned manual command ids. See src/vkfwd/ferry/core/command_id_range.hpp.
+COMMAND_ID_SALT = "vkfwd.vulkan.command-id.v2:"
+# Must match ::vkfwd::kReservedCommandIdBase in core/command_id_range.hpp.
+RESERVED_COMMAND_ID_BASE = 0xFFFE0000
 
 
 def repo_root() -> Path:
@@ -232,8 +277,14 @@ def stable_command_id(name: str) -> int:
     # Command IDs are part of the generated stream schema, so they must not
     # depend on registry ordering. The salt fixes this scheme for compatible schema
     # revisions while still deriving IDs mechanically from the API name.
+    #
+    # The raw hash is reduced modulo RESERVED_COMMAND_ID_BASE so the upper region
+    # is structurally unreachable; manual command ids occupy that region. Zero is
+    # reserved as a sentinel so the chunk header default of command_id=0 remains
+    # an obvious "not yet set" rather than a valid generated command.
     digest = hashlib.sha256((COMMAND_ID_SALT + name).encode("utf-8")).digest()
-    value = int.from_bytes(digest[:4], byteorder="big")
+    raw = int.from_bytes(digest[:4], byteorder="big")
+    value = raw % RESERVED_COMMAND_ID_BASE
     return value or 1
 
 
@@ -339,6 +390,9 @@ def parameter_initializer_list(command: dict[str, object]) -> str:
 
 def output_parameter_assignments(command: dict[str, object]) -> str:
     lines = []
+    parameters_by_name = {
+        str(parameter["name"]): parameter for parameter in command["parameters"]
+    }
     for parameter in command["parameters"]:
         if parameter["direction"] != "output":
             continue
@@ -346,13 +400,20 @@ def output_parameter_assignments(command: dict[str, object]) -> str:
         length = parameter.get("len")
         count_name = str(length).split(",", 1)[0] if length else ""
         if count_name and count_name != "None":
+            count_parameter = parameters_by_name.get(count_name, {})
+            if int(count_parameter.get("pointer_depth", 0)) > 0:
+                count_condition = f"response.{count_name}"
+                count_value = f"*response.{count_name}"
+            else:
+                count_condition = f"response.{count_name}"
+                count_value = f"response.{count_name}"
             lines.extend(
                 [
                     f"  if ({name} && response.{name} &&",
                     f"      response.{name} != {name} &&",
-                    f"      response.{count_name}) {{",
+                    f"      {count_condition}) {{",
                     f"    std::copy_n(response.{name},",
-                    f"                *response.{count_name}, {name});",
+                    f"                {count_value}, {name});",
                     "  }",
                 ]
             )
@@ -398,6 +459,22 @@ def response_output_fields(command: dict[str, object]) -> str:
             fields.append(
                 f"  {parameter_cxx_type(parameter)} {parameter['name']} = {{}};"
             )
+    output_array_counts = {
+        str(parameter.get("len")).split(",", 1)[0]
+        for parameter in command["parameters"]
+        if parameter_is_output_array(parameter) and parameter.get("len")
+    }
+    output_names = {
+        str(parameter["name"])
+        for parameter in command["parameters"]
+        if parameter["direction"] == "output"
+    }
+    for parameter in command["parameters"]:
+        name = str(parameter["name"])
+        if name in output_array_counts and name not in output_names:
+            # Response payloads for create-style arrays need the caller's input
+            # count so the forwarder can copy exactly the returned handles back.
+            fields.append(f"  {parameter_cxx_type(parameter)} {name} = {{}};")
     return "\n".join(fields)
 
 
@@ -426,6 +503,20 @@ def response_initializer(command: dict[str, object]) -> str:
     for parameter in command["parameters"]:
         if parameter["direction"] == "output":
             fields.append(f".{parameter['name']} = {parameter['name']}")
+    output_array_counts = {
+        str(parameter.get("len")).split(",", 1)[0]
+        for parameter in command["parameters"]
+        if parameter_is_output_array(parameter) and parameter.get("len")
+    }
+    output_names = {
+        str(parameter["name"])
+        for parameter in command["parameters"]
+        if parameter["direction"] == "output"
+    }
+    for parameter in command["parameters"]:
+        name = str(parameter["name"])
+        if name in output_array_counts and name not in output_names:
+            fields.append(f".{name} = {name}")
     if not fields:
         return "{}"
     return "{" + ", ".join(fields) + "}"
@@ -511,6 +602,7 @@ struct Response {{
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
 // Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
 
+#include "command_id_range.hpp"
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
 #include "command_stream.hpp"
@@ -519,6 +611,13 @@ struct Response {{
 
 #include <cstddef>
 #include <cstdint>
+
+// Generated command ids must never collide with the reserved manual range used
+// by vkfwd-owned wire commands. The generator enforces this by constraining its
+// hash output below kReservedCommandIdBase; this per-command static_assert is
+// the structural check that the invariant survives any future edit.
+static_assert(static_cast<std::uint32_t>(::vkfwd::generated::CommandId::{enum_name}) < ::vkfwd::kReservedCommandIdBase,
+              "generated command id must not occupy the reserved manual range");
 
 namespace vkfwd::generated::commands::{namespace} {{
 
@@ -752,15 +851,11 @@ VkResult unpack_command_chunk(SafeArrayView<std::uint8_t>& view, CommandId comma
 
 
 def parameter_is_copied_input_pointer(parameter: dict[str, object]) -> bool:
+    if parameter["direction"] == "output" and int(parameter["pointer_depth"]) == 1:
+        return True
     return int(parameter["pointer_depth"]) == 1 and (
-        str(parameter["type"])
-        in {
-            "char",
-            "VkInstanceCreateInfo",
-            "VkDeviceCreateInfo",
-            "VkAllocationCallbacks",
-        }
-        or parameter["direction"] == "output"
+        str(parameter["type"]) in {"char", "VkAllocationCallbacks"}
+        or str(parameter["type"]) in SUPPORTED_COMMAND_STRUCT_PARAMETERS
     )
 
 
@@ -776,10 +871,15 @@ def output_array_count_expression(
     command: dict[str, object], parameter: dict[str, object], source_name: str
 ) -> str:
     length_name = str(parameter.get("len") or "")
-    valid_names = {str(candidate["name"]) for candidate in command["parameters"]}
-    if length_name not in valid_names:
+    parameters_by_name = {
+        str(candidate["name"]): candidate for candidate in command["parameters"]
+    }
+    count_parameter = parameters_by_name.get(length_name)
+    if not count_parameter:
         return "0u"
-    return f"{source_name}.{length_name} ? *{source_name}.{length_name} : 0u"
+    if int(count_parameter["pointer_depth"]) > 0:
+        return f"{source_name}.{length_name} ? *{source_name}.{length_name} : 0u"
+    return f"{source_name}.{length_name}"
 
 
 def command_pointer_pack_lines(
@@ -803,6 +903,23 @@ def command_pointer_pack_lines(
             lines.extend(
                 [
                     f"  status = pack_input_string({source_name}.{name}, stream, {slot}, packed_parameters->{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                ]
+            )
+        elif (
+            ptype in SUPPORTED_COMMAND_STRUCT_PARAMETERS
+            and parameter["direction"] == "input"
+            and bool(parameter.get("len"))
+        ):
+            count_expression = output_array_count_expression(
+                command, parameter, source_name
+            )
+            lines.extend(
+                [
+                    f"  structure::PackedStruct packed_{name};",
+                    f"  status = structure::pack_array_{ptype}({source_name}.{name}, {count_expression}, stream, packed_{name});",
+                    "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                    f"  status = patch_command_pointer(packed_parameters->{name}, {slot}, packed_{name}.offset);",
                     "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
                 ]
             )
@@ -849,7 +966,22 @@ def command_parameter_recover_lines(command: dict[str, object]) -> list[str]:
                 "  if (status != VK_SUCCESS) [[unlikely]] { return status; }",
             ]
         )
-        if ptype in {"VkInstanceCreateInfo", "VkDeviceCreateInfo"}:
+        if ptype in SUPPORTED_COMMAND_STRUCT_PARAMETERS:
+            count_expression = output_array_count_expression(
+                command, parameter, "(*packed_parameters)"
+            )
+            if bool(parameter.get("len")):
+                lines.extend(
+                    [
+                        f"  if (packed_parameters->{name}) {{",
+                        f"    auto child_view = tail_view_from_pointer(view, packed_parameters->{name});",
+                        f"    const {ptype}* ignored_{name} = nullptr;",
+                        f"    status = structure::unpack_array_{ptype}(child_view, {count_expression}, &ignored_{name});",
+                        "    if (status != VK_SUCCESS) [[unlikely]] { return status; }",
+                        "  }",
+                    ]
+                )
+                continue
             lines.extend(
                 [
                     f"  if (packed_parameters->{name}) {{",
@@ -935,8 +1067,15 @@ def command_source_content(
         and str(parameter["type"]) != "VkAllocationCallbacks"
         for parameter in command["parameters"]
     )
+    command_struct_include = any(
+        int(parameter["pointer_depth"]) == 1
+        and str(parameter["type"]) in SUPPORTED_COMMAND_STRUCT_PARAMETERS
+        for parameter in command["parameters"]
+    )
     structure_include = (
-        '#include "generated/structure/core.hpp"' if needs_structure else ""
+        '#include "generated/structure/core.hpp"\n#include "generated/structure/command_structs.hpp"'
+        if command_struct_include
+        else ('#include "generated/structure/core.hpp"' if needs_structure else "")
     )
     helpers_block = (
         f"""namespace {{
@@ -1148,11 +1287,17 @@ def write_vulkan_api_header(metadata: dict[str, object], path: Path) -> None:
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
 // Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
 
-#include "protocol.hpp"
-
 #include <cstdint>
 
-namespace vkfwd::generated {{
+namespace vkfwd {{
+
+struct VulkanApiVersion {{
+    std::uint16_t major = 0;
+    std::uint16_t minor = 0;
+    std::uint16_t patch = 0;
+}};
+
+namespace generated {{
 
 // CommandId values are part of the schema-versioned command envelope. They are
 // generated from stable command names instead of registry order so compatible
@@ -1166,7 +1311,8 @@ constexpr VulkanApiVersion kVulkanApiVersion{{
     {metadata['versions']['vulkan_api']['minor']},
     {metadata['versions']['vulkan_api']['patch']}}};
 
-}} // namespace vkfwd::generated
+}} // namespace generated
+}} // namespace vkfwd
 """
     path.write_text(content, encoding="utf-8")
 
@@ -1185,20 +1331,89 @@ namespace vkfwd::forwarder::manual {{
 template <vkfwd::generated::CommandId>
 struct CommandHooks {{
   static constexpr bool before_pack_enabled = false;
+  static constexpr bool after_pack_enabled = false;
   static constexpr bool after_response_unpack_enabled = false;
 
   template <class... Args>
   static constexpr void before_pack(Args&...) noexcept {{}}
 
   template <class Parameters>
-  static constexpr void after_response_unpack(Parameters&) noexcept {{}}
+  static constexpr void after_pack(const Parameters&) noexcept {{}}
+
+  template <class Parameters, class Response>
+  static constexpr void after_response_unpack(const Parameters&, Response&) noexcept {{}}
 }};
 
 }} // namespace vkfwd::forwarder::manual
 """
 
 
+def receiver_hooks_header_content(metadata: dict[str, object]) -> str:
+    return f"""#pragma once
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include "generated/vulkan_api.hpp"
+
+namespace vkfwd::receiver::manual {{
+
+// Per-API receiver-endpoint customization. Hook authors specialize this template
+// in receiver/hook/<api>ReceiverHook.hpp. The generated endpoint stub conditionally
+// calls each phase via `if constexpr (Hooks::<phase>_enabled)`. When
+// replace_endpoint_enabled is true the stub bypasses the standard
+// unpack/call/pack body entirely and forwards the whole call to replace_endpoint;
+// the other phase flags are then ignored.
+template <vkfwd::generated::CommandId>
+struct CommandHooks {{
+  static constexpr bool before_unpack_enabled = false;
+  static constexpr bool before_call_enabled = false;
+  static constexpr bool after_call_enabled = false;
+  static constexpr bool before_pack_response_enabled = false;
+  static constexpr bool after_pack_response_enabled = false;
+  static constexpr bool replace_endpoint_enabled = false;
+
+  template <class... Args>
+  static constexpr void before_unpack(Args&...) noexcept {{}}
+
+  template <class... Args>
+  static constexpr void before_call(Args&...) noexcept {{}}
+
+  template <class... Args>
+  static constexpr void after_call(Args&...) noexcept {{}}
+
+  template <class... Args>
+  static constexpr void before_pack_response(Args&...) noexcept {{}}
+
+  template <class... Args>
+  static constexpr void after_pack_response(Args&...) noexcept {{}}
+
+  template <class... Args>
+  static constexpr bool replace_endpoint(Args&...) noexcept {{ return false; }}
+}};
+
+}} // namespace vkfwd::receiver::manual
+"""
+
+
 def dispatch_table_header_content(metadata: dict[str, object]) -> str:
+    commands = list(metadata["commands"])
+    global_members = "\n".join(
+        f"  {command_pfn_type(str(command['name']))} {command_field_name(str(command['name']))} = nullptr;"
+        for command in commands
+        if dispatch_table_group(command) == "global"
+    )
+    instance_members = "\n".join(
+        f"  {command_pfn_type(str(command['name']))} {command_field_name(str(command['name']))} = nullptr;"
+        for command in commands
+        if dispatch_table_group(command) == "instance"
+    )
+    device_members = "\n".join(
+        f"  {command_pfn_type(str(command['name']))} {command_field_name(str(command['name']))} = nullptr;"
+        for command in commands
+        if dispatch_table_group(command) == "device"
+    )
     return f"""#pragma once
 
 // Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
@@ -1218,10 +1433,7 @@ using PointerToFunctionPointer = PFN_vkVoidFunction*;
 
 struct GlobalDispatchTable {{
   PFN_vkGetInstanceProcAddr get_instance_proc_addr = nullptr;
-  PFN_vkEnumerateInstanceVersion enumerate_instance_version = nullptr;
-  PFN_vkEnumerateInstanceLayerProperties enumerate_instance_layer_properties = nullptr;
-  PFN_vkEnumerateInstanceExtensionProperties enumerate_instance_extension_properties = nullptr;
-  PFN_vkCreateInstance create_instance = nullptr;
+{global_members}
 
   void init(PFN_vkGetInstanceProcAddr get_instance_proc_addr);
   PFN_vkVoidFunction getProcByName(const char* name) const;
@@ -1229,15 +1441,14 @@ struct GlobalDispatchTable {{
 
 struct InstanceDispatchTable {{
   PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
-  PFN_vkDestroyInstance destroy_instance = nullptr;
-  PFN_vkCreateDevice create_device = nullptr;
+{instance_members}
 
   void init(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr);
   PFN_vkVoidFunction getProcByName(const char* name) const;
 }};
 
 struct DeviceDispatchTable {{
-  PFN_vkDestroyDevice destroy_device = nullptr;
+{device_members}
 
   void init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr);
   PFN_vkVoidFunction getProcByName(const char* name) const;
@@ -1294,9 +1505,73 @@ def command_pointer_map_entries(commands: list[dict[str, object]]) -> str:
     )
 
 
+def dispatch_table_init_lines(commands: list[dict[str, object]], group: str) -> str:
+    lines = []
+    for command in commands:
+        if dispatch_table_group(command) != group:
+            continue
+        name = str(command["name"])
+        field = command_field_name(name)
+        pfn = command_pfn_type(name)
+        if group == "global":
+            lines.extend(
+                [
+                    f"  {field} = get_instance_proc_addr",
+                    f'      ? typed_proc<{pfn}>(get_instance_proc_addr(nullptr, "{name}"))',
+                    "      : nullptr;",
+                ]
+            )
+        elif group == "instance":
+            lines.append(
+                f'  {field} = typed_proc<{pfn}>(get_instance_proc_addr(instance, "{name}"));'
+            )
+        elif group == "device":
+            lines.append(
+                f'  {field} = typed_proc<{pfn}>(get_device_proc_addr(device, "{name}"));'
+            )
+        else:
+            raise ValueError(f"unsupported dispatch-table group: {group}")
+    return "\n".join(lines)
+
+
+def dispatch_table_null_lines(commands: list[dict[str, object]], group: str) -> str:
+    lines = []
+    if group == "instance":
+        lines.append("    get_device_proc_addr = nullptr;")
+    for command in commands:
+        if dispatch_table_group(command) == group:
+            lines.append(f"    {command_field_name(str(command['name']))} = nullptr;")
+    return "\n".join(lines)
+
+
+def dispatch_table_lookup_lines(commands: list[dict[str, object]], group: str) -> str:
+    lines = []
+    for command in commands:
+        if dispatch_table_group(command) != group:
+            continue
+        name = str(command["name"])
+        field = command_field_name(name)
+        lines.extend(
+            [
+                f'  if (std::strcmp(name, "{name}") == 0) {{',
+                f"    return reinterpret_cast<PFN_vkVoidFunction>({field});",
+                "  }",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def dispatch_table_source_content(metadata: dict[str, object]) -> str:
     commands = list(metadata["commands"])
     pointer_map_entries = command_pointer_map_entries(commands)
+    global_init_lines = dispatch_table_init_lines(commands, "global")
+    instance_init_lines = dispatch_table_init_lines(commands, "instance")
+    device_init_lines = dispatch_table_init_lines(commands, "device")
+    instance_null_lines = dispatch_table_null_lines(commands, "instance")
+    device_null_lines = dispatch_table_null_lines(commands, "device")
+    global_lookup_lines = dispatch_table_lookup_lines(commands, "global")
+    instance_lookup_lines = dispatch_table_lookup_lines(commands, "instance")
+    device_lookup_lines = dispatch_table_lookup_lines(commands, "device")
     return f"""#include "generated/dispatch_table.hpp"
 
 // Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
@@ -1325,18 +1600,7 @@ void GlobalDispatchTable::init(PFN_vkGetInstanceProcAddr get_instance_proc_addr_
 
   // Global commands are loaded before any VkInstance exists, so the Vulkan
   // loader contract requires a null instance handle for these lookups.
-  enumerate_instance_version = get_instance_proc_addr
-      ? typed_proc<PFN_vkEnumerateInstanceVersion>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceVersion"))
-      : nullptr;
-  enumerate_instance_layer_properties = get_instance_proc_addr
-      ? typed_proc<PFN_vkEnumerateInstanceLayerProperties>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceLayerProperties"))
-      : nullptr;
-  enumerate_instance_extension_properties = get_instance_proc_addr
-      ? typed_proc<PFN_vkEnumerateInstanceExtensionProperties>(get_instance_proc_addr(nullptr, "vkEnumerateInstanceExtensionProperties"))
-      : nullptr;
-  create_instance = get_instance_proc_addr
-      ? typed_proc<PFN_vkCreateInstance>(get_instance_proc_addr(nullptr, "vkCreateInstance"))
-      : nullptr;
+{global_init_lines}
 }}
 
 void InstanceDispatchTable::init(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr) {{
@@ -1344,15 +1608,12 @@ void InstanceDispatchTable::init(VkInstance instance, PFN_vkGetInstanceProcAddr 
   // instance handle scopes extension/core lookup and must remain valid while
   // these dispatch slots are used.
   if (!get_instance_proc_addr) {{
-    get_device_proc_addr = nullptr;
-    destroy_instance = nullptr;
-    create_device = nullptr;
+{instance_null_lines}
     return;
   }}
 
   get_device_proc_addr = typed_proc<PFN_vkGetDeviceProcAddr>(get_instance_proc_addr(instance, "vkGetDeviceProcAddr"));
-  destroy_instance = typed_proc<PFN_vkDestroyInstance>(get_instance_proc_addr(instance, "vkDestroyInstance"));
-  create_device = typed_proc<PFN_vkCreateDevice>(get_instance_proc_addr(instance, "vkCreateDevice"));
+{instance_init_lines}
 }}
 
 void DeviceDispatchTable::init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr) {{
@@ -1360,11 +1621,11 @@ void DeviceDispatchTable::init(VkDevice device, PFN_vkGetDeviceProcAddr get_devi
   // dispatch slots are scoped to that destination device and should be
   // refreshed for each replay/device mapping.
   if (!get_device_proc_addr) {{
-    destroy_device = nullptr;
+{device_null_lines}
     return;
   }}
 
-  destroy_device = typed_proc<PFN_vkDestroyDevice>(get_device_proc_addr(device, "vkDestroyDevice"));
+{device_init_lines}
 }}
 
 PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char* name) const {{
@@ -1372,18 +1633,7 @@ PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char* name) const {{
   if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(get_instance_proc_addr);
   }}
-  if (std::strcmp(name, "vkCreateInstance") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(create_instance);
-  }}
-  if (std::strcmp(name, "vkEnumerateInstanceVersion") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_version);
-  }}
-  if (std::strcmp(name, "vkEnumerateInstanceLayerProperties") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_layer_properties);
-  }}
-  if (std::strcmp(name, "vkEnumerateInstanceExtensionProperties") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_extension_properties);
-  }}
+{global_lookup_lines}
   return nullptr;
 }}
 
@@ -1392,20 +1642,13 @@ PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char* name) const 
   if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) {{
     return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr);
   }}
-  if (std::strcmp(name, "vkDestroyInstance") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(destroy_instance);
-  }}
-  if (std::strcmp(name, "vkCreateDevice") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(create_device);
-  }}
+{instance_lookup_lines}
   return nullptr;
 }}
 
 PFN_vkVoidFunction DeviceDispatchTable::getProcByName(const char* name) const {{
   if (!name) {{ return nullptr; }}
-  if (std::strcmp(name, "vkDestroyDevice") == 0) {{
-    return reinterpret_cast<PFN_vkVoidFunction>(destroy_device);
-  }}
+{device_lookup_lines}
   return nullptr;
 }}
 
@@ -1455,6 +1698,22 @@ const ::vkfwd::generated::DeviceDispatchTable& device_dispatch_table();
 
 
 def forwarder_entrypoints_source_content(metadata: dict[str, object]) -> str:
+    commands = list(metadata["commands"])
+    global_entries = "\n".join(
+        f"  .{command_field_name(str(command['name']))} = {forwarder_entrypoint_name(str(command['name']))},"
+        for command in commands
+        if dispatch_table_group(command) == "global"
+    )
+    instance_entries = "\n".join(
+        f"  .{command_field_name(str(command['name']))} = {forwarder_entrypoint_name(str(command['name']))},"
+        for command in commands
+        if dispatch_table_group(command) == "instance"
+    )
+    device_entries = "\n".join(
+        f"  .{command_field_name(str(command['name']))} = {forwarder_entrypoint_name(str(command['name']))},"
+        for command in commands
+        if dispatch_table_group(command) == "device"
+    )
     return f"""#include "generated/forwarder_entrypoints.hpp"
 
 #include "forwarder.hpp"
@@ -1468,20 +1727,16 @@ namespace {{
 
 const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {{
   .get_instance_proc_addr = ::vkfwd::Forwarder::getInstanceProcAddr,
-  .enumerate_instance_version = {forwarder_entrypoint_name("vkEnumerateInstanceVersion")},
-  .enumerate_instance_layer_properties = {forwarder_entrypoint_name("vkEnumerateInstanceLayerProperties")},
-  .enumerate_instance_extension_properties = {forwarder_entrypoint_name("vkEnumerateInstanceExtensionProperties")},
-  .create_instance = {forwarder_entrypoint_name("vkCreateInstance")},
+{global_entries}
 }};
 
 const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {{
   .get_device_proc_addr = ::vkfwd::Forwarder::getDeviceProcAddr,
-  .destroy_instance = {forwarder_entrypoint_name("vkDestroyInstance")},
-  .create_device = {forwarder_entrypoint_name("vkCreateDevice")},
+{instance_entries}
 }};
 
 const ::vkfwd::generated::DeviceDispatchTable kDeviceDispatchTable {{
-  .destroy_device = {forwarder_entrypoint_name("vkDestroyDevice")},
+{device_entries}
 }};
 
 }} // namespace
@@ -1502,9 +1757,144 @@ const ::vkfwd::generated::DeviceDispatchTable& device_dispatch_table() {{
 """
 
 
+def forwarder_memory_map_command_source_content(
+    metadata: dict[str, object], command: dict[str, object]
+) -> str:
+    """Emit a forwarder entry that fully delegates to MemoryMapForwarder.
+
+    vkMapMemory and vkUnmapMemory cannot use the generated Vulkan command
+    payloads because the mapped pointer returned by the receiver is not a valid
+    source-process address. The manager sends vkfwd custom memory-map commands
+    with explicit staging-transfer payloads instead.
+    """
+    name = str(command["name"])
+    params = command_parameter_declarations(command)
+    param_names = command_parameter_names(command)
+    ret = command["return_type"]
+    entry = forwarder_entrypoint_name(name)
+    if str(ret) == "void":
+        call = f"::vkfwd::MemoryMapForwarder::instance().custom_{name}_entry({param_names});"
+    else:
+        call = f"return ::vkfwd::MemoryMapForwarder::instance().custom_{name}_entry({param_names});"
+    return f"""#include "generated/forwarder_entrypoints.hpp"
+
+#include "forwarder.hpp"
+#include "generated/command/{name}.hpp"
+#include "generated/forwarder_hooks.hpp"
+#include "memory_map_manager.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#if __has_include("hook/{name}ForwarderHook.hpp")
+#include "hook/{name}ForwarderHook.hpp"
+#endif
+
+namespace vkfwd::forwarder::generated {{
+
+VKAPI_ATTR {ret} VKAPI_CALL {entry}(
+    {params}) {{
+  // Staging protocol: delegate entirely to the manual MemoryMapForwarder. It
+  // emits vkfwd custom memory-map command ids, not generated Vulkan MapMemory /
+  // UnmapMemory command payloads.
+  {call}
+}}
+
+}} // namespace vkfwd::forwarder::generated
+"""
+
+
+# Commands whose public Vulkan forwarder entry delegates to the manual
+# MemoryMapForwarder, which emits vkfwd custom command ids instead of the
+# generated Vulkan command payload for the same API name.
+FORWARDER_MEMORY_MAP_MANAGED_COMMANDS = set()
+
+# Receiver endpoint groups, in emission order. Each generated command is assigned
+# to exactly one group; endpoint implementations are split into endpoint/<group>.cpp
+# so no single source file grows past the ferry-wide grouping limit (see
+# src/vkfwd/ferry/README.md "Generator Grouping Policy"). This map is the single
+# source of truth a future command/structure grouping migration should also consume.
+API_GROUP_ORDER = [
+    "global_instance",
+    "physical_device",
+    "device_lifecycle",
+    "memory_buffer",
+    "shader_pipeline_layout",
+    "renderpass_framebuffer",
+    "descriptor",
+    "sync_objects",
+]
+
+COMMAND_GROUP = {
+    "vkEnumerateInstanceVersion": "global_instance",
+    "vkEnumerateInstanceLayerProperties": "global_instance",
+    "vkEnumerateInstanceExtensionProperties": "global_instance",
+    "vkCreateInstance": "global_instance",
+    "vkDestroyInstance": "global_instance",
+    "vkEnumeratePhysicalDevices": "physical_device",
+    "vkGetPhysicalDeviceProperties": "physical_device",
+    "vkGetPhysicalDeviceFeatures": "physical_device",
+    "vkGetPhysicalDeviceQueueFamilyProperties": "physical_device",
+    "vkGetPhysicalDeviceMemoryProperties": "physical_device",
+    "vkEnumerateDeviceExtensionProperties": "physical_device",
+    "vkCreateDevice": "device_lifecycle",
+    "vkDestroyDevice": "device_lifecycle",
+    "vkGetDeviceQueue": "device_lifecycle",
+    "vkDeviceWaitIdle": "device_lifecycle",
+    "vkCreateBuffer": "memory_buffer",
+    "vkDestroyBuffer": "memory_buffer",
+    "vkGetBufferMemoryRequirements": "memory_buffer",
+    "vkAllocateMemory": "memory_buffer",
+    "vkFreeMemory": "memory_buffer",
+    "vkBindBufferMemory": "memory_buffer",
+    "vkMapMemory": "memory_buffer",
+    "vkUnmapMemory": "memory_buffer",
+    "vkCreateShaderModule": "shader_pipeline_layout",
+    "vkDestroyShaderModule": "shader_pipeline_layout",
+    "vkCreatePipelineLayout": "shader_pipeline_layout",
+    "vkDestroyPipelineLayout": "shader_pipeline_layout",
+    "vkCreateGraphicsPipelines": "shader_pipeline_layout",
+    "vkDestroyPipeline": "shader_pipeline_layout",
+    "vkCreateRenderPass": "renderpass_framebuffer",
+    "vkDestroyRenderPass": "renderpass_framebuffer",
+    "vkCreateDescriptorSetLayout": "descriptor",
+    "vkDestroyDescriptorSetLayout": "descriptor",
+    "vkCreateSemaphore": "sync_objects",
+    "vkDestroySemaphore": "sync_objects",
+}
+
+
+def command_group(command: dict[str, object]) -> str:
+    name = str(command["name"])
+    try:
+        return COMMAND_GROUP[name]
+    except KeyError:
+        raise ValueError(
+            f"command {name!r} has no receiver endpoint group; add it to COMMAND_GROUP"
+        ) from None
+
+
+def commands_in_group(
+    metadata: dict[str, object], group: str
+) -> list[dict[str, object]]:
+    return [c for c in metadata["commands"] if command_group(c) == group]
+
+
+def receiver_groups_present(metadata: dict[str, object]) -> list[str]:
+    present = {command_group(c) for c in metadata["commands"]}
+    return [g for g in API_GROUP_ORDER if g in present]
+
+
+def forwarder_memory_manager_include(command: dict[str, object]) -> str:
+    return ""
+
+
 def forwarder_command_source_content(
     metadata: dict[str, object], command: dict[str, object]
 ) -> str:
+    if str(command["name"]) in FORWARDER_MEMORY_MAP_MANAGED_COMMANDS:
+        return forwarder_memory_map_command_source_content(metadata, command)
     enum_name = command_enum_name(command["name"])
     namespace = command_namespace(command["name"])
     return_statement = response_return_statement(command)
@@ -1524,7 +1914,7 @@ def forwarder_command_source_content(
   Command::Response response = *packed_response;
 
   if constexpr (Hooks::after_response_unpack_enabled) {{
-    Hooks::after_response_unpack(response);
+    Hooks::after_response_unpack(parameters, response);
   }}
 {output_assignments}
   // Synchronous forwarding flushes this thread's pending request stream and
@@ -1541,6 +1931,10 @@ def forwarder_command_source_content(
 """
     else:
         response_flow = f"""
+  if constexpr (Hooks::after_pack_enabled) {{
+    Hooks::after_pack(parameters);
+  }}
+
   // Deferrable commands have no return value or output parameters, so the
   // entry point only appends to the thread-local request stream. The next
   // non-deferrable command is responsible for flushing this thread's pending
@@ -1551,6 +1945,7 @@ def forwarder_command_source_content(
 #include "forwarder.hpp"
 #include "generated/command/{command['name']}.hpp"
 #include "generated/forwarder_hooks.hpp"
+{forwarder_memory_manager_include(command)}
 
 // Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
@@ -1630,50 +2025,6 @@ def receiver_endpoint_function_name(command: dict[str, object]) -> str:
     return f"{command['name']}_endpoint"
 
 
-def receiver_dispatch_update_lines(command: dict[str, object]) -> list[str]:
-    if str(command["return_type"]) == "void":
-        return []
-    lines: list[str] = []
-    for parameter in command["parameters"]:
-        if parameter["direction"] != "output":
-            continue
-        name = str(parameter["name"])
-        ptype = str(parameter["type"])
-        if ptype == "VkInstance":
-            lines.extend(
-                [
-                    f"  if (return_value == VK_SUCCESS && parameters->{name} && *parameters->{name}) {{",
-                    "    // Successful receiver-side instance creation changes the",
-                    "    // destination dispatch scope. Keep this in ReplayContext so",
-                    "    // tests and transports do not patch host callbacks around the",
-                    "    // generated endpoint contract.",
-                    f"    replay_context.dispatch.instance.init(*parameters->{name}, replay_context.dispatch.global.get_instance_proc_addr);",
-                    "  }",
-                ]
-            )
-        elif ptype == "VkDevice":
-            lines.extend(
-                [
-                    f"  if (return_value == VK_SUCCESS && parameters->{name} && *parameters->{name}) {{",
-                    "    // Device dispatch is receiver-owned state derived from the",
-                    "    // destination device handle. Source-side forwarding must not",
-                    "    // provide or cache these host function pointers.",
-                    f"    replay_context.dispatch.device.init(*parameters->{name}, replay_context.dispatch.instance.get_device_proc_addr);",
-                    "  }",
-                ]
-            )
-    return lines
-
-
-def receiver_endpoint_declarations(metadata: dict[str, object]) -> str:
-    return "\n".join(
-        "bool "
-        f"{receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream, "
-        "::vkfwd::receiver::ReplayContext& replay_context);"
-        for command in metadata["commands"]
-    )
-
-
 def receiver_endpoint_source(command: dict[str, object]) -> str:
     namespace = command_namespace(str(command["name"]))
     enum_name = command_enum_name(str(command["name"]))
@@ -1681,40 +2032,121 @@ def receiver_endpoint_source(command: dict[str, object]) -> str:
         f"parameters->{parameter['name']}" for parameter in command["parameters"]
     )
     pfn_type = command_pfn_type(str(command["name"]))
+    fn = receiver_endpoint_function_name(command)
 
-    call_lines = []
+    body: list[str] = []
     if str(command["return_type"]) == "void":
-        call_lines.append(f"  api_function({parameter_names});")
+        body.append(f"    api_function({parameter_names});")
     else:
-        call_lines.append(
-            f"  const {command['return_type']} return_value = api_function({parameter_names});"
+        body.append(
+            f"    const {command['return_type']} return_value = api_function({parameter_names});"
         )
-        call_lines.extend(receiver_dispatch_update_lines(command))
 
     if command_needs_response(command):
-        call_lines.extend(
-            [
-                f"  Command::Response response {receiver_response_initializer(command)};",
-                "  return Command::pack_response(response_stream, response) == VK_SUCCESS;",
-            ]
+        body.append(
+            f"    Command::Response response {receiver_response_initializer(command)};"
         )
+        body.append(
+            "    if constexpr (Hooks::after_call_enabled) { Hooks::after_call(*parameters, response, replay_context); }"
+        )
+        body.append(
+            "    if constexpr (Hooks::before_pack_response_enabled) { Hooks::before_pack_response(*parameters, response, replay_context); }"
+        )
+        body.append(
+            "    const bool packed_ok = Command::pack_response(response_stream, response) == VK_SUCCESS;"
+        )
+        body.append(
+            "    if constexpr (Hooks::after_pack_response_enabled) { Hooks::after_pack_response(*parameters, response_stream); }"
+        )
+        body.append("    return packed_ok;")
     else:
-        call_lines.append("  return true;")
+        body.append("    return true;")
 
-    return f"""bool {receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream,
+    return f"""bool {fn}(const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream,
                                ::vkfwd::receiver::ReplayContext& replay_context) {{
   using Command = ::vkfwd::generated::commands::{namespace}::Command;
+  using Hooks = ::vkfwd::receiver::manual::CommandHooks<::vkfwd::generated::CommandId::{enum_name}>;
 
-  const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::{enum_name});
-  if (!raw_function) {{ return false; }}
-  const auto api_function = reinterpret_cast<{pfn_type}>(raw_function);
+  if constexpr (Hooks::replace_endpoint_enabled) {{
+    // Full override: the endpoint has no standard unpack/call/pack body
+    // (e.g. memory-map delegation where no real Vulkan call happens here).
+    return Hooks::replace_endpoint(request_stream, request_range, response_stream, replay_context);
+  }} else {{
+    const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::{enum_name});
+    if (!raw_function) {{ return false; }}
+    const auto api_function = reinterpret_cast<{pfn_type}>(raw_function);
 
-  auto& mutable_request_stream = const_cast<CommandStream&>(request_stream);
-  auto request_view = mutable_request_stream.at(request_range.offset, request_range.size);
-  const Command::Parameters* parameters = nullptr;
-  if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) {{ return false; }}
-{chr(10).join(call_lines)}
+    auto& mutable_request_stream = const_cast<CommandStream&>(request_stream);
+    auto request_view = mutable_request_stream.at(request_range.offset, request_range.size);
+
+    if constexpr (Hooks::before_unpack_enabled) {{ Hooks::before_unpack(request_view, replay_context); }}
+
+    const Command::Parameters* parameters = nullptr;
+    if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) {{ return false; }}
+
+    if constexpr (Hooks::before_call_enabled) {{
+      Hooks::before_call(*const_cast<Command::Parameters*>(parameters), replay_context);
+    }}
+{chr(10).join(body)}
+  }}
 }}
+"""
+
+
+def receiver_group_header_content(metadata: dict[str, object], group: str) -> str:
+    commands = commands_in_group(metadata, group)
+    declarations = "\n".join(
+        "bool "
+        f"{receiver_endpoint_function_name(command)}(const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream, "
+        "::vkfwd::receiver::ReplayContext& replay_context);"
+        for command in commands
+    )
+    return f"""#pragma once
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include "command_stream.hpp"
+#include "generated/dispatch_table.hpp"
+#include "replay_context.hpp"
+
+namespace vkfwd::receiver::generated {{
+
+{declarations}
+
+}} // namespace vkfwd::receiver::generated
+"""
+
+
+def receiver_group_source_content(metadata: dict[str, object], group: str) -> str:
+    commands = commands_in_group(metadata, group)
+    includes = "\n".join(
+        f'#include "generated/command/{command["name"]}.hpp"' for command in commands
+    )
+    hook_includes = "\n".join(
+        f'#if __has_include("hook/{command["name"]}ReceiverHook.hpp")\n'
+        f'#include "hook/{command["name"]}ReceiverHook.hpp"\n'
+        f"#endif"
+        for command in commands
+    )
+    endpoints = "\n".join(receiver_endpoint_source(command) for command in commands)
+    return f"""#include "generated/endpoint/{group}.hpp"
+
+{includes}
+#include "generated/receiver_hooks.hpp"
+#include "memory_map_manager.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+{hook_includes}
+
+namespace vkfwd::receiver::generated {{
+
+{endpoints}
+}} // namespace vkfwd::receiver::generated
 """
 
 
@@ -1727,7 +2159,6 @@ def receiver_endpoint_dispatch_cases(metadata: dict[str, object]) -> str:
 
 
 def receiver_endpoints_header_content(metadata: dict[str, object]) -> str:
-    declarations = receiver_endpoint_declarations(metadata)
     return f"""#pragma once
 
 // Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
@@ -1736,12 +2167,9 @@ def receiver_endpoints_header_content(metadata: dict[str, object]) -> str:
 
 #include "command_stream.hpp"
 #include "generated/dispatch_table.hpp"
-#include "protocol.hpp"
 #include "replay_context.hpp"
 
 namespace vkfwd::receiver::generated {{
-
-{declarations}
 
 bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream,
                        ::vkfwd::receiver::ReplayContext& replay_context);
@@ -1751,17 +2179,14 @@ bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandSt
 
 
 def receiver_endpoints_source_content(metadata: dict[str, object]) -> str:
-    includes = "\n".join(
-        f'#include "generated/command/{command["name"]}.hpp"'
-        for command in metadata["commands"]
-    )
-    endpoints = "\n".join(
-        receiver_endpoint_source(command) for command in metadata["commands"]
+    group_includes = "\n".join(
+        f'#include "generated/endpoint/{group}.hpp"'
+        for group in receiver_groups_present(metadata)
     )
     dispatch_cases = receiver_endpoint_dispatch_cases(metadata)
     return f"""#include "generated/endpoints.hpp"
 
-{includes}
+{group_includes}
 
 // Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
@@ -1769,7 +2194,6 @@ def receiver_endpoints_source_content(metadata: dict[str, object]) -> str:
 
 namespace vkfwd::receiver::generated {{
 
-{endpoints}
 bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandStream& request_stream, const Range& request_range, CommandStream& response_stream,
                        ::vkfwd::receiver::ReplayContext& replay_context) {{
   switch (command_id) {{
@@ -1784,12 +2208,32 @@ bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandSt
 
 def write_receiver_files(metadata: dict[str, object], receiver_dir: Path) -> None:
     receiver_dir.mkdir(parents=True, exist_ok=True)
+    endpoint_dir = receiver_dir / "endpoint"
+    endpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    (receiver_dir / "receiver_hooks.hpp").write_text(
+        receiver_hooks_header_content(metadata), encoding="utf-8"
+    )
     (receiver_dir / "endpoints.hpp").write_text(
         receiver_endpoints_header_content(metadata), encoding="utf-8"
     )
     (receiver_dir / "endpoints.cpp").write_text(
         receiver_endpoints_source_content(metadata), encoding="utf-8"
     )
+
+    present = receiver_groups_present(metadata)
+    # Remove stale generated group files so a shrinking manifest never leaves
+    # an orphaned .cpp that the CMake glob would still compile.
+    for existing in list(endpoint_dir.glob("*.hpp")) + list(endpoint_dir.glob("*.cpp")):
+        if existing.stem not in present:
+            existing.unlink()
+    for group in present:
+        (endpoint_dir / f"{group}.hpp").write_text(
+            receiver_group_header_content(metadata, group), encoding="utf-8"
+        )
+        (endpoint_dir / f"{group}.cpp").write_text(
+            receiver_group_source_content(metadata, group), encoding="utf-8"
+        )
 
 
 def structure_test_support_content(metadata: dict[str, object]) -> str:
@@ -2317,6 +2761,231 @@ TEST_CASE("VkPhysicalDeviceDescriptorIndexingFeatures generated structure pack/u
 """
 
 
+def command_structs_structure_test_content(metadata: dict[str, object]) -> str:
+    return f"""#include "support.hpp"
+
+#include "generated/structure/command_structs.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <array>
+#include <cstdint>
+#include <string_view>
+
+namespace vkfwd::generated::structure::test {{
+namespace {{
+
+TEST_CASE("VkBufferCreateInfo generated command-structure pack/unpack preserves queue family indices") {{
+    CommandStream stream;
+    PackedStruct packed;
+    std::array<std::uint32_t, 2> families {{2, 5}};
+    VkBufferCreateInfo value {{
+        .sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext                 = nullptr,
+        .flags                 = VkBufferCreateFlags {{0x1}},
+        .size                  = 4096,
+        .usage                 = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode           = VK_SHARING_MODE_CONCURRENT,
+        .queueFamilyIndexCount = static_cast<std::uint32_t>(families.size()),
+        .pQueueFamilyIndices   = families.data(),
+    }};
+
+    REQUIRE(pack_VkBufferCreateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkBufferCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkBufferCreateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    CHECK(actual->size == value.size);
+    check_relative_plain_array(flattened, packed.offset, actual->pQueueFamilyIndices, {{2u, 5u}});
+}}
+
+TEST_CASE("VkMemoryAllocateInfo generated command-structure pack/unpack preserves scalar allocation fields") {{
+    CommandStream stream;
+    PackedStruct packed;
+    VkMemoryAllocateInfo value {{
+        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext           = nullptr,
+        .allocationSize  = 8192,
+        .memoryTypeIndex = 3,
+    }};
+    REQUIRE(pack_VkMemoryAllocateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkMemoryAllocateInfo * actual = nullptr;
+    REQUIRE(unpack_VkMemoryAllocateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    CHECK(actual->allocationSize == value.allocationSize);
+    CHECK(actual->memoryTypeIndex == value.memoryTypeIndex);
+}}
+
+TEST_CASE("VkShaderModuleCreateInfo generated command-structure pack/unpack preserves SPIR-V words") {{
+    CommandStream stream;
+    PackedStruct packed;
+    std::array<std::uint32_t, 4> code {{0x07230203u, 0x00010000u, 0x0008000au, 0u}};
+    VkShaderModuleCreateInfo value {{
+        .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext    = nullptr,
+        .flags    = VkShaderModuleCreateFlags {{0}},
+        .codeSize = code.size() * sizeof(std::uint32_t),
+        .pCode    = code.data(),
+    }};
+    REQUIRE(pack_VkShaderModuleCreateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkShaderModuleCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkShaderModuleCreateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    CHECK(actual->codeSize == value.codeSize);
+    check_relative_plain_array(flattened, packed.offset, actual->pCode, {{code[0], code[1], code[2], code[3]}});
+}}
+
+TEST_CASE("VkDescriptorSetLayoutCreateInfo generated command-structure pack/unpack preserves bindings") {{
+    CommandStream stream;
+    PackedStruct packed;
+    std::array<VkDescriptorSetLayoutBinding, 1> bindings {{
+        VkDescriptorSetLayoutBinding {{.binding = 2, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT}},
+    }};
+    VkDescriptorSetLayoutCreateInfo value {{
+        .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext        = nullptr,
+        .flags        = VkDescriptorSetLayoutCreateFlags {{0}},
+        .bindingCount = static_cast<std::uint32_t>(bindings.size()),
+        .pBindings    = bindings.data(),
+    }};
+    REQUIRE(pack_VkDescriptorSetLayoutCreateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkDescriptorSetLayoutCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkDescriptorSetLayoutCreateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    REQUIRE(actual->pBindings != nullptr);
+    CHECK(points_into_blob(flattened, actual->pBindings));
+    CHECK(actual->pBindings[0].binding == 2);
+}}
+
+TEST_CASE("VkPipelineLayoutCreateInfo generated command-structure pack/unpack preserves set layouts and push constants") {{
+    CommandStream stream;
+    PackedStruct packed;
+    std::array<VkDescriptorSetLayout, 1> layouts {{test_handle<VkDescriptorSetLayout>(0x101)}};
+    std::array<VkPushConstantRange, 1> ranges {{VkPushConstantRange {{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 4, .size = 8}}}};
+    VkPipelineLayoutCreateInfo value {{
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext                  = nullptr,
+        .flags                  = VkPipelineLayoutCreateFlags {{0}},
+        .setLayoutCount         = static_cast<std::uint32_t>(layouts.size()),
+        .pSetLayouts            = layouts.data(),
+        .pushConstantRangeCount = static_cast<std::uint32_t>(ranges.size()),
+        .pPushConstantRanges    = ranges.data(),
+    }};
+    REQUIRE(pack_VkPipelineLayoutCreateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkPipelineLayoutCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkPipelineLayoutCreateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    CHECK(actual->pSetLayouts[0] == layouts[0]);
+    CHECK(actual->pPushConstantRanges[0].size == 8);
+}}
+
+TEST_CASE("VkRenderPassCreateInfo generated command-structure pack/unpack preserves subpass attachment arrays") {{
+    CommandStream stream;
+    PackedStruct packed;
+    std::array<VkAttachmentDescription, 1> attachments {{VkAttachmentDescription {{.format = VK_FORMAT_R8G8B8A8_UNORM, .samples = VK_SAMPLE_COUNT_1_BIT}}}};
+    std::array<VkAttachmentReference, 1> colors {{VkAttachmentReference {{.attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}}}};
+    std::array<VkSubpassDescription, 1> subpasses {{VkSubpassDescription {{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .colorAttachmentCount = 1, .pColorAttachments = colors.data()}}}};
+    VkRenderPassCreateInfo value {{
+        .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .pNext           = nullptr,
+        .attachmentCount = static_cast<std::uint32_t>(attachments.size()),
+        .pAttachments    = attachments.data(),
+        .subpassCount    = static_cast<std::uint32_t>(subpasses.size()),
+        .pSubpasses      = subpasses.data(),
+    }};
+    REQUIRE(pack_VkRenderPassCreateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkRenderPassCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkRenderPassCreateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    REQUIRE(actual->pSubpasses != nullptr);
+    REQUIRE(actual->pSubpasses[0].pColorAttachments != nullptr);
+    CHECK(actual->pSubpasses[0].pColorAttachments[0].attachment == 0);
+}}
+
+TEST_CASE("VkSemaphoreCreateInfo generated command-structure pack/unpack preserves scalar fields") {{
+    CommandStream stream;
+    PackedStruct packed;
+    VkSemaphoreCreateInfo value {{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = VkSemaphoreCreateFlags {{0}},
+    }};
+    REQUIRE(pack_VkSemaphoreCreateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkSemaphoreCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkSemaphoreCreateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    CHECK(actual->sType == value.sType);
+}}
+
+TEST_CASE("VkGraphicsPipelineCreateInfo generated command-structure pack/unpack preserves nested pipeline arrays") {{
+    CommandStream stream;
+    PackedStruct packed;
+    VkPipelineShaderStageCreateInfo stage {{
+        .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext  = nullptr,
+        .stage  = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = test_handle<VkShaderModule>(0x202),
+        .pName  = "main",
+    }};
+    std::array<VkVertexInputBindingDescription, 1> bindings {{VkVertexInputBindingDescription {{.binding = 0, .stride = 8}}}};
+    std::array<VkVertexInputAttributeDescription, 1> attributes {{VkVertexInputAttributeDescription {{.location = 0, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT}}}};
+    VkPipelineVertexInputStateCreateInfo vertex {{
+        .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount   = static_cast<std::uint32_t>(bindings.size()),
+        .pVertexBindingDescriptions      = bindings.data(),
+        .vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attributes.size()),
+        .pVertexAttributeDescriptions    = attributes.data(),
+    }};
+    VkPipelineInputAssemblyStateCreateInfo assembly {{.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST}};
+    std::array<VkDynamicState, 1> dynamic_states {{VK_DYNAMIC_STATE_VIEWPORT}};
+    VkPipelineDynamicStateCreateInfo dynamic {{.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = 1, .pDynamicStates = dynamic_states.data()}};
+    VkGraphicsPipelineCreateInfo value {{
+        .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext               = nullptr,
+        .stageCount          = 1,
+        .pStages             = &stage,
+        .pVertexInputState   = &vertex,
+        .pInputAssemblyState = &assembly,
+        .pDynamicState       = &dynamic,
+        .layout              = test_handle<VkPipelineLayout>(0x303),
+        .renderPass          = test_handle<VkRenderPass>(0x404),
+    }};
+    REQUIRE(pack_VkGraphicsPipelineCreateInfo(&value, stream, packed) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto view = view_from(flattened, packed.offset);
+    const VkGraphicsPipelineCreateInfo * actual = nullptr;
+    REQUIRE(unpack_VkGraphicsPipelineCreateInfo(view, &actual) == VK_SUCCESS);
+    REQUIRE(points_into(view, actual));
+    REQUIRE(actual->pStages != nullptr);
+    check_relative_string(flattened, packed.offset, actual->pStages[0].pName, "main");
+    REQUIRE(actual->pVertexInputState != nullptr);
+    CHECK(actual->pVertexInputState->pVertexBindingDescriptions[0].stride == 8);
+    REQUIRE(actual->pDynamicState != nullptr);
+    CHECK(actual->pDynamicState->pDynamicStates[0] == VK_DYNAMIC_STATE_VIEWPORT);
+}}
+
+}} // namespace
+}} // namespace vkfwd::generated::structure::test
+"""
+
+
 def write_structure_test_files(metadata: dict[str, object], output_dir: Path) -> None:
     test_dir = output_dir / "structure" / "test"
     test_dir.mkdir(parents=True, exist_ok=True)
@@ -2330,6 +2999,9 @@ def write_structure_test_files(metadata: dict[str, object], output_dir: Path) ->
         ),
         "device_structure_test.cpp": device_structure_test_content(metadata),
         "physical_device_features_structure_test.cpp": physical_device_features_structure_test_content(
+            metadata
+        ),
+        "command_structs_structure_test.cpp": command_structs_structure_test_content(
             metadata
         ),
     }
@@ -2347,13 +3019,903 @@ set(VKFWD_INTERNAL_TEST_LOCAL_SOURCES
     )
 
 
-def command_roundtrip_test_content(metadata: dict[str, object]) -> str:
-    return f"""#include "command_stream.hpp"
-#include "generated/command/vkCreateDevice.hpp"
-#include "generated/command/vkCreateInstance.hpp"
-#include "generated/command/vkDestroyDevice.hpp"
-#include "generated/command/vkDestroyInstance.hpp"
+def command_structs_header_content(metadata: dict[str, object]) -> str:
+    declarations = "\n".join(
+        f"VkResult pack_{name}(const {name}* value, CommandStream& stream, PackedStruct& packed);\n"
+        f"VkResult pack_array_{name}(const {name}* values, std::uint32_t count, CommandStream& stream, PackedStruct& packed);\n"
+        f"VkResult unpack_{name}(SafeArrayView<std::uint8_t>& view, const {name}** value);\n"
+        f"VkResult unpack_array_{name}(SafeArrayView<std::uint8_t>& view, std::uint32_t count, const {name}** values);"
+        for name in sorted(
+            SUPPORTED_COMMAND_STRUCT_PARAMETERS
+            - {"VkInstanceCreateInfo", "VkDeviceCreateInfo"}
+        )
+    )
+    return f"""#pragma once
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: {metadata['versions']['vulkan_api_version']}
+// Vulkan XML SHA256: {metadata['generator']['vk_xml_sha256']}
+
+#include "command_stream.hpp"
 #include "generated/structure/core.hpp"
+
+#include <vulkan/vulkan.h>
+
+#include <cstdint>
+
+namespace vkfwd::generated::structure {{
+
+{declarations}
+
+}} // namespace vkfwd::generated::structure
+"""
+
+
+def command_structs_source_content(metadata: dict[str, object]) -> str:
+    content = """#include "generated/structure/command_structs.hpp"
+
+// Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
+// Vulkan API version: @VULKAN_API_VERSION@
+// Vulkan XML SHA256: @VK_XML_SHA256@
+
+#include "logging.hpp"
+
+#include <cstddef>
+#include <cstring>
+#include <new>
+
+namespace vkfwd::generated::structure {{
+namespace {{
+
+template<class T>
+VkResult append_shallow_struct(const T* value, CommandStream& stream, PackedStruct& packed, T*& packed_value) {{
+  packed_value = nullptr;
+  if (!value) {{
+    packed.offset = 0;
+    return VK_SUCCESS;
+  }}
+  try {{
+    std::size_t target = 0;
+    auto destination = stream.grow<T>(1, alignof(T), &target);
+    if (!destination.set(0, *value)) [[unlikely]] {{
+      VKFWD_LOG_ERROR("vkfwd ferry command-structure pack failed: could not copy shallow struct, size={{}}", sizeof(T));
+      return VK_ERROR_UNKNOWN;
+    }}
+    packed.offset = target;
+    packed_value = &destination.at(0);
+    return VK_SUCCESS;
+  }} catch (const std::bad_alloc&) {{
+    VKFWD_LOG_ERROR("vkfwd ferry command-structure pack failed: out of host memory copying shallow struct, size={{}}", sizeof(T));
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+template<class Pointer>
+VkResult patch_pointer(Pointer& pointer_slot, std::size_t pointer_slot_offset, std::size_t target_offset) {{
+  // Command create-info structs use the same field-relative pointer encoding as
+  // core structures so nested source pointers never cross the receiver boundary.
+  pointer_slot = reinterpret_cast<Pointer>(target_offset ? static_cast<std::uintptr_t>(target_offset - pointer_slot_offset) : 0);
+  return VK_SUCCESS;
+}}
+
+template<class Pointer>
+VkResult recover_pointer(Pointer& pointer_slot, SafeArrayView<std::uint8_t>& view) {{
+  if (!pointer_slot) {{ return VK_SUCCESS; }}
+  auto* begin = view.address(0);
+  if (!begin) [[unlikely]] {{ return VK_ERROR_UNKNOWN; }}
+  auto* slot = reinterpret_cast<std::uint8_t*>(&pointer_slot);
+  auto* end = begin + view.size();
+  auto* target = slot + reinterpret_cast<std::uintptr_t>(pointer_slot);
+  if (slot < begin || slot + sizeof(Pointer) > end || target < begin || target >= end) [[unlikely]] {{
+    VKFWD_LOG_ERROR("vkfwd ferry command-structure unpack failed: encoded pointer is outside view, view_size={{}}", view.size());
+    return VK_ERROR_UNKNOWN;
+  }}
+  pointer_slot = reinterpret_cast<Pointer>(target);
+  return VK_SUCCESS;
+}}
+
+SafeArrayView<std::uint8_t> tail_view_from_pointer(SafeArrayView<std::uint8_t>& view, const void* pointer) {{
+  auto* begin = view.address(0);
+  if (!begin || !pointer) {{ return {{}}; }}
+  auto* target = const_cast<std::uint8_t*>(reinterpret_cast<const std::uint8_t*>(pointer));
+  auto* end = begin + view.size();
+  if (target < begin || target >= end) {{ return {{}}; }}
+  return SafeArrayView<std::uint8_t>(static_cast<std::size_t>(end - target), target);
+}}
+
+template<class T>
+VkResult pack_plain_array(const T* values, std::uint32_t count, CommandStream& stream, std::size_t slot_offset, const T*& pointer_slot) {{
+  if (!values || count == 0) {{ return patch_pointer(pointer_slot, slot_offset, 0); }}
+  try {{
+    std::size_t target = 0;
+    auto destination = stream.grow<T>(count, alignof(T), &target);
+    if (destination.set(0, count, values) != count) [[unlikely]] {{
+      VKFWD_LOG_ERROR("vkfwd ferry command-structure pack failed: could not copy array, count={{}}, element_size={{}}", count, sizeof(T));
+      return VK_ERROR_UNKNOWN;
+    }}
+    return patch_pointer(pointer_slot, slot_offset, target);
+  }} catch (const std::bad_alloc&) {{
+    VKFWD_LOG_ERROR("vkfwd ferry command-structure pack failed: out of host memory copying array, count={{}}, element_size={{}}", count, sizeof(T));
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+template<class T>
+VkResult pack_plain_object(const T* value, CommandStream& stream, std::size_t slot_offset, const T*& pointer_slot, std::size_t& object_offset,
+                           T*& packed_object) {{
+  object_offset = 0;
+  packed_object = nullptr;
+  if (!value) {{ return patch_pointer(pointer_slot, slot_offset, 0); }}
+  try {{
+    auto destination = stream.grow<T>(1, alignof(T), &object_offset);
+    if (!destination.set(0, *value)) [[unlikely]] {{
+      VKFWD_LOG_ERROR("vkfwd ferry command-structure pack failed: could not copy nested object, size={{}}", sizeof(T));
+      return VK_ERROR_UNKNOWN;
+    }}
+    packed_object = &destination.at(0);
+    return patch_pointer(pointer_slot, slot_offset, object_offset);
+  }} catch (const std::bad_alloc&) {{
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+VkResult pack_string(const char* value, CommandStream& stream, std::size_t slot_offset, const char*& pointer_slot) {{
+  if (!value) {{ return patch_pointer(pointer_slot, slot_offset, 0); }}
+  try {{
+    const std::size_t size = std::strlen(value) + 1;
+    std::size_t target = 0;
+    auto destination = stream.grow<char>(size, alignof(char), &target);
+    if (destination.set(0, size, value) != size) [[unlikely]] {{
+      VKFWD_LOG_ERROR("vkfwd ferry command-structure pack failed: could not copy string");
+      return VK_ERROR_UNKNOWN;
+    }}
+    return patch_pointer(pointer_slot, slot_offset, target);
+  }} catch (const std::bad_alloc&) {{
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+VkResult recover_pnext(const void*& pnext, SafeArrayView<std::uint8_t>& view) {{
+  VkResult status = recover_pointer(pnext, view);
+  if (status != VK_SUCCESS || !pnext) {{ return status; }}
+  auto child_view = tail_view_from_pointer(view, pnext);
+  const void* ignored = nullptr;
+  return unpack_pnext_chain(child_view, &ignored);
+}}
+
+VkResult pack_pnext(const void* pnext, CommandStream& stream, std::size_t slot_offset, const void*& pointer_slot) {{
+  PackedStruct packed_pnext;
+  VkResult status = pack_pnext_chain(pnext, stream, packed_pnext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return patch_pointer(pointer_slot, slot_offset, packed_pnext.offset);
+}}
+
+VkResult pack_specialization_info(const VkSpecializationInfo* value, CommandStream& stream, std::size_t slot_offset,
+                                  const VkSpecializationInfo*& pointer_slot) {{
+  VkSpecializationInfo* packed_value = nullptr;
+  PackedStruct packed;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  status = pack_plain_array(value->pMapEntries, value->mapEntryCount, stream, packed.offset + offsetof(VkSpecializationInfo, pMapEntries),
+                            packed_value->pMapEntries);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_plain_array(reinterpret_cast<const std::uint8_t*>(value->pData), static_cast<std::uint32_t>(value->dataSize), stream,
+                            packed.offset + offsetof(VkSpecializationInfo, pData), reinterpret_cast<const std::uint8_t*&>(packed_value->pData));
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return patch_pointer(pointer_slot, slot_offset, packed.offset);
+}}
+
+VkResult unpack_specialization_info(SafeArrayView<std::uint8_t>& view, const VkSpecializationInfo** value) {{
+  auto* typed = view.size() < sizeof(VkSpecializationInfo) ? nullptr : reinterpret_cast<VkSpecializationInfo*>(view.address(0));
+  if (!typed) [[unlikely]] {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pointer(typed->pMapEntries, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pData, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+VkResult pack_VkPipelineShaderStageCreateInfo_payload(const VkPipelineShaderStageCreateInfo& source, VkPipelineShaderStageCreateInfo& packed,
+                                                      CommandStream& stream, std::size_t base_offset) {{
+  VkResult status = pack_pnext(source.pNext, stream, base_offset + offsetof(VkPipelineShaderStageCreateInfo, pNext), packed.pNext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_string(source.pName, stream, base_offset + offsetof(VkPipelineShaderStageCreateInfo, pName), packed.pName);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return pack_specialization_info(source.pSpecializationInfo, stream, base_offset + offsetof(VkPipelineShaderStageCreateInfo, pSpecializationInfo),
+                                  packed.pSpecializationInfo);
+}}
+
+VkResult unpack_VkPipelineShaderStageCreateInfo_payload(SafeArrayView<std::uint8_t>& view, VkPipelineShaderStageCreateInfo& typed) {{
+  VkResult status = recover_pnext(typed.pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pName, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pSpecializationInfo, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (typed.pSpecializationInfo) {{
+    auto child = tail_view_from_pointer(view, typed.pSpecializationInfo);
+    const VkSpecializationInfo* ignored = nullptr;
+    status = unpack_specialization_info(child, &ignored);
+  }}
+  return status;
+}}
+
+template<class T, class Patch>
+VkResult pack_nested_struct_array(const T* values, std::uint32_t count, CommandStream& stream, std::size_t slot_offset, const T*& pointer_slot,
+                                  Patch patch) {{
+  if (!values || count == 0) {{ return patch_pointer(pointer_slot, slot_offset, 0); }}
+  try {{
+    std::size_t target = 0;
+    auto destination = stream.grow<T>(count, alignof(T), &target);
+    if (destination.set(0, count, values) != count) [[unlikely]] {{ return VK_ERROR_UNKNOWN; }}
+    for (std::uint32_t i = 0; i < count; ++i) {{
+      VkResult status = patch(values[i], destination.at(i), stream, target + i * sizeof(T));
+      if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    }}
+    return patch_pointer(pointer_slot, slot_offset, target);
+  }} catch (const std::bad_alloc&) {{
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+VkResult pack_VkGraphicsPipelineCreateInfo_payload(const VkGraphicsPipelineCreateInfo& source, VkGraphicsPipelineCreateInfo& packed,
+                                                   CommandStream& stream, std::size_t base_offset);
+VkResult unpack_VkGraphicsPipelineCreateInfo_payload(SafeArrayView<std::uint8_t>& view, VkGraphicsPipelineCreateInfo& typed);
+
+}} // namespace
+
+VkResult pack_VkBufferCreateInfo(const VkBufferCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkBufferCreateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  status = pack_pnext(value->pNext, stream, packed.offset + offsetof(VkBufferCreateInfo, pNext), packed_value->pNext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return pack_plain_array(value->pQueueFamilyIndices, value->queueFamilyIndexCount, stream,
+                          packed.offset + offsetof(VkBufferCreateInfo, pQueueFamilyIndices), packed_value->pQueueFamilyIndices);
+}}
+
+VkResult unpack_VkBufferCreateInfo(SafeArrayView<std::uint8_t>& view, const VkBufferCreateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkBufferCreateInfo) ? nullptr : reinterpret_cast<VkBufferCreateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pQueueFamilyIndices, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+VkResult pack_VkMemoryAllocateInfo(const VkMemoryAllocateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkMemoryAllocateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  return pack_pnext(value->pNext, stream, packed.offset + offsetof(VkMemoryAllocateInfo, pNext), packed_value->pNext);
+}}
+
+VkResult unpack_VkMemoryAllocateInfo(SafeArrayView<std::uint8_t>& view, const VkMemoryAllocateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkMemoryAllocateInfo) ? nullptr : reinterpret_cast<VkMemoryAllocateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+VkResult pack_VkShaderModuleCreateInfo(const VkShaderModuleCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkShaderModuleCreateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  status = pack_pnext(value->pNext, stream, packed.offset + offsetof(VkShaderModuleCreateInfo, pNext), packed_value->pNext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return pack_plain_array(value->pCode, static_cast<std::uint32_t>(value->codeSize / sizeof(std::uint32_t)), stream,
+                          packed.offset + offsetof(VkShaderModuleCreateInfo, pCode), packed_value->pCode);
+}}
+
+VkResult unpack_VkShaderModuleCreateInfo(SafeArrayView<std::uint8_t>& view, const VkShaderModuleCreateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkShaderModuleCreateInfo) ? nullptr : reinterpret_cast<VkShaderModuleCreateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pCode, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+VkResult pack_VkDescriptorSetLayoutCreateInfo(const VkDescriptorSetLayoutCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkDescriptorSetLayoutCreateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  status = pack_pnext(value->pNext, stream, packed.offset + offsetof(VkDescriptorSetLayoutCreateInfo, pNext), packed_value->pNext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return pack_plain_array(value->pBindings, value->bindingCount, stream, packed.offset + offsetof(VkDescriptorSetLayoutCreateInfo, pBindings),
+                          packed_value->pBindings);
+}}
+
+VkResult unpack_VkDescriptorSetLayoutCreateInfo(SafeArrayView<std::uint8_t>& view, const VkDescriptorSetLayoutCreateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkDescriptorSetLayoutCreateInfo) ? nullptr : reinterpret_cast<VkDescriptorSetLayoutCreateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pBindings, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+VkResult pack_VkPipelineLayoutCreateInfo(const VkPipelineLayoutCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkPipelineLayoutCreateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  status = pack_pnext(value->pNext, stream, packed.offset + offsetof(VkPipelineLayoutCreateInfo, pNext), packed_value->pNext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_plain_array(value->pSetLayouts, value->setLayoutCount, stream, packed.offset + offsetof(VkPipelineLayoutCreateInfo, pSetLayouts),
+                            packed_value->pSetLayouts);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return pack_plain_array(value->pPushConstantRanges, value->pushConstantRangeCount, stream,
+                          packed.offset + offsetof(VkPipelineLayoutCreateInfo, pPushConstantRanges), packed_value->pPushConstantRanges);
+}}
+
+VkResult unpack_VkPipelineLayoutCreateInfo(SafeArrayView<std::uint8_t>& view, const VkPipelineLayoutCreateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkPipelineLayoutCreateInfo) ? nullptr : reinterpret_cast<VkPipelineLayoutCreateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pSetLayouts, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pPushConstantRanges, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+VkResult pack_VkRenderPassCreateInfo(const VkRenderPassCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkRenderPassCreateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  status = pack_pnext(value->pNext, stream, packed.offset + offsetof(VkRenderPassCreateInfo, pNext), packed_value->pNext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_plain_array(value->pAttachments, value->attachmentCount, stream, packed.offset + offsetof(VkRenderPassCreateInfo, pAttachments),
+                            packed_value->pAttachments);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_nested_struct_array(value->pSubpasses, value->subpassCount, stream, packed.offset + offsetof(VkRenderPassCreateInfo, pSubpasses),
+                                    packed_value->pSubpasses,
+                                    [](const VkSubpassDescription& source, VkSubpassDescription& packed, CommandStream& s, std::size_t item_offset) {{
+                                      VkResult nested = pack_plain_array(source.pInputAttachments, source.inputAttachmentCount, s,
+                                                                        item_offset + offsetof(VkSubpassDescription, pInputAttachments),
+                                                                        packed.pInputAttachments);
+                                      if (nested != VK_SUCCESS) {{ return nested; }}
+                                      nested = pack_plain_array(source.pColorAttachments, source.colorAttachmentCount, s,
+                                                                item_offset + offsetof(VkSubpassDescription, pColorAttachments), packed.pColorAttachments);
+                                      if (nested != VK_SUCCESS) {{ return nested; }}
+                                      nested = pack_plain_array(source.pResolveAttachments, source.colorAttachmentCount, s,
+                                                                item_offset + offsetof(VkSubpassDescription, pResolveAttachments),
+                                                                packed.pResolveAttachments);
+                                      if (nested != VK_SUCCESS) {{ return nested; }}
+                                      nested = pack_plain_array(source.pDepthStencilAttachment, source.pDepthStencilAttachment ? 1u : 0u, s,
+                                                                item_offset + offsetof(VkSubpassDescription, pDepthStencilAttachment),
+                                                                packed.pDepthStencilAttachment);
+                                      if (nested != VK_SUCCESS) {{ return nested; }}
+                                      return pack_plain_array(source.pPreserveAttachments, source.preserveAttachmentCount, s,
+                                                              item_offset + offsetof(VkSubpassDescription, pPreserveAttachments),
+                                                              packed.pPreserveAttachments);
+                                    }});
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  return pack_plain_array(value->pDependencies, value->dependencyCount, stream, packed.offset + offsetof(VkRenderPassCreateInfo, pDependencies),
+                          packed_value->pDependencies);
+}}
+
+VkResult unpack_VkRenderPassCreateInfo(SafeArrayView<std::uint8_t>& view, const VkRenderPassCreateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkRenderPassCreateInfo) ? nullptr : reinterpret_cast<VkRenderPassCreateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pAttachments, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed->pSubpasses, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  for (std::uint32_t i = 0; typed->pSubpasses && i < typed->subpassCount; ++i) {{
+    auto& subpass = const_cast<VkSubpassDescription&>(typed->pSubpasses[i]);
+    status = recover_pointer(subpass.pInputAttachments, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = recover_pointer(subpass.pColorAttachments, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = recover_pointer(subpass.pResolveAttachments, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = recover_pointer(subpass.pDepthStencilAttachment, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = recover_pointer(subpass.pPreserveAttachments, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  status = recover_pointer(typed->pDependencies, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+namespace {{
+
+VkResult pack_VkGraphicsPipelineCreateInfo_payload(const VkGraphicsPipelineCreateInfo& source, VkGraphicsPipelineCreateInfo& packed,
+                                                   CommandStream& stream, std::size_t base_offset) {{
+  VkResult status = pack_pnext(source.pNext, stream, base_offset + offsetof(VkGraphicsPipelineCreateInfo, pNext), packed.pNext);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_nested_struct_array(source.pStages, source.stageCount, stream, base_offset + offsetof(VkGraphicsPipelineCreateInfo, pStages),
+                                    packed.pStages, pack_VkPipelineShaderStageCreateInfo_payload);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  std::size_t vertex_input_offset = 0;
+  VkPipelineVertexInputStateCreateInfo* packed_vertex_input = nullptr;
+  status = pack_plain_object(source.pVertexInputState, stream, base_offset + offsetof(VkGraphicsPipelineCreateInfo, pVertexInputState),
+                             packed.pVertexInputState, vertex_input_offset, packed_vertex_input);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (source.pVertexInputState && packed_vertex_input) {{
+    auto& vi = *packed_vertex_input;
+    status = pack_plain_array(source.pVertexInputState->pVertexBindingDescriptions, source.pVertexInputState->vertexBindingDescriptionCount, stream,
+                              vertex_input_offset + offsetof(VkPipelineVertexInputStateCreateInfo, pVertexBindingDescriptions),
+                              vi.pVertexBindingDescriptions);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = pack_plain_array(source.pVertexInputState->pVertexAttributeDescriptions, source.pVertexInputState->vertexAttributeDescriptionCount, stream,
+                              vertex_input_offset + offsetof(VkPipelineVertexInputStateCreateInfo, pVertexAttributeDescriptions),
+                              vi.pVertexAttributeDescriptions);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  status = pack_plain_array(source.pInputAssemblyState, source.pInputAssemblyState ? 1u : 0u, stream,
+                            base_offset + offsetof(VkGraphicsPipelineCreateInfo, pInputAssemblyState), packed.pInputAssemblyState);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_plain_array(source.pTessellationState, source.pTessellationState ? 1u : 0u, stream,
+                            base_offset + offsetof(VkGraphicsPipelineCreateInfo, pTessellationState), packed.pTessellationState);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  std::size_t viewport_offset = 0;
+  VkPipelineViewportStateCreateInfo* packed_viewport = nullptr;
+  status = pack_plain_object(source.pViewportState, stream, base_offset + offsetof(VkGraphicsPipelineCreateInfo, pViewportState),
+                             packed.pViewportState, viewport_offset, packed_viewport);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (source.pViewportState && packed_viewport) {{
+    auto& vp = *packed_viewport;
+    status = pack_plain_array(source.pViewportState->pViewports, source.pViewportState->viewportCount, stream,
+                              viewport_offset + offsetof(VkPipelineViewportStateCreateInfo, pViewports),
+                              vp.pViewports);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = pack_plain_array(source.pViewportState->pScissors, source.pViewportState->scissorCount, stream,
+                              viewport_offset + offsetof(VkPipelineViewportStateCreateInfo, pScissors),
+                              vp.pScissors);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  status = pack_plain_array(source.pRasterizationState, source.pRasterizationState ? 1u : 0u, stream,
+                            base_offset + offsetof(VkGraphicsPipelineCreateInfo, pRasterizationState), packed.pRasterizationState);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_plain_array(source.pMultisampleState, source.pMultisampleState ? 1u : 0u, stream,
+                            base_offset + offsetof(VkGraphicsPipelineCreateInfo, pMultisampleState), packed.pMultisampleState);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = pack_plain_array(source.pDepthStencilState, source.pDepthStencilState ? 1u : 0u, stream,
+                            base_offset + offsetof(VkGraphicsPipelineCreateInfo, pDepthStencilState), packed.pDepthStencilState);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  std::size_t color_blend_offset = 0;
+  VkPipelineColorBlendStateCreateInfo* packed_color_blend = nullptr;
+  status = pack_plain_object(source.pColorBlendState, stream, base_offset + offsetof(VkGraphicsPipelineCreateInfo, pColorBlendState),
+                             packed.pColorBlendState, color_blend_offset, packed_color_blend);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (source.pColorBlendState && packed_color_blend) {{
+    auto& blend = *packed_color_blend;
+    status = pack_plain_array(source.pColorBlendState->pAttachments, source.pColorBlendState->attachmentCount, stream,
+                              color_blend_offset + offsetof(VkPipelineColorBlendStateCreateInfo, pAttachments),
+                              blend.pAttachments);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  std::size_t dynamic_offset = 0;
+  VkPipelineDynamicStateCreateInfo* packed_dynamic = nullptr;
+  status = pack_plain_object(source.pDynamicState, stream, base_offset + offsetof(VkGraphicsPipelineCreateInfo, pDynamicState),
+                             packed.pDynamicState, dynamic_offset, packed_dynamic);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (source.pDynamicState && packed_dynamic) {{
+    auto& dynamic = *packed_dynamic;
+    status = pack_plain_array(source.pDynamicState->pDynamicStates, source.pDynamicState->dynamicStateCount, stream,
+                              dynamic_offset + offsetof(VkPipelineDynamicStateCreateInfo, pDynamicStates),
+                              dynamic.pDynamicStates);
+  }}
+  return status;
+}}
+
+VkResult unpack_VkGraphicsPipelineCreateInfo_payload(SafeArrayView<std::uint8_t>& view, VkGraphicsPipelineCreateInfo& typed) {{
+  VkResult status = recover_pnext(typed.pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pStages, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  for (std::uint32_t i = 0; typed.pStages && i < typed.stageCount; ++i) {{
+    status = unpack_VkPipelineShaderStageCreateInfo_payload(view, const_cast<VkPipelineShaderStageCreateInfo&>(typed.pStages[i]));
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  status = recover_pointer(typed.pVertexInputState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (typed.pVertexInputState) {{
+    auto& vi = const_cast<VkPipelineVertexInputStateCreateInfo&>(*typed.pVertexInputState);
+    status = recover_pointer(vi.pVertexBindingDescriptions, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = recover_pointer(vi.pVertexAttributeDescriptions, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  status = recover_pointer(typed.pInputAssemblyState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pTessellationState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pViewportState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (typed.pViewportState) {{
+    auto& vp = const_cast<VkPipelineViewportStateCreateInfo&>(*typed.pViewportState);
+    status = recover_pointer(vp.pViewports, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+    status = recover_pointer(vp.pScissors, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  status = recover_pointer(typed.pRasterizationState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pMultisampleState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pDepthStencilState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  status = recover_pointer(typed.pColorBlendState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (typed.pColorBlendState) {{
+    auto& blend = const_cast<VkPipelineColorBlendStateCreateInfo&>(*typed.pColorBlendState);
+    status = recover_pointer(blend.pAttachments, view);
+    if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  }}
+  status = recover_pointer(typed.pDynamicState, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  if (typed.pDynamicState) {{
+    auto& dynamic = const_cast<VkPipelineDynamicStateCreateInfo&>(*typed.pDynamicState);
+    status = recover_pointer(dynamic.pDynamicStates, view);
+  }}
+  return status;
+}}
+
+}} // namespace
+
+VkResult pack_VkGraphicsPipelineCreateInfo(const VkGraphicsPipelineCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkGraphicsPipelineCreateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  return pack_VkGraphicsPipelineCreateInfo_payload(*value, *packed_value, stream, packed.offset);
+}}
+
+VkResult unpack_VkGraphicsPipelineCreateInfo(SafeArrayView<std::uint8_t>& view, const VkGraphicsPipelineCreateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkGraphicsPipelineCreateInfo) ? nullptr : reinterpret_cast<VkGraphicsPipelineCreateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = unpack_VkGraphicsPipelineCreateInfo_payload(view, *typed);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+VkResult pack_VkSemaphoreCreateInfo(const VkSemaphoreCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
+  VkSemaphoreCreateInfo* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  return pack_pnext(value->pNext, stream, packed.offset + offsetof(VkSemaphoreCreateInfo, pNext), packed_value->pNext);
+}}
+
+VkResult unpack_VkSemaphoreCreateInfo(SafeArrayView<std::uint8_t>& view, const VkSemaphoreCreateInfo** value) {{
+  auto* typed = view.size() < sizeof(VkSemaphoreCreateInfo) ? nullptr : reinterpret_cast<VkSemaphoreCreateInfo*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
+#define VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(Type)                                                                                                      \\
+  VkResult pack_array_##Type(const Type* values, std::uint32_t count, CommandStream& stream, PackedStruct& packed) {{                                \\
+    packed.offset = 0;                                                                                                                               \\
+    if (!values || count == 0) {{ return VK_SUCCESS; }}                                                                                              \\
+    const Type* pointer_slot = nullptr;                                                                                                              \\
+    return pack_nested_struct_array(values, count, stream, 0, pointer_slot,                                                                          \\
+                                    [](const Type& source, Type& packed_value, CommandStream& nested_stream, std::size_t item_offset) {{             \\
+                                      PackedStruct unused {{.offset = item_offset}};                                                                  \\
+                                      (void)unused;                                                                                                  \\
+                                      return pack_##Type(&source, nested_stream, unused);                                                            \\
+                                    });                                                                                                              \\
+  }                                                                                                                                                  \\
+  VkResult unpack_array_##Type(SafeArrayView<std::uint8_t>& view, std::uint32_t count, const Type** values) {{                                       \\
+    if (!values) {{ return VK_ERROR_UNKNOWN; }}                                                                                                      \\
+    *values = view.size() < sizeof(Type) * count ? nullptr : reinterpret_cast<Type*>(view.address(0));                                                \\
+    if (!*values && count != 0) {{ return VK_ERROR_UNKNOWN; }}                                                                                       \\
+    for (std::uint32_t i = 0; i < count; ++i) {{                                                                                                     \\
+      auto child = tail_view_from_pointer(view, &(*values)[i]);                                                                                      \\
+      const Type* ignored = nullptr;                                                                                                                 \\
+      VkResult status = unpack_##Type(child, &ignored);                                                                                              \\
+      if (status != VK_SUCCESS) {{ return status; }}                                                                                                 \\
+    }}                                                                                                                                               \\
+    return VK_SUCCESS;                                                                                                                               \\
+  }}
+
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkBufferCreateInfo)
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkMemoryAllocateInfo)
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkShaderModuleCreateInfo)
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkDescriptorSetLayoutCreateInfo)
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkPipelineLayoutCreateInfo)
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkRenderPassCreateInfo)
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkSemaphoreCreateInfo)
+
+VkResult pack_array_VkGraphicsPipelineCreateInfo(const VkGraphicsPipelineCreateInfo* values, std::uint32_t count, CommandStream& stream, PackedStruct& packed) {{
+  packed.offset = 0;
+  if (!values || count == 0) {{ return VK_SUCCESS; }}
+  VkGraphicsPipelineCreateInfo* unused = nullptr;
+  try {{
+    std::size_t target = 0;
+    auto destination = stream.grow<VkGraphicsPipelineCreateInfo>(count, alignof(VkGraphicsPipelineCreateInfo), &target);
+    if (destination.set(0, count, values) != count) {{ return VK_ERROR_UNKNOWN; }}
+    packed.offset = target;
+    for (std::uint32_t i = 0; i < count; ++i) {{
+      VkResult status = pack_VkGraphicsPipelineCreateInfo_payload(values[i], destination.at(i), stream, target + i * sizeof(VkGraphicsPipelineCreateInfo));
+      if (status != VK_SUCCESS) {{ return status; }}
+    }}
+    (void)unused;
+    return VK_SUCCESS;
+  }} catch (const std::bad_alloc&) {{
+    return VK_ERROR_OUT_OF_HOST_MEMORY;
+  }}
+}}
+
+VkResult unpack_array_VkGraphicsPipelineCreateInfo(SafeArrayView<std::uint8_t>& view, std::uint32_t count, const VkGraphicsPipelineCreateInfo** values) {{
+  if (!values) {{ return VK_ERROR_UNKNOWN; }}
+  *values = view.size() < sizeof(VkGraphicsPipelineCreateInfo) * count ? nullptr : reinterpret_cast<VkGraphicsPipelineCreateInfo*>(view.address(0));
+  if (!*values && count != 0) {{ return VK_ERROR_UNKNOWN; }}
+  for (std::uint32_t i = 0; i < count; ++i) {{
+    auto& item = const_cast<VkGraphicsPipelineCreateInfo&>((*values)[i]);
+    if (item.sType != VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO) {{ return VK_ERROR_UNKNOWN; }}
+    VkResult status = unpack_VkGraphicsPipelineCreateInfo_payload(view, item);
+    if (status != VK_SUCCESS) {{ return status; }}
+  }}
+  return VK_SUCCESS;
+}}
+
+}} // namespace vkfwd::generated::structure
+"""
+    return (
+        content.replace(
+            "@VULKAN_API_VERSION@", str(metadata["versions"]["vulkan_api_version"])
+        )
+        .replace("@VK_XML_SHA256@", str(metadata["generator"]["vk_xml_sha256"]))
+        .replace("{{", "{")
+        .replace("}}", "}")
+    )
+
+
+def write_command_structure_files(
+    metadata: dict[str, object], output_dir: Path
+) -> None:
+    structure_dir = output_dir / "structure"
+    structure_dir.mkdir(parents=True, exist_ok=True)
+    (structure_dir / "command_structs.hpp").write_text(
+        command_structs_header_content(metadata), encoding="utf-8"
+    )
+    (structure_dir / "command_structs.cpp").write_text(
+        command_structs_source_content(metadata), encoding="utf-8"
+    )
+
+
+def command_test_sample_expression(
+    command: dict[str, object], parameter: dict[str, object]
+) -> str:
+    name = str(parameter["name"])
+    ptype = str(parameter["type"])
+    if str(command["name"]) == "vkMapMemory" and name == "ppData":
+        # A mapped-memory address is only meaningful in the process that called
+        # vkMapMemory. Returning a receiver-side pointer to the source
+        # application would violate both address-space and lifetime ownership;
+        # keep this null until an explicit mapped-memory proxy protocol exists.
+        return "nullptr"
+    scalar_by_name = {
+        "pApiVersion": "&samples.api_version",
+        "pPropertyCount": "&samples.count",
+        "pPhysicalDeviceCount": "&samples.count",
+        "pQueueFamilyPropertyCount": "&samples.count",
+        "createInfoCount": "static_cast<std::uint32_t>(samples.vk_graphics_pipeline_create_info_array.size())",
+        "queueFamilyIndex": "samples.queue_family_index",
+        "queueIndex": "samples.queue_index",
+        "memoryOffset": "samples.memory_offset",
+        "offset": "samples.memory_offset",
+        "size": "samples.memory_size",
+        "flags": f"{ptype} {{0}}",
+    }
+    if name in scalar_by_name:
+        return scalar_by_name[name]
+    if name == "pAllocator":
+        return "&samples.allocator"
+    if ptype == "char":
+        return "samples.layer_name"
+    if ptype in SUPPORTED_COMMAND_STRUCT_PARAMETERS:
+        if bool(parameter.get("len")):
+            return f"samples.{command_field_name(ptype)}_array.data()"
+        return f"&samples.{command_field_name(ptype)}"
+    pointer_depth_value = int(parameter["pointer_depth"])
+    if parameter["direction"] == "output":
+        if pointer_depth_value == 2 and ptype == "void":
+            return "&samples.mapped_data"
+        if parameter_is_output_array(parameter):
+            return f"samples.{command_field_name(ptype)}_array.data()"
+        return f"&samples.{command_field_name(ptype)}"
+    if pointer_depth_value == 1:
+        return f"&samples.{command_field_name(ptype)}"
+    if ptype in {
+        "VkInstance",
+        "VkPhysicalDevice",
+        "VkDevice",
+        "VkQueue",
+        "VkBuffer",
+        "VkDeviceMemory",
+        "VkShaderModule",
+        "VkDescriptorSetLayout",
+        "VkPipelineLayout",
+        "VkRenderPass",
+        "VkPipeline",
+        "VkSemaphore",
+        "VkPipelineCache",
+    }:
+        return f"samples.{command_field_name(ptype)}"
+    if ptype == "uint32_t":
+        return "samples.count"
+    if ptype == "VkDeviceSize":
+        return "samples.memory_size"
+    return f"{ptype} {{}}"
+
+
+def command_test_response_initializer_fields(command: dict[str, object]) -> str:
+    fields = []
+    if str(command["return_type"]) != "void":
+        fields.append(".return_value = VK_SUCCESS")
+    output_array_counts = {
+        str(parameter.get("len")).split(",", 1)[0]
+        for parameter in command["parameters"]
+        if parameter_is_output_array(parameter) and parameter.get("len")
+    }
+    output_names = {
+        str(parameter["name"])
+        for parameter in command["parameters"]
+        if parameter["direction"] == "output"
+    }
+    for parameter in command["parameters"]:
+        if parameter["direction"] == "output":
+            fields.append(
+                f".{parameter['name']} = {command_test_sample_expression(command, parameter)}"
+            )
+    for parameter in command["parameters"]:
+        name = str(parameter["name"])
+        if name in output_array_counts and name not in output_names:
+            fields.append(
+                f".{name} = {command_test_sample_expression(command, parameter)}"
+            )
+    return ",\n        ".join(fields)
+
+
+def command_test_parameter_assertion(
+    command: dict[str, object],
+    parameter: dict[str, object],
+    object_name: str,
+    view_name: str,
+) -> str:
+    name = str(parameter["name"])
+    ptype = str(parameter["type"])
+    pointer_depth_value = int(parameter["pointer_depth"])
+    if str(command["name"]) == "vkMapMemory" and name == "ppData":
+        # The pack/unpack foundation test documents the current forwarding
+        # boundary: vkMapMemory may serialize the call, but the caller-visible
+        # mapped pointer requires a dedicated shared-memory/copy protocol.
+        return f"    CHECK({object_name}->{name} == nullptr);"
+    if name == "pAllocator":
+        return f"    CHECK({object_name}->{name} == nullptr);"
+    if pointer_depth_value == 0:
+        return f"    CHECK({object_name}->{name} == {command_test_sample_expression(command, parameter)});"
+    if ptype == "char":
+        return f"    check_string({object_name}->{name}, samples.layer_name);"
+    lines = [
+        f"    REQUIRE({object_name}->{name} != nullptr);",
+        f"    CHECK(points_into({view_name}, {object_name}->{name}));",
+    ]
+    if parameter_is_output_array(parameter):
+        lines.append(
+            f"    check_object({object_name}->{name}[0], samples.{command_field_name(ptype)}_array[0]);"
+        )
+    elif pointer_depth_value == 2 and ptype == "void":
+        lines.append(f"    CHECK(*{object_name}->{name} == samples.mapped_data);")
+    elif ptype in SUPPORTED_COMMAND_STRUCT_PARAMETERS:
+        lines.append(
+            f"    CHECK({object_name}->{name}->sType == samples.{command_field_name(ptype)}.sType);"
+        )
+    elif name in {"pApiVersion"}:
+        lines.append(f"    CHECK(*{object_name}->{name} == samples.api_version);")
+    elif name in {
+        "pPropertyCount",
+        "pPhysicalDeviceCount",
+        "pQueueFamilyPropertyCount",
+    }:
+        lines.append(f"    CHECK(*{object_name}->{name} == samples.count);")
+    else:
+        lines.append(
+            f"    check_object(*{object_name}->{name}, samples.{command_field_name(ptype)});"
+        )
+    return "\n".join(lines)
+
+
+def command_test_response_assertion(
+    command: dict[str, object],
+    parameter: dict[str, object],
+    object_name: str,
+    view_name: str,
+) -> str:
+    return command_test_parameter_assertion(command, parameter, object_name, view_name)
+
+
+def command_smoke_test_content(command: dict[str, object]) -> str:
+    namespace = command_namespace(str(command["name"]))
+    parameter_fields = ",\n        ".join(
+        f".{parameter['name']} = {command_test_sample_expression(command, parameter)}"
+        for parameter in command["parameters"]
+    )
+    parameter_assertions = "\n".join(
+        command_test_parameter_assertion(
+            command, parameter, "unpacked", "parameter_view"
+        )
+        for parameter in command["parameters"]
+    )
+    response_check = ""
+    if command_needs_response(command):
+        response_fields = command_test_response_initializer_fields(command)
+        response_assertions = "\n".join(
+            command_test_response_assertion(
+                command, parameter, "unpacked_response", "response_view"
+            )
+            for parameter in command["parameters"]
+            if parameter["direction"] == "output"
+        )
+        response_check = """
+    CommandStream response_stream(64);
+    typename Command::Response response {
+        $response_fields
+    };
+    REQUIRE(Command::pack_response(response_stream, response) == VK_SUCCESS);
+    CommandStream flattened_response = response_stream.flatten();
+    auto response_view = full_view(flattened_response);
+    const typename Command::Response * unpacked_response = nullptr;
+    REQUIRE(Command::unpack_response(response_view, &unpacked_response) == VK_SUCCESS);
+    REQUIRE(points_into(response_view, unpacked_response));
+    $response_assertions
+""".replace(
+            "$response_fields", response_fields
+        ).replace(
+            "$response_assertions", response_assertions
+        )
+    return f"""
+TEST_CASE("generated {command['name']} non-null parameter pack/unpack roundtrip") {{
+    using Command = commands::{namespace}::Command;
+    CommandSamples samples;
+    CommandStream stream(64);
+    typename Command::Parameters parameters {{
+        {parameter_fields}
+    }};
+    REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+    CommandStream flattened = stream.flatten();
+    auto parameter_view = full_view(flattened);
+    const typename Command::Parameters * unpacked = nullptr;
+    REQUIRE(Command::unpack_parameters(parameter_view, &unpacked) == VK_SUCCESS);
+    REQUIRE(points_into(parameter_view, unpacked));
+{parameter_assertions}
+{response_check}}}
+"""
+
+
+def command_roundtrip_test_content(metadata: dict[str, object]) -> str:
+    command_includes = "\n".join(
+        f'#include "generated/command/{command["name"]}.hpp"'
+        for command in metadata["commands"]
+    )
+    smoke_tests = "\n".join(
+        command_smoke_test_content(command) for command in metadata["commands"]
+    )
+    return f"""#include "command_stream.hpp"
+{command_includes}
+#include "generated/structure/core.hpp"
+#include "generated/structure/command_structs.hpp"
 
 // Generated by src/vkfwd/ferry/script/generator/vulkan_metadata.py; do not edit by hand.
 // Vulkan API version: {metadata['versions']['vulkan_api_version']}
@@ -2364,6 +3926,7 @@ def command_roundtrip_test_content(metadata: dict[str, object]) -> str:
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string_view>
 
 namespace vkfwd::generated::commands::test {{
@@ -2405,7 +3968,15 @@ void check_string(const char * actual, std::string_view expected) {{
 }}
 
 template<class T>
-void check_array(const T * actual, std::initializer_list<T> expected) {{
+void check_object(const T & actual, const T & expected) {{
+    // Command pack/unpack tests care about byte-for-byte payload ownership, not
+    // semantic Vulkan equality. Most Vulkan structs deliberately do not define
+    // operator==, and copied handles are opaque values at this layer.
+    CHECK(std::memcmp(&actual, &expected, sizeof(T)) == 0);
+}}
+
+template<class T>
+void check_numeric_array(const T * actual, std::initializer_list<T> expected) {{
     REQUIRE(actual != nullptr);
     std::size_t index = 0;
     for (const T & value : expected) {{
@@ -2459,7 +4030,187 @@ VkDeviceQueueCreateInfo make_queue_info(const float * priorities, std::uint32_t 
     }};
 }}
 
+struct CommandSamples {{
+    int allocator_user_data = 0x51;
+    VkAllocationCallbacks allocator = test_allocator(&allocator_user_data);
+    const char * layer_name = "VK_LAYER_VKFWD_sample";
+    const char * extension_name = "VK_EXT_vkfwd_sample";
+    std::uint32_t api_version = VK_MAKE_API_VERSION(0, 1, 4, 0);
+    std::uint32_t count = 2;
+    std::uint32_t queue_family_index = 1;
+    std::uint32_t queue_index = 0;
+    VkDeviceSize memory_offset = 16;
+    VkDeviceSize memory_size = 256;
+
+    VkInstance vk_instance = test_handle<VkInstance>(0x101);
+    VkPhysicalDevice vk_physical_device = test_handle<VkPhysicalDevice>(0x102);
+    VkDevice vk_device = test_handle<VkDevice>(0x103);
+    VkQueue vk_queue = test_handle<VkQueue>(0x104);
+    VkBuffer vk_buffer = test_handle<VkBuffer>(0x105);
+    VkDeviceMemory vk_device_memory = test_handle<VkDeviceMemory>(0x106);
+    VkShaderModule vk_shader_module = test_handle<VkShaderModule>(0x107);
+    VkDescriptorSetLayout vk_descriptor_set_layout = test_handle<VkDescriptorSetLayout>(0x108);
+    VkPipelineLayout vk_pipeline_layout = test_handle<VkPipelineLayout>(0x109);
+    VkRenderPass vk_render_pass = test_handle<VkRenderPass>(0x10a);
+    VkPipeline vk_pipeline = test_handle<VkPipeline>(0x10b);
+    VkSemaphore vk_semaphore = test_handle<VkSemaphore>(0x10c);
+    VkPipelineCache vk_pipeline_cache = VK_NULL_HANDLE;
+    void * mapped_data = reinterpret_cast<void *>(0x10d);
+
+    VkPhysicalDeviceProperties vk_physical_device_properties {{}};
+    VkPhysicalDeviceFeatures vk_physical_device_features {{}};
+    VkPhysicalDeviceMemoryProperties vk_physical_device_memory_properties {{}};
+    VkMemoryRequirements vk_memory_requirements {{.size = 4096, .alignment = 256, .memoryTypeBits = 0x3}};
+
+    VkApplicationInfo vk_application_info = make_application_info();
+    std::array<const char *, 1> enabled_layers {{{{layer_name}}}};
+    std::array<const char *, 1> enabled_extensions {{{{extension_name}}}};
+    std::array<float, 2> queue_priorities {{{{0.25f, 0.75f}}}};
+    VkDeviceQueueCreateInfo vk_device_queue_create_info = make_queue_info(queue_priorities.data(), static_cast<std::uint32_t>(queue_priorities.size()));
+    VkInstanceCreateInfo vk_instance_create_info {{
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pApplicationInfo = &vk_application_info,
+        .enabledLayerCount = static_cast<std::uint32_t>(enabled_layers.size()),
+        .ppEnabledLayerNames = enabled_layers.data(),
+        .enabledExtensionCount = static_cast<std::uint32_t>(enabled_extensions.size()),
+        .ppEnabledExtensionNames = enabled_extensions.data(),
+    }};
+    VkDeviceCreateInfo vk_device_create_info {{
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &vk_device_queue_create_info,
+        .enabledLayerCount = static_cast<std::uint32_t>(enabled_layers.size()),
+        .ppEnabledLayerNames = enabled_layers.data(),
+        .enabledExtensionCount = static_cast<std::uint32_t>(enabled_extensions.size()),
+        .ppEnabledExtensionNames = enabled_extensions.data(),
+    }};
+
+    std::array<VkLayerProperties, 2> vk_layer_properties_array {{{{
+        VkLayerProperties {{.layerName = "VK_LAYER_VKFWD_a", .specVersion = 1, .implementationVersion = 2}},
+        VkLayerProperties {{.layerName = "VK_LAYER_VKFWD_b", .specVersion = 3, .implementationVersion = 4}},
+    }}}};
+    std::array<VkExtensionProperties, 2> vk_extension_properties_array {{{{
+        VkExtensionProperties {{.extensionName = "VK_EXT_vkfwd_a", .specVersion = 1}},
+        VkExtensionProperties {{.extensionName = "VK_EXT_vkfwd_b", .specVersion = 2}},
+    }}}};
+    std::array<VkPhysicalDevice, 2> vk_physical_device_array {{{{
+        test_handle<VkPhysicalDevice>(0x201),
+        test_handle<VkPhysicalDevice>(0x202),
+    }}}};
+    std::array<VkQueueFamilyProperties, 2> vk_queue_family_properties_array {{{{
+        VkQueueFamilyProperties {{.queueFlags = VK_QUEUE_GRAPHICS_BIT, .queueCount = 1}},
+        VkQueueFamilyProperties {{.queueFlags = VK_QUEUE_TRANSFER_BIT, .queueCount = 1}},
+    }}}};
+    std::array<VkPipeline, 1> vk_pipeline_array {{{{
+        test_handle<VkPipeline>(0x305),
+    }}}};
+
+    std::array<std::uint32_t, 2> queue_family_indices {{1, 2}};
+    std::array<std::uint32_t, 4> shader_code {{0x07230203u, 0x00010000u, 0x0008000au, 0u}};
+    std::array<VkDescriptorSetLayoutBinding, 1> descriptor_bindings {{{{
+        VkDescriptorSetLayoutBinding {{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT}},
+    }}}};
+    std::array<VkDescriptorSetLayout, 1> descriptor_set_layouts {{vk_descriptor_set_layout}};
+    std::array<VkPushConstantRange, 1> push_constant_ranges {{{{
+        VkPushConstantRange {{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = 16}},
+    }}}};
+    std::array<VkAttachmentDescription, 1> attachments {{{{
+        VkAttachmentDescription {{.format = VK_FORMAT_R8G8B8A8_UNORM, .samples = VK_SAMPLE_COUNT_1_BIT}},
+    }}}};
+    std::array<VkAttachmentReference, 1> color_attachments {{{{
+        VkAttachmentReference {{.attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+    }}}};
+    std::array<VkSubpassDescription, 1> subpasses {{{{
+        VkSubpassDescription {{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .colorAttachmentCount = 1, .pColorAttachments = color_attachments.data()}},
+    }}}};
+    VkPipelineShaderStageCreateInfo pipeline_stage {{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vk_shader_module,
+        .pName = "main",
+    }};
+    std::array<VkVertexInputBindingDescription, 1> vertex_bindings {{{{
+        VkVertexInputBindingDescription {{.binding = 0, .stride = 8}},
+    }}}};
+    std::array<VkVertexInputAttributeDescription, 1> vertex_attributes {{{{
+        VkVertexInputAttributeDescription {{.location = 0, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT}},
+    }}}};
+    VkPipelineVertexInputStateCreateInfo vertex_input {{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = static_cast<std::uint32_t>(vertex_bindings.size()),
+        .pVertexBindingDescriptions = vertex_bindings.data(),
+        .vertexAttributeDescriptionCount = static_cast<std::uint32_t>(vertex_attributes.size()),
+        .pVertexAttributeDescriptions = vertex_attributes.data(),
+    }};
+    VkPipelineInputAssemblyStateCreateInfo input_assembly {{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    }};
+    std::array<VkDynamicState, 1> dynamic_states {{VK_DYNAMIC_STATE_VIEWPORT}};
+    VkPipelineDynamicStateCreateInfo dynamic_state {{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
+        .pDynamicStates = dynamic_states.data(),
+    }};
+
+    VkBufferCreateInfo vk_buffer_create_info {{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 1024,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_CONCURRENT,
+        .queueFamilyIndexCount = static_cast<std::uint32_t>(queue_family_indices.size()),
+        .pQueueFamilyIndices = queue_family_indices.data(),
+    }};
+    VkMemoryAllocateInfo vk_memory_allocate_info {{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = 2048,
+        .memoryTypeIndex = 1,
+    }};
+    VkShaderModuleCreateInfo vk_shader_module_create_info {{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = shader_code.size() * sizeof(std::uint32_t),
+        .pCode = shader_code.data(),
+    }};
+    VkDescriptorSetLayoutCreateInfo vk_descriptor_set_layout_create_info {{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = static_cast<std::uint32_t>(descriptor_bindings.size()),
+        .pBindings = descriptor_bindings.data(),
+    }};
+    VkPipelineLayoutCreateInfo vk_pipeline_layout_create_info {{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = static_cast<std::uint32_t>(descriptor_set_layouts.size()),
+        .pSetLayouts = descriptor_set_layouts.data(),
+        .pushConstantRangeCount = static_cast<std::uint32_t>(push_constant_ranges.size()),
+        .pPushConstantRanges = push_constant_ranges.data(),
+    }};
+    VkRenderPassCreateInfo vk_render_pass_create_info {{
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = static_cast<std::uint32_t>(attachments.size()),
+        .pAttachments = attachments.data(),
+        .subpassCount = static_cast<std::uint32_t>(subpasses.size()),
+        .pSubpasses = subpasses.data(),
+    }};
+    VkGraphicsPipelineCreateInfo vk_graphics_pipeline_create_info {{
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 1,
+        .pStages = &pipeline_stage,
+        .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pDynamicState = &dynamic_state,
+        .layout = vk_pipeline_layout,
+        .renderPass = vk_render_pass,
+    }};
+    std::array<VkGraphicsPipelineCreateInfo, 1> vk_graphics_pipeline_create_info_array {{{{
+        vk_graphics_pipeline_create_info,
+    }}}};
+    VkSemaphoreCreateInfo vk_semaphore_create_info {{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    }};
+}};
+
 }} // namespace
+
+{smoke_tests}
 
 TEST_CASE("generated vkCreateInstance parameter pack flatten unpack reconstructs every pointer into flattened stream") {{
     using Command = commands::vkCreateInstance::Command;
@@ -2550,7 +4301,7 @@ TEST_CASE("generated vkCreateDevice parameter pack flatten unpack reconstructs e
     REQUIRE(points_into(view, actual->pDevice));
     CHECK(actual->pDevice != &source_device);
     CHECK(*actual->pDevice == source_device);
-    check_array(actual->pCreateInfo->pQueueCreateInfos->pQueuePriorities, {{0.25f, 0.75f}});
+    check_numeric_array(actual->pCreateInfo->pQueueCreateInfos->pQueuePriorities, {{0.25f, 0.75f}});
     CHECK(actual->pCreateInfo->pEnabledFeatures->robustBufferAccess == VK_TRUE);
 }}
 
@@ -2702,6 +4453,16 @@ def generate(
         for command in selected_commands
         for parameter in command["parameters"]
     }
+    selected_handle_types = {
+        str(parameter["type"])
+        for command in selected_commands
+        for parameter in command["parameters"]
+        if str(parameter["type"]) in handles
+    } | {
+        str(handle)
+        for command in selected_commands
+        for handle in command["creates_handles"]
+    }
     metadata: dict[str, object] = {
         "schema": "vkfwd.vulkan-metadata.v1",
         "generator": {
@@ -2720,10 +4481,7 @@ def generate(
             "upstream_commit": versions.get("upstream_commit"),
         },
         "commands": selected_commands,
-        "handles": {
-            name: handles[name]
-            for name in ("VkInstance", "VkPhysicalDevice", "VkDevice")
-        },
+        "handles": {name: handles[name] for name in sorted(selected_handle_types)},
         "structs": collect_structs(root, command_structs),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2733,6 +4491,7 @@ def generate(
     write_command_files(metadata, output_dir)
     write_vulkan_api_header(metadata, output_dir / "vulkan_api.hpp")
     write_dispatch_table_files(metadata, output_dir)
+    write_command_structure_files(metadata, output_dir)
     write_structure_test_files(metadata, output_dir)
     write_command_test_files(metadata, output_dir)
     write_forwarder_files(metadata, forwarder_output_dir)

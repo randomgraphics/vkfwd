@@ -18,9 +18,50 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties_entry(cons
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance_entry(const VkInstanceCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
                                                       VkInstance * pInstance);
 VKAPI_ATTR void VKAPI_CALL     vkDestroyInstance_entry(VkInstance instance, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices_entry(VkInstance instance, uint32_t * pPhysicalDeviceCount, VkPhysicalDevice * pPhysicalDevices);
+VKAPI_ATTR void VKAPI_CALL     vkGetPhysicalDeviceProperties_entry(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties * pProperties);
+VKAPI_ATTR void VKAPI_CALL     vkGetPhysicalDeviceFeatures_entry(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures * pFeatures);
+VKAPI_ATTR void VKAPI_CALL     vkGetPhysicalDeviceQueueFamilyProperties_entry(VkPhysicalDevice physicalDevice, uint32_t * pQueueFamilyPropertyCount,
+                                                                              VkQueueFamilyProperties * pQueueFamilyProperties);
+VKAPI_ATTR void VKAPI_CALL     vkGetPhysicalDeviceMemoryProperties_entry(VkPhysicalDevice physicalDevice, VkPhysicalDeviceMemoryProperties * pMemoryProperties);
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties_entry(VkPhysicalDevice physicalDevice, const char * pLayerName, uint32_t * pPropertyCount,
+                                                                          VkExtensionProperties * pProperties);
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice_entry(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo * pCreateInfo,
                                                     const VkAllocationCallbacks * pAllocator, VkDevice * pDevice);
 VKAPI_ATTR void VKAPI_CALL     vkDestroyDevice_entry(VkDevice device, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR void VKAPI_CALL     vkGetDeviceQueue_entry(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue * pQueue);
+VKAPI_ATTR VkResult VKAPI_CALL vkDeviceWaitIdle_entry(VkDevice device);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateBuffer_entry(VkDevice device, const VkBufferCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
+                                                    VkBuffer * pBuffer);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyBuffer_entry(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR void VKAPI_CALL     vkGetBufferMemoryRequirements_entry(VkDevice device, VkBuffer buffer, VkMemoryRequirements * pMemoryRequirements);
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory_entry(VkDevice device, const VkMemoryAllocateInfo * pAllocateInfo, const VkAllocationCallbacks * pAllocator,
+                                                      VkDeviceMemory * pMemory);
+VKAPI_ATTR void VKAPI_CALL     vkFreeMemory_entry(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory_entry(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset);
+VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory_entry(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags,
+                                                 void ** ppData);
+VKAPI_ATTR void VKAPI_CALL     vkUnmapMemory_entry(VkDevice device, VkDeviceMemory memory);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule_entry(VkDevice device, const VkShaderModuleCreateInfo * pCreateInfo,
+                                                          const VkAllocationCallbacks * pAllocator, VkShaderModule * pShaderModule);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyShaderModule_entry(VkDevice device, VkShaderModule shaderModule, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorSetLayout_entry(VkDevice device, const VkDescriptorSetLayoutCreateInfo * pCreateInfo,
+                                                                 const VkAllocationCallbacks * pAllocator, VkDescriptorSetLayout * pSetLayout);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyDescriptorSetLayout_entry(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
+                                                                  const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineLayout_entry(VkDevice device, const VkPipelineLayoutCreateInfo * pCreateInfo,
+                                                            const VkAllocationCallbacks * pAllocator, VkPipelineLayout * pPipelineLayout);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyPipelineLayout_entry(VkDevice device, VkPipelineLayout pipelineLayout, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass_entry(VkDevice device, const VkRenderPassCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
+                                                        VkRenderPass * pRenderPass);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyRenderPass_entry(VkDevice device, VkRenderPass renderPass, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines_entry(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                               const VkGraphicsPipelineCreateInfo * pCreateInfos, const VkAllocationCallbacks * pAllocator,
+                                                               VkPipeline * pPipelines);
+VKAPI_ATTR void VKAPI_CALL     vkDestroyPipeline_entry(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks * pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateSemaphore_entry(VkDevice device, const VkSemaphoreCreateInfo * pCreateInfo, const VkAllocationCallbacks * pAllocator,
+                                                       VkSemaphore * pSemaphore);
+VKAPI_ATTR void VKAPI_CALL     vkDestroySemaphore_entry(VkDevice device, VkSemaphore semaphore, const VkAllocationCallbacks * pAllocator);
 
 const ::vkfwd::generated::GlobalDispatchTable &   global_dispatch_table();
 const ::vkfwd::generated::InstanceDispatchTable & instance_dispatch_table();

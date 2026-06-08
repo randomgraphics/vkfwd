@@ -25,8 +25,43 @@ DistributionTable::DistributionTable()
            reinterpret_cast<PointerToFunctionPointer>(&global.enumerate_instance_extension_properties)},
           {static_cast<std::uint32_t>(CommandId::CreateInstance), reinterpret_cast<PointerToFunctionPointer>(&global.create_instance)},
           {static_cast<std::uint32_t>(CommandId::DestroyInstance), reinterpret_cast<PointerToFunctionPointer>(&instance.destroy_instance)},
+          {static_cast<std::uint32_t>(CommandId::EnumeratePhysicalDevices), reinterpret_cast<PointerToFunctionPointer>(&instance.enumerate_physical_devices)},
+          {static_cast<std::uint32_t>(CommandId::GetPhysicalDeviceProperties),
+           reinterpret_cast<PointerToFunctionPointer>(&instance.get_physical_device_properties)},
+          {static_cast<std::uint32_t>(CommandId::GetPhysicalDeviceFeatures),
+           reinterpret_cast<PointerToFunctionPointer>(&instance.get_physical_device_features)},
+          {static_cast<std::uint32_t>(CommandId::GetPhysicalDeviceQueueFamilyProperties),
+           reinterpret_cast<PointerToFunctionPointer>(&instance.get_physical_device_queue_family_properties)},
+          {static_cast<std::uint32_t>(CommandId::GetPhysicalDeviceMemoryProperties),
+           reinterpret_cast<PointerToFunctionPointer>(&instance.get_physical_device_memory_properties)},
+          {static_cast<std::uint32_t>(CommandId::EnumerateDeviceExtensionProperties),
+           reinterpret_cast<PointerToFunctionPointer>(&instance.enumerate_device_extension_properties)},
           {static_cast<std::uint32_t>(CommandId::CreateDevice), reinterpret_cast<PointerToFunctionPointer>(&instance.create_device)},
           {static_cast<std::uint32_t>(CommandId::DestroyDevice), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_device)},
+          {static_cast<std::uint32_t>(CommandId::GetDeviceQueue), reinterpret_cast<PointerToFunctionPointer>(&device.get_device_queue)},
+          {static_cast<std::uint32_t>(CommandId::DeviceWaitIdle), reinterpret_cast<PointerToFunctionPointer>(&device.device_wait_idle)},
+          {static_cast<std::uint32_t>(CommandId::CreateBuffer), reinterpret_cast<PointerToFunctionPointer>(&device.create_buffer)},
+          {static_cast<std::uint32_t>(CommandId::DestroyBuffer), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_buffer)},
+          {static_cast<std::uint32_t>(CommandId::GetBufferMemoryRequirements),
+           reinterpret_cast<PointerToFunctionPointer>(&device.get_buffer_memory_requirements)},
+          {static_cast<std::uint32_t>(CommandId::AllocateMemory), reinterpret_cast<PointerToFunctionPointer>(&device.allocate_memory)},
+          {static_cast<std::uint32_t>(CommandId::FreeMemory), reinterpret_cast<PointerToFunctionPointer>(&device.free_memory)},
+          {static_cast<std::uint32_t>(CommandId::BindBufferMemory), reinterpret_cast<PointerToFunctionPointer>(&device.bind_buffer_memory)},
+          {static_cast<std::uint32_t>(CommandId::MapMemory), reinterpret_cast<PointerToFunctionPointer>(&device.map_memory)},
+          {static_cast<std::uint32_t>(CommandId::UnmapMemory), reinterpret_cast<PointerToFunctionPointer>(&device.unmap_memory)},
+          {static_cast<std::uint32_t>(CommandId::CreateShaderModule), reinterpret_cast<PointerToFunctionPointer>(&device.create_shader_module)},
+          {static_cast<std::uint32_t>(CommandId::DestroyShaderModule), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_shader_module)},
+          {static_cast<std::uint32_t>(CommandId::CreateDescriptorSetLayout), reinterpret_cast<PointerToFunctionPointer>(&device.create_descriptor_set_layout)},
+          {static_cast<std::uint32_t>(CommandId::DestroyDescriptorSetLayout),
+           reinterpret_cast<PointerToFunctionPointer>(&device.destroy_descriptor_set_layout)},
+          {static_cast<std::uint32_t>(CommandId::CreatePipelineLayout), reinterpret_cast<PointerToFunctionPointer>(&device.create_pipeline_layout)},
+          {static_cast<std::uint32_t>(CommandId::DestroyPipelineLayout), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_pipeline_layout)},
+          {static_cast<std::uint32_t>(CommandId::CreateRenderPass), reinterpret_cast<PointerToFunctionPointer>(&device.create_render_pass)},
+          {static_cast<std::uint32_t>(CommandId::DestroyRenderPass), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_render_pass)},
+          {static_cast<std::uint32_t>(CommandId::CreateGraphicsPipelines), reinterpret_cast<PointerToFunctionPointer>(&device.create_graphics_pipelines)},
+          {static_cast<std::uint32_t>(CommandId::DestroyPipeline), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_pipeline)},
+          {static_cast<std::uint32_t>(CommandId::CreateSemaphore), reinterpret_cast<PointerToFunctionPointer>(&device.create_semaphore)},
+          {static_cast<std::uint32_t>(CommandId::DestroySemaphore), reinterpret_cast<PointerToFunctionPointer>(&device.destroy_semaphore)},
       } {}
 
 void GlobalDispatchTable::init(PFN_vkGetInstanceProcAddr get_instance_proc_addr_) {
@@ -51,15 +86,30 @@ void InstanceDispatchTable::init(VkInstance instance, PFN_vkGetInstanceProcAddr 
     // instance handle scopes extension/core lookup and must remain valid while
     // these dispatch slots are used.
     if (!get_instance_proc_addr) {
-        get_device_proc_addr = nullptr;
-        destroy_instance     = nullptr;
-        create_device        = nullptr;
+        get_device_proc_addr                        = nullptr;
+        destroy_instance                            = nullptr;
+        enumerate_physical_devices                  = nullptr;
+        get_physical_device_properties              = nullptr;
+        get_physical_device_features                = nullptr;
+        get_physical_device_queue_family_properties = nullptr;
+        get_physical_device_memory_properties       = nullptr;
+        enumerate_device_extension_properties       = nullptr;
+        create_device                               = nullptr;
         return;
     }
 
-    get_device_proc_addr = typed_proc<PFN_vkGetDeviceProcAddr>(get_instance_proc_addr(instance, "vkGetDeviceProcAddr"));
-    destroy_instance     = typed_proc<PFN_vkDestroyInstance>(get_instance_proc_addr(instance, "vkDestroyInstance"));
-    create_device        = typed_proc<PFN_vkCreateDevice>(get_instance_proc_addr(instance, "vkCreateDevice"));
+    get_device_proc_addr           = typed_proc<PFN_vkGetDeviceProcAddr>(get_instance_proc_addr(instance, "vkGetDeviceProcAddr"));
+    destroy_instance               = typed_proc<PFN_vkDestroyInstance>(get_instance_proc_addr(instance, "vkDestroyInstance"));
+    enumerate_physical_devices     = typed_proc<PFN_vkEnumeratePhysicalDevices>(get_instance_proc_addr(instance, "vkEnumeratePhysicalDevices"));
+    get_physical_device_properties = typed_proc<PFN_vkGetPhysicalDeviceProperties>(get_instance_proc_addr(instance, "vkGetPhysicalDeviceProperties"));
+    get_physical_device_features   = typed_proc<PFN_vkGetPhysicalDeviceFeatures>(get_instance_proc_addr(instance, "vkGetPhysicalDeviceFeatures"));
+    get_physical_device_queue_family_properties =
+        typed_proc<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(get_instance_proc_addr(instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
+    get_physical_device_memory_properties =
+        typed_proc<PFN_vkGetPhysicalDeviceMemoryProperties>(get_instance_proc_addr(instance, "vkGetPhysicalDeviceMemoryProperties"));
+    enumerate_device_extension_properties =
+        typed_proc<PFN_vkEnumerateDeviceExtensionProperties>(get_instance_proc_addr(instance, "vkEnumerateDeviceExtensionProperties"));
+    create_device = typed_proc<PFN_vkCreateDevice>(get_instance_proc_addr(instance, "vkCreateDevice"));
 }
 
 void DeviceDispatchTable::init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr) {
@@ -67,22 +117,66 @@ void DeviceDispatchTable::init(VkDevice device, PFN_vkGetDeviceProcAddr get_devi
     // dispatch slots are scoped to that destination device and should be
     // refreshed for each replay/device mapping.
     if (!get_device_proc_addr) {
-        destroy_device = nullptr;
+        destroy_device                 = nullptr;
+        get_device_queue               = nullptr;
+        device_wait_idle               = nullptr;
+        create_buffer                  = nullptr;
+        destroy_buffer                 = nullptr;
+        get_buffer_memory_requirements = nullptr;
+        allocate_memory                = nullptr;
+        free_memory                    = nullptr;
+        bind_buffer_memory             = nullptr;
+        map_memory                     = nullptr;
+        unmap_memory                   = nullptr;
+        create_shader_module           = nullptr;
+        destroy_shader_module          = nullptr;
+        create_descriptor_set_layout   = nullptr;
+        destroy_descriptor_set_layout  = nullptr;
+        create_pipeline_layout         = nullptr;
+        destroy_pipeline_layout        = nullptr;
+        create_render_pass             = nullptr;
+        destroy_render_pass            = nullptr;
+        create_graphics_pipelines      = nullptr;
+        destroy_pipeline               = nullptr;
+        create_semaphore               = nullptr;
+        destroy_semaphore              = nullptr;
         return;
     }
 
-    destroy_device = typed_proc<PFN_vkDestroyDevice>(get_device_proc_addr(device, "vkDestroyDevice"));
+    destroy_device                 = typed_proc<PFN_vkDestroyDevice>(get_device_proc_addr(device, "vkDestroyDevice"));
+    get_device_queue               = typed_proc<PFN_vkGetDeviceQueue>(get_device_proc_addr(device, "vkGetDeviceQueue"));
+    device_wait_idle               = typed_proc<PFN_vkDeviceWaitIdle>(get_device_proc_addr(device, "vkDeviceWaitIdle"));
+    create_buffer                  = typed_proc<PFN_vkCreateBuffer>(get_device_proc_addr(device, "vkCreateBuffer"));
+    destroy_buffer                 = typed_proc<PFN_vkDestroyBuffer>(get_device_proc_addr(device, "vkDestroyBuffer"));
+    get_buffer_memory_requirements = typed_proc<PFN_vkGetBufferMemoryRequirements>(get_device_proc_addr(device, "vkGetBufferMemoryRequirements"));
+    allocate_memory                = typed_proc<PFN_vkAllocateMemory>(get_device_proc_addr(device, "vkAllocateMemory"));
+    free_memory                    = typed_proc<PFN_vkFreeMemory>(get_device_proc_addr(device, "vkFreeMemory"));
+    bind_buffer_memory             = typed_proc<PFN_vkBindBufferMemory>(get_device_proc_addr(device, "vkBindBufferMemory"));
+    map_memory                     = typed_proc<PFN_vkMapMemory>(get_device_proc_addr(device, "vkMapMemory"));
+    unmap_memory                   = typed_proc<PFN_vkUnmapMemory>(get_device_proc_addr(device, "vkUnmapMemory"));
+    create_shader_module           = typed_proc<PFN_vkCreateShaderModule>(get_device_proc_addr(device, "vkCreateShaderModule"));
+    destroy_shader_module          = typed_proc<PFN_vkDestroyShaderModule>(get_device_proc_addr(device, "vkDestroyShaderModule"));
+    create_descriptor_set_layout   = typed_proc<PFN_vkCreateDescriptorSetLayout>(get_device_proc_addr(device, "vkCreateDescriptorSetLayout"));
+    destroy_descriptor_set_layout  = typed_proc<PFN_vkDestroyDescriptorSetLayout>(get_device_proc_addr(device, "vkDestroyDescriptorSetLayout"));
+    create_pipeline_layout         = typed_proc<PFN_vkCreatePipelineLayout>(get_device_proc_addr(device, "vkCreatePipelineLayout"));
+    destroy_pipeline_layout        = typed_proc<PFN_vkDestroyPipelineLayout>(get_device_proc_addr(device, "vkDestroyPipelineLayout"));
+    create_render_pass             = typed_proc<PFN_vkCreateRenderPass>(get_device_proc_addr(device, "vkCreateRenderPass"));
+    destroy_render_pass            = typed_proc<PFN_vkDestroyRenderPass>(get_device_proc_addr(device, "vkDestroyRenderPass"));
+    create_graphics_pipelines      = typed_proc<PFN_vkCreateGraphicsPipelines>(get_device_proc_addr(device, "vkCreateGraphicsPipelines"));
+    destroy_pipeline               = typed_proc<PFN_vkDestroyPipeline>(get_device_proc_addr(device, "vkDestroyPipeline"));
+    create_semaphore               = typed_proc<PFN_vkCreateSemaphore>(get_device_proc_addr(device, "vkCreateSemaphore"));
+    destroy_semaphore              = typed_proc<PFN_vkDestroySemaphore>(get_device_proc_addr(device, "vkDestroySemaphore"));
 }
 
 PFN_vkVoidFunction GlobalDispatchTable::getProcByName(const char * name) const {
     if (!name) { return nullptr; }
     if (std::strcmp(name, "vkGetInstanceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_instance_proc_addr); }
-    if (std::strcmp(name, "vkCreateInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_instance); }
     if (std::strcmp(name, "vkEnumerateInstanceVersion") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_version); }
     if (std::strcmp(name, "vkEnumerateInstanceLayerProperties") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_layer_properties); }
     if (std::strcmp(name, "vkEnumerateInstanceExtensionProperties") == 0) {
         return reinterpret_cast<PFN_vkVoidFunction>(enumerate_instance_extension_properties);
     }
+    if (std::strcmp(name, "vkCreateInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_instance); }
     return nullptr;
 }
 
@@ -90,6 +184,14 @@ PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char * name) const
     if (!name) { return nullptr; }
     if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_device_proc_addr); }
     if (std::strcmp(name, "vkDestroyInstance") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_instance); }
+    if (std::strcmp(name, "vkEnumeratePhysicalDevices") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(enumerate_physical_devices); }
+    if (std::strcmp(name, "vkGetPhysicalDeviceProperties") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_physical_device_properties); }
+    if (std::strcmp(name, "vkGetPhysicalDeviceFeatures") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_physical_device_features); }
+    if (std::strcmp(name, "vkGetPhysicalDeviceQueueFamilyProperties") == 0) {
+        return reinterpret_cast<PFN_vkVoidFunction>(get_physical_device_queue_family_properties);
+    }
+    if (std::strcmp(name, "vkGetPhysicalDeviceMemoryProperties") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_physical_device_memory_properties); }
+    if (std::strcmp(name, "vkEnumerateDeviceExtensionProperties") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(enumerate_device_extension_properties); }
     if (std::strcmp(name, "vkCreateDevice") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_device); }
     return nullptr;
 }
@@ -97,6 +199,28 @@ PFN_vkVoidFunction InstanceDispatchTable::getProcByName(const char * name) const
 PFN_vkVoidFunction DeviceDispatchTable::getProcByName(const char * name) const {
     if (!name) { return nullptr; }
     if (std::strcmp(name, "vkDestroyDevice") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_device); }
+    if (std::strcmp(name, "vkGetDeviceQueue") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_device_queue); }
+    if (std::strcmp(name, "vkDeviceWaitIdle") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(device_wait_idle); }
+    if (std::strcmp(name, "vkCreateBuffer") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_buffer); }
+    if (std::strcmp(name, "vkDestroyBuffer") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_buffer); }
+    if (std::strcmp(name, "vkGetBufferMemoryRequirements") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(get_buffer_memory_requirements); }
+    if (std::strcmp(name, "vkAllocateMemory") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(allocate_memory); }
+    if (std::strcmp(name, "vkFreeMemory") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(free_memory); }
+    if (std::strcmp(name, "vkBindBufferMemory") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(bind_buffer_memory); }
+    if (std::strcmp(name, "vkMapMemory") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(map_memory); }
+    if (std::strcmp(name, "vkUnmapMemory") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(unmap_memory); }
+    if (std::strcmp(name, "vkCreateShaderModule") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_shader_module); }
+    if (std::strcmp(name, "vkDestroyShaderModule") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_shader_module); }
+    if (std::strcmp(name, "vkCreateDescriptorSetLayout") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_descriptor_set_layout); }
+    if (std::strcmp(name, "vkDestroyDescriptorSetLayout") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_descriptor_set_layout); }
+    if (std::strcmp(name, "vkCreatePipelineLayout") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_pipeline_layout); }
+    if (std::strcmp(name, "vkDestroyPipelineLayout") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_pipeline_layout); }
+    if (std::strcmp(name, "vkCreateRenderPass") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_render_pass); }
+    if (std::strcmp(name, "vkDestroyRenderPass") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_render_pass); }
+    if (std::strcmp(name, "vkCreateGraphicsPipelines") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_graphics_pipelines); }
+    if (std::strcmp(name, "vkDestroyPipeline") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_pipeline); }
+    if (std::strcmp(name, "vkCreateSemaphore") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(create_semaphore); }
+    if (std::strcmp(name, "vkDestroySemaphore") == 0) { return reinterpret_cast<PFN_vkVoidFunction>(destroy_semaphore); }
     return nullptr;
 }
 

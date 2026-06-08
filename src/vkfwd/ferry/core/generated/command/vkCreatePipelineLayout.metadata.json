@@ -1,0 +1,280 @@
+{
+  "command": {
+    "api": "vulkan,vulkansc",
+    "coverage_state": "unclassified",
+    "creates_handles": [
+      "VkPipelineLayout"
+    ],
+    "dispatch_parameter": "device",
+    "errorcodes": [
+      "VK_ERROR_OUT_OF_HOST_MEMORY",
+      "VK_ERROR_OUT_OF_DEVICE_MEMORY",
+      "VK_ERROR_UNKNOWN",
+      "VK_ERROR_VALIDATION_FAILED"
+    ],
+    "id": 130332007,
+    "level": "device",
+    "name": "vkCreatePipelineLayout",
+    "parameters": [
+      {
+        "const": false,
+        "declaration": "VkDevice device",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": "dispatchable",
+        "handle_parent": "VkPhysicalDevice",
+        "len": null,
+        "name": "device",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "VkDevice"
+      },
+      {
+        "const": true,
+        "declaration": "const VkPipelineLayoutCreateInfo* pCreateInfo",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "pCreateInfo",
+        "optional": false,
+        "pointer_depth": 1,
+        "type": "VkPipelineLayoutCreateInfo"
+      },
+      {
+        "const": true,
+        "declaration": "const VkAllocationCallbacks* pAllocator",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "pAllocator",
+        "optional": true,
+        "pointer_depth": 1,
+        "type": "VkAllocationCallbacks"
+      },
+      {
+        "const": false,
+        "declaration": "VkPipelineLayout* pPipelineLayout",
+        "direction": "output",
+        "externsync": null,
+        "handle_kind": "non-dispatchable",
+        "handle_parent": "VkDevice",
+        "len": null,
+        "name": "pPipelineLayout",
+        "optional": false,
+        "pointer_depth": 1,
+        "type": "VkPipelineLayout"
+      }
+    ],
+    "return_type": "VkResult",
+    "revision": 1,
+    "successcodes": [
+      "VK_SUCCESS"
+    ]
+  },
+  "generator": {
+    "version": "vkfwd-vulkan-metadata-0.1",
+    "vk_xml": "src/third_party/vulkan/registry/vk.xml",
+    "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
+  },
+  "handles": {
+    "VkDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_DEVICE",
+      "parent": "VkPhysicalDevice"
+    },
+    "VkPipelineLayout": {
+      "kind": "non-dispatchable",
+      "object_type": "VK_OBJECT_TYPE_PIPELINE_LAYOUT",
+      "parent": "VkDevice"
+    }
+  },
+  "protocol": {
+    "schema_version": 1
+  },
+  "schema": "vkfwd.vulkan-command-metadata.v1",
+  "structs": {
+    "VkAllocationCallbacks": {
+      "category": "struct",
+      "has_pnext": false,
+      "members": [
+        {
+          "const": false,
+          "declaration": "void* pUserData",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pUserData",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkAllocationFunction pfnAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnAllocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkAllocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkReallocationFunction pfnReallocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnReallocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkReallocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkFreeFunction pfnFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnFree",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkFreeFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalAllocationNotification pfnInternalAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalAllocation",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalAllocationNotification",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalFreeNotification pfnInternalFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalFree",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalFreeNotification",
+          "values": null
+        }
+      ]
+    },
+    "VkPipelineLayoutCreateInfo": {
+      "category": "struct",
+      "has_pnext": true,
+      "members": [
+        {
+          "const": false,
+          "declaration": "VkStructureType sType",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "sType",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkStructureType",
+          "values": "VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO"
+        },
+        {
+          "const": true,
+          "declaration": "const void* pNext",
+          "is_pnext": true,
+          "is_string_array": false,
+          "len": null,
+          "name": "pNext",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkPipelineLayoutCreateFlags flags",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "flags",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "VkPipelineLayoutCreateFlags",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t setLayoutCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "setLayoutCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkDescriptorSetLayout* pSetLayouts",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": "setLayoutCount",
+          "name": "pSetLayouts",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkDescriptorSetLayout",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t pushConstantRangeCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pushConstantRangeCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPushConstantRange* pPushConstantRanges",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": "pushConstantRangeCount",
+          "name": "pPushConstantRanges",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkPushConstantRange",
+          "values": null
+        }
+      ]
+    }
+  },
+  "versions": {
+    "header_version": "352",
+    "upstream_commit": "015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9",
+    "upstream_tag": "v1.4.352",
+    "vulkan_api": {
+      "major": 1,
+      "minor": 4,
+      "patch": 352
+    },
+    "vulkan_api_version": "1.4.352"
+  }
+}

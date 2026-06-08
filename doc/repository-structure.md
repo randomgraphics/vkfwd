@@ -92,8 +92,8 @@ metadata, and failure propagation needed by the channel contract.
 
 ### Common Utilities And State
 
-Shared utilities include logging, diagnostics, protocol handshake code,
-compatibility checks, command stream framing, and common bookkeeping types.
+Shared utilities include logging, diagnostics, command stream framing,
+transport-facing compatibility metadata, and common bookkeeping types.
 Receiver-only state such as destination Vulkan dispatch tables and handle maps
 belongs in receiver/replay code, but the shared type definitions that describe
 source identities and protocol contracts belong in core.
@@ -149,7 +149,7 @@ that the extra directory earns its keep.
 The build expresses these runtime boundaries:
 
 - `vkfwd_core`: static library containing generated pack/unpack code, transport
-  interfaces, hooks, schema handshake code, and utilities for
+  interfaces, hooks, stream framing metadata, and utilities for
   `ferry`.
 - `vkfwd_forwarder`: shared library loaded by the Vulkan loader; links
   `vkfwd_core` and owns `ferry` forwarder-specific generated interception code.

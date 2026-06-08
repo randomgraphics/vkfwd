@@ -27,16 +27,44 @@ struct GlobalDispatchTable {
 };
 
 struct InstanceDispatchTable {
-    PFN_vkGetDeviceProcAddr get_device_proc_addr = nullptr;
-    PFN_vkDestroyInstance   destroy_instance     = nullptr;
-    PFN_vkCreateDevice      create_device        = nullptr;
+    PFN_vkGetDeviceProcAddr                      get_device_proc_addr                        = nullptr;
+    PFN_vkDestroyInstance                        destroy_instance                            = nullptr;
+    PFN_vkEnumeratePhysicalDevices               enumerate_physical_devices                  = nullptr;
+    PFN_vkGetPhysicalDeviceProperties            get_physical_device_properties              = nullptr;
+    PFN_vkGetPhysicalDeviceFeatures              get_physical_device_features                = nullptr;
+    PFN_vkGetPhysicalDeviceQueueFamilyProperties get_physical_device_queue_family_properties = nullptr;
+    PFN_vkGetPhysicalDeviceMemoryProperties      get_physical_device_memory_properties       = nullptr;
+    PFN_vkEnumerateDeviceExtensionProperties     enumerate_device_extension_properties       = nullptr;
+    PFN_vkCreateDevice                           create_device                               = nullptr;
 
     void               init(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr);
     PFN_vkVoidFunction getProcByName(const char * name) const;
 };
 
 struct DeviceDispatchTable {
-    PFN_vkDestroyDevice destroy_device = nullptr;
+    PFN_vkDestroyDevice               destroy_device                 = nullptr;
+    PFN_vkGetDeviceQueue              get_device_queue               = nullptr;
+    PFN_vkDeviceWaitIdle              device_wait_idle               = nullptr;
+    PFN_vkCreateBuffer                create_buffer                  = nullptr;
+    PFN_vkDestroyBuffer               destroy_buffer                 = nullptr;
+    PFN_vkGetBufferMemoryRequirements get_buffer_memory_requirements = nullptr;
+    PFN_vkAllocateMemory              allocate_memory                = nullptr;
+    PFN_vkFreeMemory                  free_memory                    = nullptr;
+    PFN_vkBindBufferMemory            bind_buffer_memory             = nullptr;
+    PFN_vkMapMemory                   map_memory                     = nullptr;
+    PFN_vkUnmapMemory                 unmap_memory                   = nullptr;
+    PFN_vkCreateShaderModule          create_shader_module           = nullptr;
+    PFN_vkDestroyShaderModule         destroy_shader_module          = nullptr;
+    PFN_vkCreateDescriptorSetLayout   create_descriptor_set_layout   = nullptr;
+    PFN_vkDestroyDescriptorSetLayout  destroy_descriptor_set_layout  = nullptr;
+    PFN_vkCreatePipelineLayout        create_pipeline_layout         = nullptr;
+    PFN_vkDestroyPipelineLayout       destroy_pipeline_layout        = nullptr;
+    PFN_vkCreateRenderPass            create_render_pass             = nullptr;
+    PFN_vkDestroyRenderPass           destroy_render_pass            = nullptr;
+    PFN_vkCreateGraphicsPipelines     create_graphics_pipelines      = nullptr;
+    PFN_vkDestroyPipeline             destroy_pipeline               = nullptr;
+    PFN_vkCreateSemaphore             create_semaphore               = nullptr;
+    PFN_vkDestroySemaphore            destroy_semaphore              = nullptr;
 
     void               init(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr);
     PFN_vkVoidFunction getProcByName(const char * name) const;

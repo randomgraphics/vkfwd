@@ -18,13 +18,41 @@ const ::vkfwd::generated::GlobalDispatchTable kGlobalDispatchTable {
 };
 
 const ::vkfwd::generated::InstanceDispatchTable kInstanceDispatchTable {
-    .get_device_proc_addr = ::vkfwd::Forwarder::getDeviceProcAddr,
-    .destroy_instance     = vkDestroyInstance_entry,
-    .create_device        = vkCreateDevice_entry,
+    .get_device_proc_addr                        = ::vkfwd::Forwarder::getDeviceProcAddr,
+    .destroy_instance                            = vkDestroyInstance_entry,
+    .enumerate_physical_devices                  = vkEnumeratePhysicalDevices_entry,
+    .get_physical_device_properties              = vkGetPhysicalDeviceProperties_entry,
+    .get_physical_device_features                = vkGetPhysicalDeviceFeatures_entry,
+    .get_physical_device_queue_family_properties = vkGetPhysicalDeviceQueueFamilyProperties_entry,
+    .get_physical_device_memory_properties       = vkGetPhysicalDeviceMemoryProperties_entry,
+    .enumerate_device_extension_properties       = vkEnumerateDeviceExtensionProperties_entry,
+    .create_device                               = vkCreateDevice_entry,
 };
 
 const ::vkfwd::generated::DeviceDispatchTable kDeviceDispatchTable {
-    .destroy_device = vkDestroyDevice_entry,
+    .destroy_device                 = vkDestroyDevice_entry,
+    .get_device_queue               = vkGetDeviceQueue_entry,
+    .device_wait_idle               = vkDeviceWaitIdle_entry,
+    .create_buffer                  = vkCreateBuffer_entry,
+    .destroy_buffer                 = vkDestroyBuffer_entry,
+    .get_buffer_memory_requirements = vkGetBufferMemoryRequirements_entry,
+    .allocate_memory                = vkAllocateMemory_entry,
+    .free_memory                    = vkFreeMemory_entry,
+    .bind_buffer_memory             = vkBindBufferMemory_entry,
+    .map_memory                     = vkMapMemory_entry,
+    .unmap_memory                   = vkUnmapMemory_entry,
+    .create_shader_module           = vkCreateShaderModule_entry,
+    .destroy_shader_module          = vkDestroyShaderModule_entry,
+    .create_descriptor_set_layout   = vkCreateDescriptorSetLayout_entry,
+    .destroy_descriptor_set_layout  = vkDestroyDescriptorSetLayout_entry,
+    .create_pipeline_layout         = vkCreatePipelineLayout_entry,
+    .destroy_pipeline_layout        = vkDestroyPipelineLayout_entry,
+    .create_render_pass             = vkCreateRenderPass_entry,
+    .destroy_render_pass            = vkDestroyRenderPass_entry,
+    .create_graphics_pipelines      = vkCreateGraphicsPipelines_entry,
+    .destroy_pipeline               = vkDestroyPipeline_entry,
+    .create_semaphore               = vkCreateSemaphore_entry,
+    .destroy_semaphore              = vkDestroySemaphore_entry,
 };
 
 } // namespace

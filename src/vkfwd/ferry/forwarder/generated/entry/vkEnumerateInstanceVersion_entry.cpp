@@ -35,7 +35,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion_entry(uint32_t * pApiV
     if (status != VK_SUCCESS) [[unlikely]] { return status; }
     Command::Response response = *packed_response;
 
-    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(response); }
+    if constexpr (Hooks::after_response_unpack_enabled) { Hooks::after_response_unpack(parameters, response); }
 
     if (pApiVersion && response.pApiVersion && response.pApiVersion != pApiVersion) { *pApiVersion = *response.pApiVersion; }
 

@@ -32,8 +32,8 @@ TEST_CASE("vkGetInstanceProcAddr follows Vulkan dispatch lookup shape for vkfwd-
     CHECK(Forwarder::getInstanceProcAddr(instance, "vkDestroyDevice") == as_void(generated::vkDestroyDevice_entry));
     CHECK(Forwarder::getDeviceProcAddr(device, "vkDestroyDevice") == as_void(generated::vkDestroyDevice_entry));
 
-    CHECK(Forwarder::getInstanceProcAddr(instance, "vkCreateBuffer") == nullptr);
-    CHECK(Forwarder::getDeviceProcAddr(device, "vkCreateBuffer") == nullptr);
+    CHECK(Forwarder::getInstanceProcAddr(instance, "vkCreateBuffer") == as_void(generated::vkCreateBuffer_entry));
+    CHECK(Forwarder::getDeviceProcAddr(device, "vkCreateBuffer") == as_void(generated::vkCreateBuffer_entry));
 }
 
 } // namespace vkfwd::forwarder::test

@@ -1,8 +1,15 @@
+# Endpoint implementations are generated one .cpp per API-domain group under
+# generated/endpoint/. Glob them so adding a group does not require editing this
+# list; CONFIGURE_DEPENDS re-runs the glob at build time when the set changes.
+file(GLOB VKFWD_RECEIVER_ENDPOINT_SOURCES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/generated/endpoint/*.cpp")
+
 # vkfwd_ferry_receiver is a separate module because replay owns receiver-only state:
 # destination Vulkan dispatch, source-to-destination handle maps, and copied
 # command lifetimes.
 add_library(vkfwd_ferry_receiver STATIC
   generated/endpoints.cpp
+  ${VKFWD_RECEIVER_ENDPOINT_SOURCES}
   receiver.cpp)
 
 set_target_properties(vkfwd_ferry_receiver PROPERTIES

@@ -390,19 +390,19 @@ Required fields:
 - Result/output payload when the capture policy requires post-call data.
 
 Before command payloads cross an endpoint transport, the dispatcher and
-receiver must complete a handshake. The receiver/replay runtime is expected to
-outlive individual interceptor builds, so it must be able to accept payloads
-produced by all compatible interceptor/dispatcher builds.
+receiver should exchange session compatibility metadata. The receiver/replay
+runtime is expected to outlive individual interceptor builds, so it must be able
+to accept payloads produced by all compatible interceptor/dispatcher builds.
 
-The handshake should contain:
+The compatibility metadata should contain:
 
 - Magic value.
 - Schema version.
 - Vulkan API major, minor, and patch version used by the generator.
 
-Once the handshake succeeds, the rest of the session is assumed to follow the
-negotiated schema version. Per-command packets must not repeat schema-version
-information or redo compatibility validation in the hot path.
+Once compatibility is established, the rest of the session is assumed to follow
+the negotiated schema version. Per-command packets must not repeat
+schema-version information or redo compatibility validation in the hot path.
 Command-specific decoding may still reject unknown command ids, unsupported
 payload revisions, missing extensions, or unimplemented replay policies.
 
@@ -419,10 +419,10 @@ Compatibility rules:
 - Vulkan patch/header differences are recorded for diagnostics and exact
   replay policy, but they should not by themselves imply incompatibility inside
   the same supported major/minor line.
-The current scaffold records this boundary in `src/vkfwd/ferry/core/protocol.hpp`
-with stable handshake request/response types and compatibility checks. That is
-only the foundation; the real endpoint transport still needs handshake
-exchange, a multi-version command table, and payload adapters.
+The current scaffold records the generated Vulkan API version type/value in
+`src/vkfwd/ferry/core/generated/vulkan_api.hpp`. That is only the foundation;
+the real endpoint transport still needs compatibility exchange, a multi-version
+command table, and payload adapters.
 
 Parameter encoding must support:
 
@@ -519,8 +519,8 @@ Acceptance criteria:
   `src/vkfwd/ferry/core/generated/command/`.
 - Human-owned hook files live outside generated output and survive
   regeneration.
-- Shared protocol code exposes the stable handshake metadata, while per-command
-  pack/unpack records avoid repeated schema compatibility data.
+- Shared protocol code should eventually expose stable session compatibility
+  metadata, while per-command pack/unpack records avoid repeated schema data.
 - Empty hook defaults compile out without runtime calls or branches.
 
 Current proof-slice status:

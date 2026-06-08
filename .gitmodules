@@ -13,10 +13,6 @@
 	url = https://github.com/catchorg/Catch2.git
 	branch = v3.15.0
 	shallow = true
-[submodule "src/third_party/gfxreconstruct"]
-	path = src/third_party/gfxreconstruct
-	url = https://github.com/LunarG/gfxreconstruct.git
-	shallow = true
 [submodule "src/third_party/rapid-vulkan"]
 	path = src/third_party/rapid-vulkan
 	url = ../rapid-vulkan.git

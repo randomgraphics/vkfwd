@@ -1,0 +1,469 @@
+{
+  "command": {
+    "api": "vulkan,vulkanbase",
+    "coverage_state": "unclassified",
+    "creates_handles": [
+      "VkPipeline"
+    ],
+    "dispatch_parameter": "device",
+    "errorcodes": [
+      "VK_ERROR_OUT_OF_HOST_MEMORY",
+      "VK_ERROR_OUT_OF_DEVICE_MEMORY",
+      "VK_ERROR_INVALID_SHADER_NV",
+      "VK_ERROR_UNKNOWN",
+      "VK_ERROR_VALIDATION_FAILED"
+    ],
+    "id": 3132881189,
+    "level": "device",
+    "name": "vkCreateGraphicsPipelines",
+    "parameters": [
+      {
+        "const": false,
+        "declaration": "VkDevice device",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": "dispatchable",
+        "handle_parent": "VkPhysicalDevice",
+        "len": null,
+        "name": "device",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "VkDevice"
+      },
+      {
+        "const": false,
+        "declaration": "VkPipelineCache pipelineCache",
+        "direction": "input",
+        "externsync": "maybe",
+        "handle_kind": "non-dispatchable",
+        "handle_parent": "VkDevice",
+        "len": null,
+        "name": "pipelineCache",
+        "optional": true,
+        "pointer_depth": 0,
+        "type": "VkPipelineCache"
+      },
+      {
+        "const": false,
+        "declaration": "uint32_t createInfoCount",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "createInfoCount",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "uint32_t"
+      },
+      {
+        "const": true,
+        "declaration": "const VkGraphicsPipelineCreateInfo* pCreateInfos",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": "createInfoCount",
+        "name": "pCreateInfos",
+        "optional": false,
+        "pointer_depth": 1,
+        "type": "VkGraphicsPipelineCreateInfo"
+      },
+      {
+        "const": true,
+        "declaration": "const VkAllocationCallbacks* pAllocator",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "pAllocator",
+        "optional": true,
+        "pointer_depth": 1,
+        "type": "VkAllocationCallbacks"
+      },
+      {
+        "const": false,
+        "declaration": "VkPipeline* pPipelines",
+        "direction": "output",
+        "externsync": null,
+        "handle_kind": "non-dispatchable",
+        "handle_parent": "VkDevice",
+        "len": "createInfoCount",
+        "name": "pPipelines",
+        "optional": false,
+        "pointer_depth": 1,
+        "type": "VkPipeline"
+      }
+    ],
+    "return_type": "VkResult",
+    "revision": 1,
+    "successcodes": [
+      "VK_SUCCESS",
+      "VK_PIPELINE_COMPILE_REQUIRED_EXT"
+    ]
+  },
+  "generator": {
+    "version": "vkfwd-vulkan-metadata-0.1",
+    "vk_xml": "src/third_party/vulkan/registry/vk.xml",
+    "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
+  },
+  "handles": {
+    "VkDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_DEVICE",
+      "parent": "VkPhysicalDevice"
+    },
+    "VkPipeline": {
+      "kind": "non-dispatchable",
+      "object_type": "VK_OBJECT_TYPE_PIPELINE",
+      "parent": "VkDevice"
+    },
+    "VkPipelineCache": {
+      "kind": "non-dispatchable",
+      "object_type": "VK_OBJECT_TYPE_PIPELINE_CACHE",
+      "parent": "VkDevice"
+    }
+  },
+  "protocol": {
+    "schema_version": 1
+  },
+  "schema": "vkfwd.vulkan-command-metadata.v1",
+  "structs": {
+    "VkAllocationCallbacks": {
+      "category": "struct",
+      "has_pnext": false,
+      "members": [
+        {
+          "const": false,
+          "declaration": "void* pUserData",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pUserData",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkAllocationFunction pfnAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnAllocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkAllocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkReallocationFunction pfnReallocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnReallocation",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkReallocationFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkFreeFunction pfnFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnFree",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "PFN_vkFreeFunction",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalAllocationNotification pfnInternalAllocation",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalAllocation",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalAllocationNotification",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "PFN_vkInternalFreeNotification pfnInternalFree",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pfnInternalFree",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "PFN_vkInternalFreeNotification",
+          "values": null
+        }
+      ]
+    },
+    "VkGraphicsPipelineCreateInfo": {
+      "category": "struct",
+      "has_pnext": true,
+      "members": [
+        {
+          "const": false,
+          "declaration": "VkStructureType sType",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "sType",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkStructureType",
+          "values": "VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO"
+        },
+        {
+          "const": true,
+          "declaration": "const void* pNext",
+          "is_pnext": true,
+          "is_string_array": false,
+          "len": null,
+          "name": "pNext",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "void",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkPipelineCreateFlags flags",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "flags",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "VkPipelineCreateFlags",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t stageCount",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "stageCount",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineShaderStageCreateInfo* pStages",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": "stageCount",
+          "name": "pStages",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineShaderStageCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineShaderStageCreateInfo* pStages",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": "stageCount",
+          "name": "pStages",
+          "optional": false,
+          "pointer_depth": 1,
+          "type": "VkPipelineShaderStageCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineVertexInputStateCreateInfo* pVertexInputState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pVertexInputState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineVertexInputStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineInputAssemblyStateCreateInfo* pInputAssemblyState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pInputAssemblyState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineInputAssemblyStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineTessellationStateCreateInfo* pTessellationState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pTessellationState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineTessellationStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineViewportStateCreateInfo* pViewportState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pViewportState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineViewportStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineRasterizationStateCreateInfo* pRasterizationState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pRasterizationState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineRasterizationStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineMultisampleStateCreateInfo* pMultisampleState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pMultisampleState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineMultisampleStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineDepthStencilStateCreateInfo* pDepthStencilState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pDepthStencilState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineDepthStencilStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineColorBlendStateCreateInfo* pColorBlendState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pColorBlendState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineColorBlendStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": true,
+          "declaration": "const VkPipelineDynamicStateCreateInfo* pDynamicState",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pDynamicState",
+          "optional": true,
+          "pointer_depth": 1,
+          "type": "VkPipelineDynamicStateCreateInfo",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkPipelineLayout layout",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "layout",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "VkPipelineLayout",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkRenderPass renderPass",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "renderPass",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "VkRenderPass",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t subpass",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "subpass",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkPipeline basePipelineHandle",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "basePipelineHandle",
+          "optional": true,
+          "pointer_depth": 0,
+          "type": "VkPipeline",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "int32_t basePipelineIndex",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "basePipelineIndex",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "int32_t",
+          "values": null
+        }
+      ]
+    }
+  },
+  "versions": {
+    "header_version": "352",
+    "upstream_commit": "015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9",
+    "upstream_tag": "v1.4.352",
+    "vulkan_api": {
+      "major": 1,
+      "minor": 4,
+      "patch": 352
+    },
+    "vulkan_api_version": "1.4.352"
+  }
+}

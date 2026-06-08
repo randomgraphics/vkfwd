@@ -49,10 +49,10 @@ Before editing `src/vkfwd/ferry/`, read `src/vkfwd/ferry/README.md`. For area-sp
 | Path | Owns |
 |---|---|
 | `ferry/core/blob.hpp` | Grow-only byte arena with stable logical offsets and bounded views (`SafeArrayView`). |
-| `ferry/core/protocol.hpp` | Stream magic, schema version, Vulkan API version, command chunk header layout. |
+| `ferry/core/command_stream.hpp` | Stream magic, schema version, command chunk header layout, and stream storage API. |
 | `ferry/core/transport_session.hpp` | Forwarder-side session boundary: `send_accumulated_api_calls()`. |
 | `ferry/core/receiver_session.hpp` | Receiver-side demultiplexing and responder lifecycle. |
-| `ferry/core/generated/` | Generator-owned: command pack/unpack, structure helpers, dispatch-table types, `vulkan_api.hpp`. |
+| `ferry/core/generated/` | Generator-owned: command pack/unpack, structure helpers, dispatch-table types, `vulkan_api.hpp` API version metadata. |
 | `ferry/core/hook/` | Human-owned: per-command customization headers (`<api>Hook.hpp`) and optional `.cpp` bodies. |
 | `ferry/forwarder/layer.cpp` | Exports `vkGetInstanceProcAddr` / `vkGetDeviceProcAddr` to the Vulkan loader. |
 | `ferry/forwarder/forwarder.hpp` | Thread-local `Forwarder`: request blob, source-thread token, shared `TransportSession`. |

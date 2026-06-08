@@ -1,0 +1,186 @@
+{
+  "command": {
+    "api": "vulkan,vulkansc",
+    "coverage_state": "unclassified",
+    "creates_handles": [],
+    "dispatch_parameter": "physicalDevice",
+    "errorcodes": [],
+    "id": 4087842590,
+    "level": "instance",
+    "name": "vkGetPhysicalDeviceProperties",
+    "parameters": [
+      {
+        "const": false,
+        "declaration": "VkPhysicalDevice physicalDevice",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": "dispatchable",
+        "handle_parent": "VkInstance",
+        "len": null,
+        "name": "physicalDevice",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "VkPhysicalDevice"
+      },
+      {
+        "const": false,
+        "declaration": "VkPhysicalDeviceProperties* pProperties",
+        "direction": "output",
+        "externsync": null,
+        "handle_kind": null,
+        "handle_parent": null,
+        "len": null,
+        "name": "pProperties",
+        "optional": false,
+        "pointer_depth": 1,
+        "type": "VkPhysicalDeviceProperties"
+      }
+    ],
+    "return_type": "void",
+    "revision": 1,
+    "successcodes": []
+  },
+  "generator": {
+    "version": "vkfwd-vulkan-metadata-0.1",
+    "vk_xml": "src/third_party/vulkan/registry/vk.xml",
+    "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
+  },
+  "handles": {
+    "VkPhysicalDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_PHYSICAL_DEVICE",
+      "parent": "VkInstance"
+    }
+  },
+  "protocol": {
+    "schema_version": 1
+  },
+  "schema": "vkfwd.vulkan-command-metadata.v1",
+  "structs": {
+    "VkPhysicalDeviceProperties": {
+      "category": "struct",
+      "has_pnext": false,
+      "members": [
+        {
+          "const": false,
+          "declaration": "uint32_t apiVersion",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "apiVersion",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t driverVersion",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "driverVersion",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t vendorID",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "vendorID",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint32_t deviceID",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "deviceID",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "uint32_t",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkPhysicalDeviceType deviceType",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "deviceType",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkPhysicalDeviceType",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "char deviceName[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE]",
+          "is_pnext": false,
+          "is_string_array": true,
+          "len": "null-terminated",
+          "name": "deviceName",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "char",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "uint8_t pipelineCacheUUID[VK_UUID_SIZE]",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "pipelineCacheUUID",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "uint8_t",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkPhysicalDeviceLimits limits",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "limits",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkPhysicalDeviceLimits",
+          "values": null
+        },
+        {
+          "const": false,
+          "declaration": "VkPhysicalDeviceSparseProperties sparseProperties",
+          "is_pnext": false,
+          "is_string_array": false,
+          "len": null,
+          "name": "sparseProperties",
+          "optional": false,
+          "pointer_depth": 0,
+          "type": "VkPhysicalDeviceSparseProperties",
+          "values": null
+        }
+      ]
+    }
+  },
+  "versions": {
+    "header_version": "352",
+    "upstream_commit": "015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9",
+    "upstream_tag": "v1.4.352",
+    "vulkan_api": {
+      "major": 1,
+      "minor": 4,
+      "patch": 352
+    },
+    "vulkan_api_version": "1.4.352"
+  }
+}

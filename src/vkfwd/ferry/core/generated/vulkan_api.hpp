@@ -4,25 +4,60 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
-#include "protocol.hpp"
-
 #include <cstdint>
 
-namespace vkfwd::generated {
+namespace vkfwd {
+
+struct VulkanApiVersion {
+    std::uint16_t major = 0;
+    std::uint16_t minor = 0;
+    std::uint16_t patch = 0;
+};
+
+namespace generated {
 
 // CommandId values are part of the schema-versioned command envelope. They are
 // generated from stable command names instead of registry order so compatible
 // Vulkan XML revisions can add or remove commands without renumbering the stream.
 enum class CommandId : std::uint32_t {
-    EnumerateInstanceVersion             = 2065902916,
-    EnumerateInstanceLayerProperties     = 2945753866,
-    EnumerateInstanceExtensionProperties = 1659509659,
-    CreateInstance                       = 2472334652,
-    DestroyInstance                      = 748278256,
-    CreateDevice                         = 1470473620,
-    DestroyDevice                        = 2054705423,
+    EnumerateInstanceVersion               = 1973594616,
+    EnumerateInstanceLayerProperties       = 4227851274,
+    EnumerateInstanceExtensionProperties   = 3753395087,
+    CreateInstance                         = 589416931,
+    DestroyInstance                        = 3375803655,
+    EnumeratePhysicalDevices               = 420573459,
+    GetPhysicalDeviceProperties            = 4087842590,
+    GetPhysicalDeviceFeatures              = 3233214503,
+    GetPhysicalDeviceQueueFamilyProperties = 394073750,
+    GetPhysicalDeviceMemoryProperties      = 375875472,
+    EnumerateDeviceExtensionProperties     = 3076676743,
+    CreateDevice                           = 3708532212,
+    DestroyDevice                          = 3685263332,
+    GetDeviceQueue                         = 3584965915,
+    DeviceWaitIdle                         = 1508684833,
+    CreateBuffer                           = 1203908229,
+    DestroyBuffer                          = 3174042733,
+    GetBufferMemoryRequirements            = 1571591994,
+    AllocateMemory                         = 1791021280,
+    FreeMemory                             = 212925121,
+    BindBufferMemory                       = 1474043853,
+    MapMemory                              = 2426222277,
+    UnmapMemory                            = 274088084,
+    CreateShaderModule                     = 313637281,
+    DestroyShaderModule                    = 3128840576,
+    CreateDescriptorSetLayout              = 3341903592,
+    DestroyDescriptorSetLayout             = 2132633169,
+    CreatePipelineLayout                   = 130332007,
+    DestroyPipelineLayout                  = 2218984063,
+    CreateRenderPass                       = 1903840027,
+    DestroyRenderPass                      = 1292674563,
+    CreateGraphicsPipelines                = 3132881189,
+    DestroyPipeline                        = 290585298,
+    CreateSemaphore                        = 3235585641,
+    DestroySemaphore                       = 132418181,
 };
 
 constexpr VulkanApiVersion kVulkanApiVersion {1, 4, 352};
 
-} // namespace vkfwd::generated
+} // namespace generated
+} // namespace vkfwd

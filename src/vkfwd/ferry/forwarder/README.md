@@ -23,6 +23,8 @@ sends flushed streams through a shared `TransportSession`.
 - `generated/entry/*_entry.cpp`: generated Vulkan layer entry-point functions
   stored in the generated dispatch tables and called by application code through
   the Vulkan loader.
+- `hook/`: handwritten forwarder hook specializations used by generated wrappers
+  when a command needs source-side state updates after generated pack/unpack.
 - `test/`: handwritten in-process tests for selected forwarder entry-point
   behavior at a test transport boundary.
 - `manifest/`: Vulkan layer manifest template.
@@ -85,13 +87,15 @@ Response-bearing commands follow this shape:
 4. call `Forwarder::flush()`, which sends the thread's stream through the transport
    session and resets it with the same header
 5. unpack the returned response stream
-6. copy response-owned output parameter values back to the caller
-7. run an optional manual post-response hook
-8. return the response return value
+6. run an optional manual post-response hook with both the original generated
+   parameters and the mutable generated response
+7. copy response-owned output parameter values back to the caller
+8. return the possibly hook-adjusted response return value
 
 Deferrable commands currently have no return value and no output parameters.
-They only append their command chunk to the thread-local request stream. A later
-response-bearing command or an explicit test flush sends the pending stream.
+They append their command chunk to the thread-local request stream, then run an
+optional post-pack hook with the generated parameters. A later response-bearing
+command or an explicit test flush sends the pending stream.
 `vkDestroyInstance` is intentionally not deferred even though it has no response:
 the generated wrapper flushes it as a lifecycle fence so receiver-side replay can
 drain deferred commands before destroying the destination instance.
@@ -115,9 +119,34 @@ Files under `forwarder/generated/` are generated. Update
 `src/vkfwd/ferry/script/generator/vulkan_metadata.py` and regenerate instead of
 editing them directly.
 
-Manual forwarder hooks may live under a future `forwarder/hook/` tree and are
-conditionally included by generated wrappers when present. Hook code should stay
+Forwarder generated entry points may remain one source file per command while
+that keeps ABI-facing wrapper changes easy to review. If full-API generation
+makes wrapper source counts expensive, group forwarder implementation sources by
+the same API-domain policy documented in `../README.md`; keep lookup-table shape
+and exported layer symbols generated from the command manifest rather than from
+manual CMake source lists.
+
+Manual forwarder hooks live under `forwarder/hook/` and are conditionally
+included by generated wrappers when present. Post-pack hooks receive the
+generated `Parameters` after a command is accepted into the request stream.
+Response hooks receive both the original generated `Parameters` and a mutable
+generated `Response`, so hooks can adjust caller-visible output pointers and
+return values before generated copy-back runs. Hook code should stay
 command-specific and document why it is needed.
+
+`vkAllocateMemory` and `vkFreeMemory` update `MemoryMapForwarder` allocation
+records from hooks. This source-side state is intentionally narrow: it remembers
+allocation extents for later map staging, while receiver dispatch, handle
+mapping, and actual memory ownership remain below the transport/receiver
+boundary.
+
+`vkMapMemory` and `vkUnmapMemory` are planned as full manual forwarder
+delegations. The public Vulkan entry points keep their loader-facing names, but
+`MemoryMapForwarder::custom_vkMapMemory_entry` /
+`custom_vkUnmapMemory_entry` emit vkfwd-owned manual command ids with custom
+map/unmap payloads. This keeps the receiver-process mapped pointer out of the
+generated Vulkan response path and leaves the staging protocol free to evolve
+without pretending it is the generated Vulkan command schema.
 
 ## Testing Guidance
 

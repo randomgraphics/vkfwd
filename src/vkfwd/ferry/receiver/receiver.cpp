@@ -2,7 +2,6 @@
 
 #include "generated/endpoints.hpp"
 #include "logging.hpp"
-#include "protocol.hpp"
 
 #include <cstddef>
 #include <cstring>

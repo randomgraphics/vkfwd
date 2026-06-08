@@ -10,17 +10,22 @@ When editing this repository, add or preserve comments that explain design
 intent, constraints, assumptions, invariants, and expected behavior. Comments
 should answer why code is shaped a certain way, what must remain true, what
 input/output contract matters, or what future implementation boundary is being
-protected.
+protected, and what caller-visible behavior depends on the implementation
+choice.
 
 Do not add comments that merely restate the code. Prefer no comment over a
-comment that only describes the immediate syntax.
+comment that only describes the immediate syntax. A useful comment explains why
+a boundary exists, why loop order matters, why a Vulkan loader rule is being
+followed, why ownership is intentionally not transferred, or why a placeholder
+is deliberately narrow.
 
 For Vulkan interception, serialization, deserialization, and replay code,
 explicitly document the reasoning around:
 
 - Vulkan loader-chain and dispatch-table invariants.
 - Pointer, array, and `pNext` lifetime assumptions.
-- Ownership of copied parameter data and serialized payloads.
+- Ownership of copied parameter data, serialized payloads, and borrowed
+  application memory during pack/unpack operations.
 - Source-to-receiver handle mapping assumptions.
 - Replay ordering, synchronization, and externally synchronized state.
 - Placeholder behavior that should not be confused with complete forwarding or

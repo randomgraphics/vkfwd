@@ -4,6 +4,7 @@
 // Vulkan API version: 1.4.352
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
+#include "command_id_range.hpp"
 #include "generated/vulkan_api.hpp"
 #include "generated/vulkan_manual_hooks.hpp"
 #include "command_stream.hpp"
@@ -12,6 +13,13 @@
 
 #include <cstddef>
 #include <cstdint>
+
+// Generated command ids must never collide with the reserved manual range used
+// by vkfwd-owned wire commands. The generator enforces this by constraining its
+// hash output below kReservedCommandIdBase; this per-command static_assert is
+// the structural check that the invariant survives any future edit.
+static_assert(static_cast<std::uint32_t>(::vkfwd::generated::CommandId::DestroyInstance) < ::vkfwd::kReservedCommandIdBase,
+              "generated command id must not occupy the reserved manual range");
 
 namespace vkfwd::generated::commands::vkDestroyInstance {
 

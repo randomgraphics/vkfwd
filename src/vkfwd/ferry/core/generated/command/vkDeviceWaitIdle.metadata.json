@@ -1,0 +1,66 @@
+{
+  "command": {
+    "api": "vulkan,vulkansc",
+    "coverage_state": "unclassified",
+    "creates_handles": [],
+    "dispatch_parameter": "device",
+    "errorcodes": [
+      "VK_ERROR_OUT_OF_HOST_MEMORY",
+      "VK_ERROR_OUT_OF_DEVICE_MEMORY",
+      "VK_ERROR_DEVICE_LOST",
+      "VK_ERROR_UNKNOWN",
+      "VK_ERROR_VALIDATION_FAILED"
+    ],
+    "id": 1508684833,
+    "level": "device",
+    "name": "vkDeviceWaitIdle",
+    "parameters": [
+      {
+        "const": false,
+        "declaration": "VkDevice device",
+        "direction": "input",
+        "externsync": null,
+        "handle_kind": "dispatchable",
+        "handle_parent": "VkPhysicalDevice",
+        "len": null,
+        "name": "device",
+        "optional": false,
+        "pointer_depth": 0,
+        "type": "VkDevice"
+      }
+    ],
+    "return_type": "VkResult",
+    "revision": 1,
+    "successcodes": [
+      "VK_SUCCESS"
+    ]
+  },
+  "generator": {
+    "version": "vkfwd-vulkan-metadata-0.1",
+    "vk_xml": "src/third_party/vulkan/registry/vk.xml",
+    "vk_xml_sha256": "50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482"
+  },
+  "handles": {
+    "VkDevice": {
+      "kind": "dispatchable",
+      "object_type": "VK_OBJECT_TYPE_DEVICE",
+      "parent": "VkPhysicalDevice"
+    }
+  },
+  "protocol": {
+    "schema_version": 1
+  },
+  "schema": "vkfwd.vulkan-command-metadata.v1",
+  "structs": {},
+  "versions": {
+    "header_version": "352",
+    "upstream_commit": "015e25c3c91b70eb1a754d36fb14c4ba6ad9b0b9",
+    "upstream_tag": "v1.4.352",
+    "vulkan_api": {
+      "major": 1,
+      "minor": 4,
+      "patch": 352
+    },
+    "vulkan_api_version": "1.4.352"
+  }
+}

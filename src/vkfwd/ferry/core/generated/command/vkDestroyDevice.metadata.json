@@ -5,7 +5,7 @@
     "creates_handles": [],
     "dispatch_parameter": "device",
     "errorcodes": [],
-    "id": 2054705423,
+    "id": 3685263332,
     "level": "device",
     "name": "vkDestroyDevice",
     "parameters": [

@@ -294,10 +294,10 @@ Generated code must prefer direct typed operations over generic byte mutation:
 
 ## Compatibility
 
-Before command chunks cross a transport, peers complete a handshake containing
-the stream magic, schema version, and Vulkan API version used for generation.
-After a successful handshake, command chunks do not repeat the schema version;
-the hot path relies on the negotiated session.
+Command chunks carry command ids and payload revisions, but do not currently
+have a concrete session-negotiation message. Future transports should negotiate
+stream magic, schema version, and Vulkan API version once per session instead of
+repeating schema compatibility data on every command.
 
 Command ids must remain stable within a schema version. Payload layout changes
 require schema revision policy. Unknown command ids, unsupported payload

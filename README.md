@@ -59,8 +59,8 @@ reserved for a future stateful front end with local Vulkan-visible state and
 local handle identities.
 
 Within `ferry`, the shared core static library
-contains pack/unpack, endpoint contracts, schema handshake code,
-generated command code, hooks, and common utilities. The forwarder shared
+contains pack/unpack, endpoint contracts, generated command code, hooks,
+transport-facing stream types, and common utilities. The forwarder shared
 library, receiver executable, recorder layer, and saved-stream replay tool are
 thin role-specific targets that link the core library.
 

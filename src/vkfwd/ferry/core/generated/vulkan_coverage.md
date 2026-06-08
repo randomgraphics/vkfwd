@@ -9,10 +9,38 @@
 
 | Command | ID | Level | Coverage | Creates |
 | --- | ---: | --- | --- | --- |
-| `vkEnumerateInstanceVersion` | 2065902916 | global | unclassified |  |
-| `vkEnumerateInstanceLayerProperties` | 2945753866 | global | unclassified |  |
-| `vkEnumerateInstanceExtensionProperties` | 1659509659 | global | unclassified |  |
-| `vkCreateInstance` | 2472334652 | global | unclassified | VkInstance |
-| `vkDestroyInstance` | 748278256 | instance | unclassified |  |
-| `vkCreateDevice` | 1470473620 | instance | unclassified | VkDevice |
-| `vkDestroyDevice` | 2054705423 | device | unclassified |  |
+| `vkEnumerateInstanceVersion` | 1973594616 | global | unclassified |  |
+| `vkEnumerateInstanceLayerProperties` | 4227851274 | global | unclassified |  |
+| `vkEnumerateInstanceExtensionProperties` | 3753395087 | global | unclassified |  |
+| `vkCreateInstance` | 589416931 | global | unclassified | VkInstance |
+| `vkDestroyInstance` | 3375803655 | instance | unclassified |  |
+| `vkEnumeratePhysicalDevices` | 420573459 | instance | unclassified | VkPhysicalDevice |
+| `vkGetPhysicalDeviceProperties` | 4087842590 | instance | unclassified |  |
+| `vkGetPhysicalDeviceFeatures` | 3233214503 | instance | unclassified |  |
+| `vkGetPhysicalDeviceQueueFamilyProperties` | 394073750 | instance | unclassified |  |
+| `vkGetPhysicalDeviceMemoryProperties` | 375875472 | instance | unclassified |  |
+| `vkEnumerateDeviceExtensionProperties` | 3076676743 | instance | unclassified |  |
+| `vkCreateDevice` | 3708532212 | instance | unclassified | VkDevice |
+| `vkDestroyDevice` | 3685263332 | device | unclassified |  |
+| `vkGetDeviceQueue` | 3584965915 | device | unclassified | VkQueue |
+| `vkDeviceWaitIdle` | 1508684833 | device | unclassified |  |
+| `vkCreateBuffer` | 1203908229 | device | unclassified | VkBuffer |
+| `vkDestroyBuffer` | 3174042733 | device | unclassified |  |
+| `vkGetBufferMemoryRequirements` | 1571591994 | device | unclassified |  |
+| `vkAllocateMemory` | 1791021280 | device | unclassified | VkDeviceMemory |
+| `vkFreeMemory` | 212925121 | device | unclassified |  |
+| `vkBindBufferMemory` | 1474043853 | device | unclassified |  |
+| `vkMapMemory` | 2426222277 | device | unclassified |  |
+| `vkUnmapMemory` | 274088084 | device | unclassified |  |
+| `vkCreateShaderModule` | 313637281 | device | unclassified | VkShaderModule |
+| `vkDestroyShaderModule` | 3128840576 | device | unclassified |  |
+| `vkCreateDescriptorSetLayout` | 3341903592 | device | unclassified | VkDescriptorSetLayout |
+| `vkDestroyDescriptorSetLayout` | 2132633169 | device | unclassified |  |
+| `vkCreatePipelineLayout` | 130332007 | device | unclassified | VkPipelineLayout |
+| `vkDestroyPipelineLayout` | 2218984063 | device | unclassified |  |
+| `vkCreateRenderPass` | 1903840027 | device | unclassified | VkRenderPass |
+| `vkDestroyRenderPass` | 1292674563 | device | unclassified |  |
+| `vkCreateGraphicsPipelines` | 3132881189 | device | unclassified | VkPipeline |
+| `vkDestroyPipeline` | 290585298 | device | unclassified |  |
+| `vkCreateSemaphore` | 3235585641 | device | unclassified | VkSemaphore |
+| `vkDestroySemaphore` | 132418181 | device | unclassified |  |
