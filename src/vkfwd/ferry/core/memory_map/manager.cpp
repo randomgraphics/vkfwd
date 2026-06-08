@@ -1,11 +1,16 @@
 #include "memory_map/manager.hpp"
 
+#include "command_stream.hpp"
 #include "logging.hpp"
 #include "memory_map/forwarder_allocation.hpp"
 #include "memory_map/forwarder_allocation_factory.hpp"
 #include "memory_map/receiver_allocation.hpp"
 #include "memory_map/receiver_allocation_factory.hpp"
+#include "memory_map/wire_format.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -194,14 +199,57 @@ public:
         allocations.erase(memory);
     }
 
-    bool custom_vkMapMemory_endpoint(const CommandStream & /*request_stream*/, const Range & /*request_range*/, CommandStream & /*response_stream*/,
-                                     ::vkfwd::receiver::ReplayContext & /*replay_context*/) {
-        // Phase-0 placeholder. Phase 1 unpacks manual::CommandId::MemoryMap
-        // and delegates into the matching ReceiverAllocation subclass; the
-        // replay_context parameter is reserved for the source->receiver handle
-        // map and dispatch-table access that subsequent tasks need.
-        VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: custom_vkMapMemory_endpoint not yet implemented (placeholder)");
-        return false;
+    bool custom_vkMapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                     ::vkfwd::receiver::ReplayContext & replay_context) {
+        // Peek at the request payload to discover (a) which VkDeviceMemory this
+        // chunk targets and (b) the classification fields needed to lazily
+        // construct a matching ReceiverAllocation on the very first map. The
+        // peek is by-copy because the wire payload may straddle the lifetime
+        // of multiple chunks once flatten() runs; the allocation subclass will
+        // re-read the same bytes through its endpoint body too — that duplicate
+        // is intentional and the manager_revision / sanity checks live there
+        // (we only need enough data here to pick a subclass).
+        constexpr std::size_t kPayloadAlignment = alignof(::vkfwd::memory_map::wire::MemoryMapRequest);
+        constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+        if (request_range.size < kPayloadOffset + sizeof(::vkfwd::memory_map::wire::MemoryMapRequest)) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: custom_vkMapMemory_endpoint chunk too small ({} bytes)", request_range.size);
+            return false;
+        }
+        const auto view = request_stream.at(request_range.offset + kPayloadOffset, sizeof(::vkfwd::memory_map::wire::MemoryMapRequest));
+        if (view.empty()) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: custom_vkMapMemory_endpoint request payload not addressable");
+            return false;
+        }
+        ::vkfwd::memory_map::wire::MemoryMapRequest req {};
+        std::memcpy(&req, view.address(0), sizeof(req));
+
+        // Lazy creation: the receiver does not get a "record allocation" wire
+        // command. The very first map for a VkDeviceMemory carries the
+        // classification fields forwarded from the source's MemoryTypeRegistry,
+        // so we construct the strategy now. Subsequent maps reuse the same
+        // entry; we never tear it down and re-create on a re-map.
+        auto found = allocations.find(req.memory);
+        if (found == allocations.end()) {
+            auto allocation = ::vkfwd::memory_map::ReceiverAllocationFactory::create({
+                .device                   = req.device,
+                .memory                   = req.memory,
+                .allocation_size          = req.allocation_size,
+                .memory_type_index        = req.memory_type_index,
+                .property_flags           = req.property_flags,
+                .non_coherent_atom_size   = req.non_coherent_atom_size,
+                .min_memory_map_alignment = static_cast<std::size_t>(req.min_memory_map_alignment),
+            });
+            if (!allocation) {
+                // Non-host-visible allocations should never reach this endpoint
+                // (the forwarder factory would have returned nullptr too). If
+                // they do, treat it as a protocol error rather than packing a
+                // misleading VkResult.
+                VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: MemoryMap request for non-host-visible allocation (property_flags={:#x})", req.property_flags);
+                return false;
+            }
+            found = allocations.emplace(req.memory, std::move(allocation)).first;
+        }
+        return found->second->map_endpoint(request_stream, request_range, response_stream, replay_context);
     }
 
     bool custom_vkUnmapMemory_endpoint(const CommandStream & /*request_stream*/, const Range & /*request_range*/, CommandStream & /*response_stream*/,

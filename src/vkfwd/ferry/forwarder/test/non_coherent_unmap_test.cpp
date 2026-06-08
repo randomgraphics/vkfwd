@@ -67,8 +67,8 @@ void record_scenario_allocation(const Scenario & s) {
 
 // Synthesizes the map-phase response so the forwarder map() body succeeds.
 CommandStream make_map_response_stream(const Scenario & s) {
-    CommandStream stream;
-    auto          view = stream.grow<MemoryMapResponse>(1, alignof(MemoryMapResponse));
+    CommandStream     stream;
+    auto              view = stream.grow<MemoryMapResponse>(1, alignof(MemoryMapResponse));
     MemoryMapResponse response {
         .manager_revision = kMemoryMapManagerRevision,
         .return_value     = static_cast<std::int32_t>(VK_SUCCESS),
@@ -108,8 +108,7 @@ CommandStream handle_map_then_unmap(CommandStream & request_stream) {
     s.saw_unmap_revision   = header.command_revision;
     s.saw_unmap_chunk_size = header.size;
 
-    constexpr std::size_t kPayloadOffset =
-        (sizeof(CommandChunkHeader) + alignof(MemoryUnmapRequestHeader) - 1) & ~(alignof(MemoryUnmapRequestHeader) - 1);
+    constexpr std::size_t kPayloadOffset = (sizeof(CommandChunkHeader) + alignof(MemoryUnmapRequestHeader) - 1) & ~(alignof(MemoryUnmapRequestHeader) - 1);
     REQUIRE(bytes.size() >= kPayloadOffset + sizeof(MemoryUnmapRequestHeader));
     std::memcpy(&s.saw_unmap_payload, bytes.address(kPayloadOffset), sizeof(MemoryUnmapRequestHeader));
 
@@ -121,8 +120,8 @@ CommandStream handle_map_then_unmap(CommandStream & request_stream) {
 } // namespace
 
 TEST_CASE("NonCoherentForwarderAllocation::unmap sends a header-only MemoryUnmap chunk") {
-    auto & s    = scenario();
-    s           = Scenario {};
+    auto & s = scenario();
+    s        = Scenario {};
 
     record_scenario_allocation(s);
     install_pack_unpack_transport(handle_map_then_unmap);
@@ -144,8 +143,7 @@ TEST_CASE("NonCoherentForwarderAllocation::unmap sends a header-only MemoryUnmap
     CHECK(s.saw_unmap_payload.range_count == 0);
     // Header-only chunk: header + 48-byte MemoryUnmapRequestHeader, no
     // MemoryTransferRange entries and no payload bytes following.
-    constexpr std::size_t kPayloadOffset =
-        (sizeof(CommandChunkHeader) + alignof(MemoryUnmapRequestHeader) - 1) & ~(alignof(MemoryUnmapRequestHeader) - 1);
+    constexpr std::size_t kPayloadOffset = (sizeof(CommandChunkHeader) + alignof(MemoryUnmapRequestHeader) - 1) & ~(alignof(MemoryUnmapRequestHeader) - 1);
     CHECK(s.saw_unmap_chunk_size == kPayloadOffset + sizeof(MemoryUnmapRequestHeader));
     CHECK(s.saw_unmap_payload.manager_revision == kMemoryMapManagerRevision);
     CHECK(s.saw_unmap_payload.device == s.device);
@@ -188,8 +186,9 @@ TEST_CASE("NonCoherentForwarderAllocation::unmap allows a clean re-map afterward
     install_pack_unpack_transport(handle_map_then_unmap);
 
     // First map → unmap.
-    void *         mapped_first     = nullptr;
-    const VkResult first_map_result = ::vkfwd::forwarder::generated::vkMapMemory_entry(s.device, s.memory, s.map_offset, s.map_size, s.map_flags, &mapped_first);
+    void *         mapped_first = nullptr;
+    const VkResult first_map_result =
+        ::vkfwd::forwarder::generated::vkMapMemory_entry(s.device, s.memory, s.map_offset, s.map_size, s.map_flags, &mapped_first);
     REQUIRE(first_map_result == VK_SUCCESS);
     REQUIRE(mapped_first != nullptr);
     ::vkfwd::forwarder::generated::vkUnmapMemory_entry(s.device, s.memory);
@@ -198,15 +197,16 @@ TEST_CASE("NonCoherentForwarderAllocation::unmap allows a clean re-map afterward
     // Re-install the transport so call_count resets to 0 and the next entry
     // is treated as a fresh map; this also clears the request stream which
     // unmap left empty after flush returned.
-    s.call_count       = 0;
-    s.saw_map_request  = false;
+    s.call_count        = 0;
+    s.saw_map_request   = false;
     s.saw_unmap_request = false;
     install_pack_unpack_transport(handle_map_then_unmap);
 
     // Second map: a fresh vm::reserve must succeed cleanly. We do not assert
     // pointer equality with the first map — VA reuse depends on the host OS.
-    void *         mapped_second     = nullptr;
-    const VkResult second_map_result = ::vkfwd::forwarder::generated::vkMapMemory_entry(s.device, s.memory, s.map_offset, s.map_size, s.map_flags, &mapped_second);
+    void *         mapped_second = nullptr;
+    const VkResult second_map_result =
+        ::vkfwd::forwarder::generated::vkMapMemory_entry(s.device, s.memory, s.map_offset, s.map_size, s.map_flags, &mapped_second);
     CHECK(second_map_result == VK_SUCCESS);
     REQUIRE(mapped_second != nullptr);
 

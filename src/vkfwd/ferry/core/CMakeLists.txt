@@ -72,7 +72,14 @@ target_include_directories(vkfwd_ferry_core
     # at final link via vkfwd_ferry_forwarder_static. Receiver-only consumers
     # never reach those subclasses through the factory chain, so the unresolved
     # reference is harmless for them.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../forwarder)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../forwarder
+    # Per-strategy ReceiverAllocation subclasses (memory_map/receiver/) need
+    # ReplayContext (source->receiver handle maps + per-context dispatch table)
+    # to translate handles and call the local Vulkan driver at endpoint time.
+    # That header lives in the receiver tree to stay co-located with the
+    # receiver-only state it owns. Mirrors the forwarder include above;
+    # forwarder-only consumers never link a path that references these symbols.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../receiver)
 
 target_link_libraries(vkfwd_ferry_core
   PUBLIC
