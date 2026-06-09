@@ -42,9 +42,11 @@ TEST_CASE("MemoryMapRequest is POD and round-trips via memcpy") {
 
 TEST_CASE("MemoryMapResponse round-trips via memcpy") {
     MemoryMapResponse resp {
-        .manager_revision = kMemoryMapManagerRevision,
-        .return_value     = VK_SUCCESS,
-        .effective_size   = 0x4000,
+        .manager_revision        = kMemoryMapManagerRevision,
+        .return_value            = VK_SUCCESS,
+        .effective_size          = 0x4000,
+        .initial_payload_present = 0,
+        .pad0                    = 0,
     };
 
     std::uint8_t buffer[sizeof(resp)] {};
@@ -56,6 +58,34 @@ TEST_CASE("MemoryMapResponse round-trips via memcpy") {
     CHECK(out.manager_revision == resp.manager_revision);
     CHECK(out.return_value == resp.return_value);
     CHECK(out.effective_size == resp.effective_size);
+    CHECK(out.initial_payload_present == resp.initial_payload_present);
+}
+
+// Phase 3a explicit size lock-in: the wire format grew from 16 to 24 bytes
+// when initial_payload_present was added for coherent bracketed copies. Locking
+// in sizeof here guards against a silent layout regression that would mis-read
+// the payload-present flag from struct padding bytes.
+TEST_CASE("MemoryMapResponse with initial_payload_present=1 round-trips and is 24 bytes") {
+    static_assert(sizeof(MemoryMapResponse) == 24, "MemoryMapResponse must remain 24 bytes after Phase 3a wire-format extension");
+
+    MemoryMapResponse resp {
+        .manager_revision        = kMemoryMapManagerRevision,
+        .return_value            = VK_SUCCESS,
+        .effective_size          = 0x4000,
+        .initial_payload_present = 1,
+        .pad0                    = 0,
+    };
+
+    std::uint8_t buffer[sizeof(resp)] {};
+    std::memcpy(buffer, &resp, sizeof(resp));
+
+    MemoryMapResponse out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.manager_revision == resp.manager_revision);
+    CHECK(out.return_value == resp.return_value);
+    CHECK(out.effective_size == resp.effective_size);
+    CHECK(out.initial_payload_present == 1);
 }
 
 TEST_CASE("QueryPhysicalDeviceMemoryInfoRequest round-trips via memcpy") {
