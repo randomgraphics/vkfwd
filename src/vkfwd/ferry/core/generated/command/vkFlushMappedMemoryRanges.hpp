@@ -24,37 +24,30 @@ static_assert(static_cast<std::uint32_t>(::vkfwd::generated::CommandId::FlushMap
 namespace vkfwd::generated::commands::vkFlushMappedMemoryRanges {
 
 struct Parameters {
-  VkDevice device = {};
-  uint32_t memoryRangeCount = {};
-  const VkMappedMemoryRange* pMemoryRanges = {};
+    VkDevice                    device           = {};
+    uint32_t                    memoryRangeCount = {};
+    const VkMappedMemoryRange * pMemoryRanges    = {};
 };
 
 struct Response {
-  VkResult return_value = VK_SUCCESS;
-
+    VkResult return_value = VK_SUCCESS;
 };
-
 
 class Command {
 public:
-  using Parameters = vkfwd::generated::commands::vkFlushMappedMemoryRanges::Parameters;
+    using Parameters = vkfwd::generated::commands::vkFlushMappedMemoryRanges::Parameters;
 
-  static VkResult pack_parameters(CommandStream& stream,
-                                  const Parameters& parameters);
-  static VkResult unpack_parameters(SafeArrayView<std::uint8_t>& view,
-                                    const Parameters** parameters);
+    static VkResult pack_parameters(CommandStream & stream, const Parameters & parameters);
+    static VkResult unpack_parameters(SafeArrayView<std::uint8_t> & view, const Parameters ** parameters);
 
-  using Response = vkfwd::generated::commands::vkFlushMappedMemoryRanges::Response;
+    using Response = vkfwd::generated::commands::vkFlushMappedMemoryRanges::Response;
 
-  static VkResult pack_response(CommandStream& stream,
-                                const Response& response);
-  static VkResult unpack_response(SafeArrayView<std::uint8_t>& view,
-                                  const Response** response);
-
+    static VkResult pack_response(CommandStream & stream, const Response & response);
+    static VkResult unpack_response(SafeArrayView<std::uint8_t> & view, const Response ** response);
 };
 
 } // namespace vkfwd::generated::commands::vkFlushMappedMemoryRanges
 
 #if __has_include("hook/vkFlushMappedMemoryRangesHook.hpp")
-#include "hook/vkFlushMappedMemoryRangesHook.hpp"
+    #include "hook/vkFlushMappedMemoryRangesHook.hpp"
 #endif

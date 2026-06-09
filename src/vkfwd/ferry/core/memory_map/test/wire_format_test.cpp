@@ -126,4 +126,95 @@ TEST_CASE("MemoryUnmapRequestHeader round-trips via memcpy") {
     CHECK(out.range_count == header.range_count);
 }
 
+TEST_CASE("MemoryFlushRequestHeader round-trips via memcpy") {
+    MemoryFlushRequestHeader header {
+        .manager_revision = kMemoryMapManagerRevision,
+        .range_count      = 2,
+        .device           = reinterpret_cast<VkDevice>(0xABCD),
+        .memory           = reinterpret_cast<VkDeviceMemory>(0xDCBA),
+    };
+
+    std::uint8_t buffer[sizeof(header)] {};
+    std::memcpy(buffer, &header, sizeof(header));
+
+    MemoryFlushRequestHeader out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.manager_revision == header.manager_revision);
+    CHECK(out.range_count == header.range_count);
+    CHECK(out.device == header.device);
+    CHECK(out.memory == header.memory);
+}
+
+TEST_CASE("MemoryFlushResponse round-trips via memcpy") {
+    MemoryFlushResponse resp {
+        .manager_revision = kMemoryMapManagerRevision,
+        .return_value     = VK_SUCCESS,
+    };
+
+    std::uint8_t buffer[sizeof(resp)] {};
+    std::memcpy(buffer, &resp, sizeof(resp));
+
+    MemoryFlushResponse out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.manager_revision == resp.manager_revision);
+    CHECK(out.return_value == resp.return_value);
+}
+
+TEST_CASE("MemoryInvalidateRequestHeader round-trips via memcpy") {
+    MemoryInvalidateRequestHeader header {
+        .manager_revision = kMemoryMapManagerRevision,
+        .range_count      = 3,
+        .device           = reinterpret_cast<VkDevice>(0x1111),
+        .memory           = reinterpret_cast<VkDeviceMemory>(0x2222),
+    };
+
+    std::uint8_t buffer[sizeof(header)] {};
+    std::memcpy(buffer, &header, sizeof(header));
+
+    MemoryInvalidateRequestHeader out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.manager_revision == header.manager_revision);
+    CHECK(out.range_count == header.range_count);
+    CHECK(out.device == header.device);
+    CHECK(out.memory == header.memory);
+}
+
+TEST_CASE("MemoryInvalidateRangeRequest round-trips via memcpy") {
+    MemoryInvalidateRangeRequest range {
+        .offset = 0x1000,
+        .size   = 0x4000,
+    };
+
+    std::uint8_t buffer[sizeof(range)] {};
+    std::memcpy(buffer, &range, sizeof(range));
+
+    MemoryInvalidateRangeRequest out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.offset == range.offset);
+    CHECK(out.size == range.size);
+}
+
+TEST_CASE("MemoryInvalidateResponseHeader round-trips via memcpy") {
+    MemoryInvalidateResponseHeader header {
+        .manager_revision = kMemoryMapManagerRevision,
+        .return_value     = VK_SUCCESS,
+        .range_count      = 4,
+        .pad0             = 0,
+    };
+
+    std::uint8_t buffer[sizeof(header)] {};
+    std::memcpy(buffer, &header, sizeof(header));
+
+    MemoryInvalidateResponseHeader out {};
+    std::memcpy(&out, buffer, sizeof(out));
+
+    CHECK(out.manager_revision == header.manager_revision);
+    CHECK(out.return_value == header.return_value);
+    CHECK(out.range_count == header.range_count);
+}
+
 } // namespace vkfwd::memory_map::wire::test

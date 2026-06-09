@@ -16,6 +16,8 @@ enum class CommandId : std::uint32_t {
     MemoryMap                     = 0xFFFE0001u,
     MemoryUnmap                   = 0xFFFE0002u,
     QueryPhysicalDeviceMemoryInfo = 0xFFFE0003u,
+    MemoryFlush                   = 0xFFFE0004u,
+    MemoryInvalidate              = 0xFFFE0005u,
 };
 
 static_assert(static_cast<std::uint32_t>(CommandId::MemoryMap) >= ::vkfwd::kReservedCommandIdBase,
@@ -23,6 +25,10 @@ static_assert(static_cast<std::uint32_t>(CommandId::MemoryMap) >= ::vkfwd::kRese
 static_assert(static_cast<std::uint32_t>(CommandId::MemoryUnmap) >= ::vkfwd::kReservedCommandIdBase,
               "manual command id must live in the reserved range [kReservedCommandIdBase, 2^32)");
 static_assert(static_cast<std::uint32_t>(CommandId::QueryPhysicalDeviceMemoryInfo) >= ::vkfwd::kReservedCommandIdBase,
+              "manual command id must live in the reserved range [kReservedCommandIdBase, 2^32)");
+static_assert(static_cast<std::uint32_t>(CommandId::MemoryFlush) >= ::vkfwd::kReservedCommandIdBase,
+              "manual command id must live in the reserved range [kReservedCommandIdBase, 2^32)");
+static_assert(static_cast<std::uint32_t>(CommandId::MemoryInvalidate) >= ::vkfwd::kReservedCommandIdBase,
               "manual command id must live in the reserved range [kReservedCommandIdBase, 2^32)");
 
 } // namespace vkfwd::manual

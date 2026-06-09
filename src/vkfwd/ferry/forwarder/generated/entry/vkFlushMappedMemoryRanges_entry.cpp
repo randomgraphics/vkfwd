@@ -10,19 +10,16 @@
 // Vulkan XML SHA256: 50e66c781e8afb9c80ffae10e3f7579f71afae6f9e77f22d50eeb963b3939482
 
 #if __has_include("hook/vkFlushMappedMemoryRangesForwarderHook.hpp")
-#include "hook/vkFlushMappedMemoryRangesForwarderHook.hpp"
+    #include "hook/vkFlushMappedMemoryRangesForwarderHook.hpp"
 #endif
 
 namespace vkfwd::forwarder::generated {
 
-VKAPI_ATTR VkResult VKAPI_CALL vkFlushMappedMemoryRanges_entry(
-    VkDevice device,
-    uint32_t memoryRangeCount,
-    const VkMappedMemoryRange* pMemoryRanges) {
-  // Staging protocol: delegate entirely to the manual MemoryMapForwarder. It
-  // emits vkfwd custom memory-map command ids, not generated Vulkan MapMemory /
-  // UnmapMemory command payloads.
-  return ::vkfwd::MemoryMapForwarder::instance().custom_vkFlushMappedMemoryRanges_entry(device, memoryRangeCount, pMemoryRanges);
+VKAPI_ATTR VkResult VKAPI_CALL vkFlushMappedMemoryRanges_entry(VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange * pMemoryRanges) {
+    // Staging protocol: delegate entirely to the manual MemoryMapForwarder. It
+    // emits vkfwd custom memory-map command ids, not generated Vulkan MapMemory /
+    // UnmapMemory command payloads.
+    return ::vkfwd::MemoryMapForwarder::instance().custom_vkFlushMappedMemoryRanges_entry(device, memoryRangeCount, pMemoryRanges);
 }
 
 } // namespace vkfwd::forwarder::generated
