@@ -310,6 +310,60 @@ public:
         return true;
     }
 
+    // Peeks the per-chunk header to find the source VkDeviceMemory the chunk
+    // targets, looks up the matching ReceiverAllocation, and delegates to its
+    // flush_endpoint / invalidate_endpoint. RequestHeader must be one of
+    // MemoryFlushRequestHeader or MemoryInvalidateRequestHeader — both share
+    // the same { manager_revision, range_count, device, memory } prefix layout
+    // so the function can switch on which endpoint to call after looking up
+    // memory. Templating keeps the chunk-bounds math centralized and the same
+    // for both commands.
+    template<class RequestHeader>
+    bool dispatch_per_allocation_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                          ::vkfwd::receiver::ReplayContext & replay_context, const char * command_label,
+                                          bool (::vkfwd::memory_map::ReceiverAllocation::*method)(const CommandStream &, const Range &, CommandStream &,
+                                                                                                  ::vkfwd::receiver::ReplayContext &)) {
+        constexpr std::size_t kPayloadAlignment = alignof(RequestHeader);
+        constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+        if (request_range.size < kPayloadOffset + sizeof(RequestHeader)) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: {} chunk too small ({} bytes)", command_label, request_range.size);
+            return false;
+        }
+        const auto view = request_stream.at(request_range.offset + kPayloadOffset, sizeof(RequestHeader));
+        if (view.empty()) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: {} request payload not addressable", command_label);
+            return false;
+        }
+        RequestHeader hdr {};
+        std::memcpy(&hdr, view.address(0), sizeof(hdr));
+
+        // Flush/Invalidate on a never-mapped handle is a protocol error from
+        // the forwarder's side: MemoryMapForwarder::flush_ranges /
+        // invalidate_ranges only ever invoke this path through a recorded
+        // ForwarderAllocation. Treat as session-fatal rather than silently
+        // succeeding — a misaddressed chunk would otherwise mask a real bug.
+        const auto found = allocations.find(hdr.memory);
+        if (found == allocations.end()) {
+            VKFWD_LOG_ERROR("vkfwd MemoryMapReceiver: {} for unrecorded VkDeviceMemory ({})", command_label, static_cast<const void *>(hdr.memory));
+            return false;
+        }
+        return (found->second.get()->*method)(request_stream, request_range, response_stream, replay_context);
+    }
+
+    bool custom_vkFlushMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                                   ::vkfwd::receiver::ReplayContext & replay_context) {
+        return dispatch_per_allocation_endpoint<::vkfwd::memory_map::wire::MemoryFlushRequestHeader>(
+            request_stream, request_range, response_stream, replay_context, "custom_vkFlushMappedMemoryRanges_endpoint",
+            &::vkfwd::memory_map::ReceiverAllocation::flush_endpoint);
+    }
+
+    bool custom_vkInvalidateMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                                        ::vkfwd::receiver::ReplayContext & replay_context) {
+        return dispatch_per_allocation_endpoint<::vkfwd::memory_map::wire::MemoryInvalidateRequestHeader>(
+            request_stream, request_range, response_stream, replay_context, "custom_vkInvalidateMappedMemoryRanges_endpoint",
+            &::vkfwd::memory_map::ReceiverAllocation::invalidate_endpoint);
+    }
+
     std::unordered_map<VkDeviceMemory, std::unique_ptr<::vkfwd::memory_map::ReceiverAllocation>> allocations;
 };
 
@@ -333,6 +387,16 @@ bool MemoryMapReceiver::custom_vkMapMemory_endpoint(const CommandStream & reques
 bool MemoryMapReceiver::custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                                                       ::vkfwd::receiver::ReplayContext & replay_context) {
     return impl_->custom_vkUnmapMemory_endpoint(request_stream, request_range, response_stream, replay_context);
+}
+
+bool MemoryMapReceiver::custom_vkFlushMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range,
+                                                                  CommandStream & response_stream, ::vkfwd::receiver::ReplayContext & replay_context) {
+    return impl_->custom_vkFlushMappedMemoryRanges_endpoint(request_stream, request_range, response_stream, replay_context);
+}
+
+bool MemoryMapReceiver::custom_vkInvalidateMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range,
+                                                                       CommandStream & response_stream, ::vkfwd::receiver::ReplayContext & replay_context) {
+    return impl_->custom_vkInvalidateMappedMemoryRanges_endpoint(request_stream, request_range, response_stream, replay_context);
 }
 
 } // namespace vkfwd

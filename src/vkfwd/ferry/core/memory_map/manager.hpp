@@ -90,6 +90,16 @@ public:
     bool custom_vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                                        ::vkfwd::receiver::ReplayContext & replay_context);
 
+    // Phase 2: manual MemoryFlush / MemoryInvalidate chunks land here. The
+    // generated standard vkFlushMappedMemoryRanges / vkInvalidateMappedMemoryRanges
+    // receiver endpoints fail closed so a wire-format regression cannot
+    // accidentally call the local Vulkan driver through the unprotected path.
+    bool custom_vkFlushMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                                   ::vkfwd::receiver::ReplayContext & replay_context);
+
+    bool custom_vkInvalidateMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                                        ::vkfwd::receiver::ReplayContext & replay_context);
+
 private:
     class Impl;
     Impl * impl_ = nullptr;

@@ -111,11 +111,9 @@ bool dispatch_manual_command(::vkfwd::manual::CommandId command_id, const Comman
     case ::vkfwd::manual::CommandId::QueryPhysicalDeviceMemoryInfo:
         return dispatch_query_physical_device_memory_info(request_stream, request_range, response_stream, replay_context);
     case ::vkfwd::manual::CommandId::MemoryFlush:
+        return replay_context.memoryMap.custom_vkFlushMappedMemoryRanges_endpoint(request_stream, request_range, response_stream, replay_context);
     case ::vkfwd::manual::CommandId::MemoryInvalidate:
-        // Routed to MemoryMapReceiver in the T17 commit; until then surfacing
-        // the chunk as unknown keeps the build green between commits.
-        VKFWD_LOG_ERROR("vkfwd receiver: MemoryFlush/MemoryInvalidate dispatch not wired yet, command_id={}", static_cast<std::uint32_t>(command_id));
-        return false;
+        return replay_context.memoryMap.custom_vkInvalidateMappedMemoryRanges_endpoint(request_stream, request_range, response_stream, replay_context);
     }
     VKFWD_LOG_ERROR("vkfwd receiver: unknown manual command_id={}", static_cast<std::uint32_t>(command_id));
     return false;
