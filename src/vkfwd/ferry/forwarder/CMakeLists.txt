@@ -30,7 +30,9 @@ set(VKFWD_FORWARDER_SOURCES
   generated/entry/vkDeviceWaitIdle_entry.cpp
   generated/entry/vkEnumerateDeviceExtensionProperties_entry.cpp
   generated/entry/vkEnumeratePhysicalDevices_entry.cpp
+  generated/entry/vkFlushMappedMemoryRanges_entry.cpp
   generated/entry/vkFreeMemory_entry.cpp
+  generated/entry/vkInvalidateMappedMemoryRanges_entry.cpp
   generated/entry/vkGetBufferMemoryRequirements_entry.cpp
   generated/entry/vkGetDeviceQueue_entry.cpp
   generated/entry/vkGetPhysicalDeviceFeatures_entry.cpp

@@ -22,6 +22,8 @@
 #include "generated/command/vkBindBufferMemory.hpp"
 #include "generated/command/vkMapMemory.hpp"
 #include "generated/command/vkUnmapMemory.hpp"
+#include "generated/command/vkFlushMappedMemoryRanges.hpp"
+#include "generated/command/vkInvalidateMappedMemoryRanges.hpp"
 #include "generated/command/vkCreateShaderModule.hpp"
 #include "generated/command/vkDestroyShaderModule.hpp"
 #include "generated/command/vkCreateDescriptorSetLayout.hpp"
@@ -284,6 +286,15 @@ struct CommandSamples {
         .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize  = 2048,
         .memoryTypeIndex = 1,
+    };
+    VkMappedMemoryRange vk_mapped_memory_range {
+        .sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = vk_device_memory,
+        .offset = 0,
+        .size   = VK_WHOLE_SIZE,
+    };
+    std::array<VkMappedMemoryRange, 1> vk_mapped_memory_range_array {
+        vk_mapped_memory_range,
     };
     VkShaderModuleCreateInfo vk_shader_module_create_info {
         .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -1002,6 +1013,64 @@ TEST_CASE("generated vkUnmapMemory non-null parameter pack/unpack roundtrip") {
     REQUIRE(points_into(parameter_view, unpacked));
     CHECK(unpacked->device == samples.vk_device);
     CHECK(unpacked->memory == samples.vk_device_memory);
+}
+
+TEST_CASE("generated vkFlushMappedMemoryRanges non-null parameter pack/unpack roundtrip") {
+    using Command = commands::vkFlushMappedMemoryRanges::Command;
+    CommandSamples               samples;
+    CommandStream                stream(64);
+    typename Command::Parameters parameters {.device           = samples.vk_device,
+                                             .memoryRangeCount = static_cast<std::uint32_t>(samples.vk_mapped_memory_range_array.size()),
+                                             .pMemoryRanges    = samples.vk_mapped_memory_range_array.data()};
+    REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+    CommandStream                        flattened      = stream.flatten();
+    auto                                 parameter_view = full_view(flattened);
+    const typename Command::Parameters * unpacked       = nullptr;
+    REQUIRE(Command::unpack_parameters(parameter_view, &unpacked) == VK_SUCCESS);
+    REQUIRE(points_into(parameter_view, unpacked));
+    CHECK(unpacked->device == samples.vk_device);
+    CHECK(unpacked->memoryRangeCount == static_cast<std::uint32_t>(samples.vk_mapped_memory_range_array.size()));
+    REQUIRE(unpacked->pMemoryRanges != nullptr);
+    CHECK(points_into(parameter_view, unpacked->pMemoryRanges));
+    CHECK(unpacked->pMemoryRanges->sType == samples.vk_mapped_memory_range.sType);
+
+    CommandStream              response_stream(64);
+    typename Command::Response response {.return_value = VK_SUCCESS};
+    REQUIRE(Command::pack_response(response_stream, response) == VK_SUCCESS);
+    CommandStream                      flattened_response = response_stream.flatten();
+    auto                               response_view      = full_view(flattened_response);
+    const typename Command::Response * unpacked_response  = nullptr;
+    REQUIRE(Command::unpack_response(response_view, &unpacked_response) == VK_SUCCESS);
+    REQUIRE(points_into(response_view, unpacked_response));
+}
+
+TEST_CASE("generated vkInvalidateMappedMemoryRanges non-null parameter pack/unpack roundtrip") {
+    using Command = commands::vkInvalidateMappedMemoryRanges::Command;
+    CommandSamples               samples;
+    CommandStream                stream(64);
+    typename Command::Parameters parameters {.device           = samples.vk_device,
+                                             .memoryRangeCount = static_cast<std::uint32_t>(samples.vk_mapped_memory_range_array.size()),
+                                             .pMemoryRanges    = samples.vk_mapped_memory_range_array.data()};
+    REQUIRE(Command::pack_parameters(stream, parameters) == VK_SUCCESS);
+    CommandStream                        flattened      = stream.flatten();
+    auto                                 parameter_view = full_view(flattened);
+    const typename Command::Parameters * unpacked       = nullptr;
+    REQUIRE(Command::unpack_parameters(parameter_view, &unpacked) == VK_SUCCESS);
+    REQUIRE(points_into(parameter_view, unpacked));
+    CHECK(unpacked->device == samples.vk_device);
+    CHECK(unpacked->memoryRangeCount == static_cast<std::uint32_t>(samples.vk_mapped_memory_range_array.size()));
+    REQUIRE(unpacked->pMemoryRanges != nullptr);
+    CHECK(points_into(parameter_view, unpacked->pMemoryRanges));
+    CHECK(unpacked->pMemoryRanges->sType == samples.vk_mapped_memory_range.sType);
+
+    CommandStream              response_stream(64);
+    typename Command::Response response {.return_value = VK_SUCCESS};
+    REQUIRE(Command::pack_response(response_stream, response) == VK_SUCCESS);
+    CommandStream                      flattened_response = response_stream.flatten();
+    auto                               response_view      = full_view(flattened_response);
+    const typename Command::Response * unpacked_response  = nullptr;
+    REQUIRE(Command::unpack_response(response_view, &unpacked_response) == VK_SUCCESS);
+    REQUIRE(points_into(response_view, unpacked_response));
 }
 
 TEST_CASE("generated vkCreateShaderModule non-null parameter pack/unpack roundtrip") {

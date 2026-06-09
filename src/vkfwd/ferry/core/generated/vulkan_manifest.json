@@ -1,5 +1,5 @@
 {
-  "command_count": 35,
+  "command_count": 37,
   "command_metadata": [
     "command/vkEnumerateInstanceVersion.metadata.json",
     "command/vkEnumerateInstanceLayerProperties.metadata.json",
@@ -24,6 +24,8 @@
     "command/vkBindBufferMemory.metadata.json",
     "command/vkMapMemory.metadata.json",
     "command/vkUnmapMemory.metadata.json",
+    "command/vkFlushMappedMemoryRanges.metadata.json",
+    "command/vkInvalidateMappedMemoryRanges.metadata.json",
     "command/vkCreateShaderModule.metadata.json",
     "command/vkDestroyShaderModule.metadata.json",
     "command/vkCreateDescriptorSetLayout.metadata.json",
@@ -61,6 +63,8 @@
     "vkBindBufferMemory",
     "vkMapMemory",
     "vkUnmapMemory",
+    "vkFlushMappedMemoryRanges",
+    "vkInvalidateMappedMemoryRanges",
     "vkCreateShaderModule",
     "vkDestroyShaderModule",
     "vkCreateDescriptorSetLayout",

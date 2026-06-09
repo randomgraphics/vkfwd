@@ -32,6 +32,8 @@
 | `vkBindBufferMemory` | 1474043853 | device | unclassified |  |
 | `vkMapMemory` | 2426222277 | device | unclassified |  |
 | `vkUnmapMemory` | 274088084 | device | unclassified |  |
+| `vkFlushMappedMemoryRanges` | 2594288766 | device | unclassified |  |
+| `vkInvalidateMappedMemoryRanges` | 3211068669 | device | unclassified |  |
 | `vkCreateShaderModule` | 313637281 | device | unclassified | VkShaderModule |
 | `vkDestroyShaderModule` | 3128840576 | device | unclassified |  |
 | `vkCreateDescriptorSetLayout` | 3341903592 | device | unclassified | VkDescriptorSetLayout |

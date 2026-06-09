@@ -27,6 +27,10 @@ VkResult pack_array_VkGraphicsPipelineCreateInfo(const VkGraphicsPipelineCreateI
                                                  PackedStruct & packed);
 VkResult unpack_VkGraphicsPipelineCreateInfo(SafeArrayView<std::uint8_t> & view, const VkGraphicsPipelineCreateInfo ** value);
 VkResult unpack_array_VkGraphicsPipelineCreateInfo(SafeArrayView<std::uint8_t> & view, std::uint32_t count, const VkGraphicsPipelineCreateInfo ** values);
+VkResult pack_VkMappedMemoryRange(const VkMappedMemoryRange * value, CommandStream & stream, PackedStruct & packed);
+VkResult pack_array_VkMappedMemoryRange(const VkMappedMemoryRange * values, std::uint32_t count, CommandStream & stream, PackedStruct & packed);
+VkResult unpack_VkMappedMemoryRange(SafeArrayView<std::uint8_t> & view, const VkMappedMemoryRange ** value);
+VkResult unpack_array_VkMappedMemoryRange(SafeArrayView<std::uint8_t> & view, std::uint32_t count, const VkMappedMemoryRange ** values);
 VkResult pack_VkMemoryAllocateInfo(const VkMemoryAllocateInfo * value, CommandStream & stream, PackedStruct & packed);
 VkResult pack_array_VkMemoryAllocateInfo(const VkMemoryAllocateInfo * values, std::uint32_t count, CommandStream & stream, PackedStruct & packed);
 VkResult unpack_VkMemoryAllocateInfo(SafeArrayView<std::uint8_t> & view, const VkMemoryAllocateInfo ** value);

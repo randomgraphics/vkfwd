@@ -35,6 +35,8 @@ TARGET_COMMANDS = (
     "vkBindBufferMemory",
     "vkMapMemory",
     "vkUnmapMemory",
+    "vkFlushMappedMemoryRanges",
+    "vkInvalidateMappedMemoryRanges",
     "vkCreateShaderModule",
     "vkDestroyShaderModule",
     "vkCreateDescriptorSetLayout",
@@ -53,6 +55,7 @@ SUPPORTED_COMMAND_STRUCT_PARAMETERS = {
     "VkDeviceCreateInfo",
     "VkBufferCreateInfo",
     "VkMemoryAllocateInfo",
+    "VkMappedMemoryRange",
     "VkShaderModuleCreateInfo",
     "VkDescriptorSetLayoutCreateInfo",
     "VkPipelineLayoutCreateInfo",
@@ -1808,7 +1811,12 @@ VKAPI_ATTR {ret} VKAPI_CALL {entry}(
 # Commands whose public Vulkan forwarder entry delegates to the manual
 # MemoryMapForwarder, which emits vkfwd custom command ids instead of the
 # generated Vulkan command payload for the same API name.
-FORWARDER_MEMORY_MAP_MANAGED_COMMANDS = {"vkMapMemory", "vkUnmapMemory"}
+FORWARDER_MEMORY_MAP_MANAGED_COMMANDS = {
+    "vkMapMemory",
+    "vkUnmapMemory",
+    "vkFlushMappedMemoryRanges",
+    "vkInvalidateMappedMemoryRanges",
+}
 
 # Receiver endpoint groups, in emission order. Each generated command is assigned
 # to exactly one group; endpoint implementations are split into endpoint/<group>.cpp
@@ -1850,6 +1858,8 @@ COMMAND_GROUP = {
     "vkBindBufferMemory": "memory_buffer",
     "vkMapMemory": "memory_buffer",
     "vkUnmapMemory": "memory_buffer",
+    "vkFlushMappedMemoryRanges": "memory_buffer",
+    "vkInvalidateMappedMemoryRanges": "memory_buffer",
     "vkCreateShaderModule": "shader_pipeline_layout",
     "vkDestroyShaderModule": "shader_pipeline_layout",
     "vkCreatePipelineLayout": "shader_pipeline_layout",
@@ -3302,6 +3312,24 @@ VkResult unpack_VkMemoryAllocateInfo(SafeArrayView<std::uint8_t>& view, const Vk
   return VK_SUCCESS;
 }}
 
+// VkMappedMemoryRange is a scalar Vulkan struct with no array-like sub-fields;
+// shallow pack + pNext copy is sufficient. flush/invalidate carry these.
+VkResult pack_VkMappedMemoryRange(const VkMappedMemoryRange* value, CommandStream& stream, PackedStruct& packed) {{
+  VkMappedMemoryRange* packed_value = nullptr;
+  VkResult status = append_shallow_struct(value, stream, packed, packed_value);
+  if (status != VK_SUCCESS || !value) {{ return status; }}
+  return pack_pnext(value->pNext, stream, packed.offset + offsetof(VkMappedMemoryRange, pNext), packed_value->pNext);
+}}
+
+VkResult unpack_VkMappedMemoryRange(SafeArrayView<std::uint8_t>& view, const VkMappedMemoryRange** value) {{
+  auto* typed = view.size() < sizeof(VkMappedMemoryRange) ? nullptr : reinterpret_cast<VkMappedMemoryRange*>(view.address(0));
+  if (!typed || typed->sType != VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE) {{ return VK_ERROR_UNKNOWN; }}
+  VkResult status = recover_pnext(typed->pNext, view);
+  if (status != VK_SUCCESS) [[unlikely]] {{ return status; }}
+  *value = typed;
+  return VK_SUCCESS;
+}}
+
 VkResult pack_VkShaderModuleCreateInfo(const VkShaderModuleCreateInfo* value, CommandStream& stream, PackedStruct& packed) {{
   VkShaderModuleCreateInfo* packed_value = nullptr;
   VkResult status = append_shallow_struct(value, stream, packed, packed_value);
@@ -3607,14 +3635,19 @@ VkResult unpack_VkSemaphoreCreateInfo(SafeArrayView<std::uint8_t>& view, const V
   VkResult pack_array_##Type(const Type* values, std::uint32_t count, CommandStream& stream, PackedStruct& packed) {{                                \\
     packed.offset = 0;                                                                                                                               \\
     if (!values || count == 0) {{ return VK_SUCCESS; }}                                                                                              \\
-    const Type* pointer_slot = nullptr;                                                                                                              \\
-    return pack_nested_struct_array(values, count, stream, 0, pointer_slot,                                                                          \\
-                                    [](const Type& source, Type& packed_value, CommandStream& nested_stream, std::size_t item_offset) {{             \\
-                                      PackedStruct unused {{.offset = item_offset}};                                                                  \\
-                                      (void)unused;                                                                                                  \\
-                                      return pack_##Type(&source, nested_stream, unused);                                                            \\
-                                    });                                                                                                              \\
-  }                                                                                                                                                  \\
+    try {{                                                                                                                                           \\
+      std::size_t target = 0;                                                                                                                        \\
+      auto destination = stream.grow<Type>(count, alignof(Type), &target);                                                                           \\
+      if (destination.set(0, count, values) != count) {{ return VK_ERROR_UNKNOWN; }}                                                                 \\
+      packed.offset = target;                                                                                                                        \\
+      for (std::uint32_t i = 0; i < count; ++i) {{                                                                                                   \\
+        PackedStruct unused {{.offset = target + i * sizeof(Type)}};                                                                                  \\
+        VkResult status = pack_##Type(&values[i], stream, unused);                                                                                   \\
+        if (status != VK_SUCCESS) {{ return status; }}                                                                                               \\
+      }}                                                                                                                                             \\
+      return VK_SUCCESS;                                                                                                                             \\
+    }} catch (const std::bad_alloc&) {{ return VK_ERROR_OUT_OF_HOST_MEMORY; }}                                                                       \\
+  }}                                                                                                                                                 \\
   VkResult unpack_array_##Type(SafeArrayView<std::uint8_t>& view, std::uint32_t count, const Type** values) {{                                       \\
     if (!values) {{ return VK_ERROR_UNKNOWN; }}                                                                                                      \\
     *values = view.size() < sizeof(Type) * count ? nullptr : reinterpret_cast<Type*>(view.address(0));                                                \\
@@ -3630,6 +3663,7 @@ VkResult unpack_VkSemaphoreCreateInfo(SafeArrayView<std::uint8_t>& view, const V
 
 VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkBufferCreateInfo)
 VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkMemoryAllocateInfo)
+VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkMappedMemoryRange)
 VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkShaderModuleCreateInfo)
 VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkDescriptorSetLayoutCreateInfo)
 VKFWD_DEFINE_COMMAND_STRUCT_ARRAY(VkPipelineLayoutCreateInfo)
@@ -3711,6 +3745,7 @@ def command_test_sample_expression(
         "pPhysicalDeviceCount": "&samples.count",
         "pQueueFamilyPropertyCount": "&samples.count",
         "createInfoCount": "static_cast<std::uint32_t>(samples.vk_graphics_pipeline_create_info_array.size())",
+        "memoryRangeCount": "static_cast<std::uint32_t>(samples.vk_mapped_memory_range_array.size())",
         "queueFamilyIndex": "samples.queue_family_index",
         "queueIndex": "samples.queue_index",
         "memoryOffset": "samples.memory_offset",
@@ -4165,6 +4200,15 @@ struct CommandSamples {{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = 2048,
         .memoryTypeIndex = 1,
+    }};
+    VkMappedMemoryRange vk_mapped_memory_range {{
+        .sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = vk_device_memory,
+        .offset = 0,
+        .size   = VK_WHOLE_SIZE,
+    }};
+    std::array<VkMappedMemoryRange, 1> vk_mapped_memory_range_array {{
+        vk_mapped_memory_range,
     }};
     VkShaderModuleCreateInfo vk_shader_module_create_info {{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,

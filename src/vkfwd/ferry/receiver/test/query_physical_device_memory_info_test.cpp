@@ -102,11 +102,11 @@ TEST_CASE("dispatch_manual_command(QueryPhysicalDeviceMemoryInfo) drives both PF
     s        = QueryStub {};
     // Canned driver answers: two host-visible memory types and specific limits
     // values the assertion logic compares to the wire response.
-    s.memory_properties.memoryTypeCount = 2;
-    s.memory_properties.memoryTypes[0]  = {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
-    s.memory_properties.memoryTypes[1]  = {VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1};
-    s.memory_properties.memoryHeapCount = 1;
-    s.memory_properties.memoryHeaps[0]  = {0x40000000, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT};
+    s.memory_properties.memoryTypeCount              = 2;
+    s.memory_properties.memoryTypes[0]               = {VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
+    s.memory_properties.memoryTypes[1]               = {VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1};
+    s.memory_properties.memoryHeapCount              = 1;
+    s.memory_properties.memoryHeaps[0]               = {0x40000000, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT};
     s.device_properties.limits.nonCoherentAtomSize   = 128;
     s.device_properties.limits.minMemoryMapAlignment = 4096;
 

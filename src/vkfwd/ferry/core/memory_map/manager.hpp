@@ -43,9 +43,12 @@ public:
 
     void custom_vkUnmapMemory_entry(VkDevice device, VkDeviceMemory memory);
 
-    // Phase 2 will wire vkFlushMappedMemoryRanges / vkInvalidateMappedMemoryRanges
-    // entry points into these. Phase 0 has no callers; the surface is locked now
-    // so phase 2 only adds plumbing — no manager-shape change at that point.
+    // vkFlushMappedMemoryRanges / vkInvalidateMappedMemoryRanges public Vulkan
+    // entry points delegate here. The custom_ names match the generator's
+    // FORWARDER_MEMORY_MAP_MANAGED_COMMANDS template; flush_ranges /
+    // invalidate_ranges are the underlying per-range dispatchers.
+    VkResult custom_vkFlushMappedMemoryRanges_entry(VkDevice device, std::uint32_t memoryRangeCount, const VkMappedMemoryRange * pMemoryRanges);
+    VkResult custom_vkInvalidateMappedMemoryRanges_entry(VkDevice device, std::uint32_t memoryRangeCount, const VkMappedMemoryRange * pMemoryRanges);
     VkResult flush_ranges(VkDevice device, std::uint32_t range_count, const VkMappedMemoryRange * ranges);
     VkResult invalidate_ranges(VkDevice device, std::uint32_t range_count, const VkMappedMemoryRange * ranges);
 

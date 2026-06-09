@@ -42,6 +42,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory_entry(VkDevice device, VkBuffe
 VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory_entry(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags,
                                                  void ** ppData);
 VKAPI_ATTR void VKAPI_CALL     vkUnmapMemory_entry(VkDevice device, VkDeviceMemory memory);
+VKAPI_ATTR VkResult VKAPI_CALL vkFlushMappedMemoryRanges_entry(VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange * pMemoryRanges);
+VKAPI_ATTR VkResult VKAPI_CALL vkInvalidateMappedMemoryRanges_entry(VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange * pMemoryRanges);
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule_entry(VkDevice device, const VkShaderModuleCreateInfo * pCreateInfo,
                                                           const VkAllocationCallbacks * pAllocator, VkShaderModule * pShaderModule);
 VKAPI_ATTR void VKAPI_CALL     vkDestroyShaderModule_entry(VkDevice device, VkShaderModule shaderModule, const VkAllocationCallbacks * pAllocator);

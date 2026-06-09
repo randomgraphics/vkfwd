@@ -8,6 +8,8 @@
 #include "generated/command/vkBindBufferMemory.hpp"
 #include "generated/command/vkMapMemory.hpp"
 #include "generated/command/vkUnmapMemory.hpp"
+#include "generated/command/vkFlushMappedMemoryRanges.hpp"
+#include "generated/command/vkInvalidateMappedMemoryRanges.hpp"
 #include "generated/receiver_hooks.hpp"
 #include "memory_map/manager.hpp"
 
@@ -38,6 +40,12 @@
 #endif
 #if __has_include("hook/vkUnmapMemoryReceiverHook.hpp")
     #include "hook/vkUnmapMemoryReceiverHook.hpp"
+#endif
+#if __has_include("hook/vkFlushMappedMemoryRangesReceiverHook.hpp")
+    #include "hook/vkFlushMappedMemoryRangesReceiverHook.hpp"
+#endif
+#if __has_include("hook/vkInvalidateMappedMemoryRangesReceiverHook.hpp")
+    #include "hook/vkInvalidateMappedMemoryRangesReceiverHook.hpp"
 #endif
 
 namespace vkfwd::receiver::generated {
@@ -289,6 +297,72 @@ bool vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & 
         if constexpr (Hooks::before_call_enabled) { Hooks::before_call(*const_cast<Command::Parameters *>(parameters), replay_context); }
         api_function(parameters->device, parameters->memory);
         return true;
+    }
+}
+
+bool vkFlushMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                        ::vkfwd::receiver::ReplayContext & replay_context) {
+    using Command = ::vkfwd::generated::commands::vkFlushMappedMemoryRanges::Command;
+    using Hooks   = ::vkfwd::receiver::manual::CommandHooks<::vkfwd::generated::CommandId::FlushMappedMemoryRanges>;
+
+    if constexpr (Hooks::replace_endpoint_enabled) {
+        // Full override: the endpoint has no standard unpack/call/pack body
+        // (e.g. memory-map delegation where no real Vulkan call happens here).
+        return Hooks::replace_endpoint(request_stream, request_range, response_stream, replay_context);
+    } else {
+        const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::FlushMappedMemoryRanges);
+        if (!raw_function) { return false; }
+        const auto api_function = reinterpret_cast<PFN_vkFlushMappedMemoryRanges>(raw_function);
+
+        auto & mutable_request_stream = const_cast<CommandStream &>(request_stream);
+        auto   request_view           = mutable_request_stream.at(request_range.offset, request_range.size);
+
+        if constexpr (Hooks::before_unpack_enabled) { Hooks::before_unpack(request_view, replay_context); }
+
+        const Command::Parameters * parameters = nullptr;
+        if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+
+        if constexpr (Hooks::before_call_enabled) { Hooks::before_call(*const_cast<Command::Parameters *>(parameters), replay_context); }
+        const VkResult    return_value = api_function(parameters->device, parameters->memoryRangeCount, parameters->pMemoryRanges);
+        Command::Response response {.return_value = return_value};
+        if constexpr (Hooks::after_call_enabled) { Hooks::after_call(*parameters, response, replay_context); }
+        if constexpr (Hooks::before_pack_response_enabled) { Hooks::before_pack_response(*parameters, response, replay_context); }
+        const bool packed_ok = Command::pack_response(response_stream, response) == VK_SUCCESS;
+        if constexpr (Hooks::after_pack_response_enabled) { Hooks::after_pack_response(*parameters, response_stream); }
+        return packed_ok;
+    }
+}
+
+bool vkInvalidateMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                             ::vkfwd::receiver::ReplayContext & replay_context) {
+    using Command = ::vkfwd::generated::commands::vkInvalidateMappedMemoryRanges::Command;
+    using Hooks   = ::vkfwd::receiver::manual::CommandHooks<::vkfwd::generated::CommandId::InvalidateMappedMemoryRanges>;
+
+    if constexpr (Hooks::replace_endpoint_enabled) {
+        // Full override: the endpoint has no standard unpack/call/pack body
+        // (e.g. memory-map delegation where no real Vulkan call happens here).
+        return Hooks::replace_endpoint(request_stream, request_range, response_stream, replay_context);
+    } else {
+        const auto raw_function = replay_context.dispatch.getProcByCommandId(::vkfwd::generated::CommandId::InvalidateMappedMemoryRanges);
+        if (!raw_function) { return false; }
+        const auto api_function = reinterpret_cast<PFN_vkInvalidateMappedMemoryRanges>(raw_function);
+
+        auto & mutable_request_stream = const_cast<CommandStream &>(request_stream);
+        auto   request_view           = mutable_request_stream.at(request_range.offset, request_range.size);
+
+        if constexpr (Hooks::before_unpack_enabled) { Hooks::before_unpack(request_view, replay_context); }
+
+        const Command::Parameters * parameters = nullptr;
+        if (Command::unpack_parameters(request_view, &parameters) != VK_SUCCESS) { return false; }
+
+        if constexpr (Hooks::before_call_enabled) { Hooks::before_call(*const_cast<Command::Parameters *>(parameters), replay_context); }
+        const VkResult    return_value = api_function(parameters->device, parameters->memoryRangeCount, parameters->pMemoryRanges);
+        Command::Response response {.return_value = return_value};
+        if constexpr (Hooks::after_call_enabled) { Hooks::after_call(*parameters, response, replay_context); }
+        if constexpr (Hooks::before_pack_response_enabled) { Hooks::before_pack_response(*parameters, response, replay_context); }
+        const bool packed_ok = Command::pack_response(response_stream, response) == VK_SUCCESS;
+        if constexpr (Hooks::after_pack_response_enabled) { Hooks::after_pack_response(*parameters, response_stream); }
+        return packed_ok;
     }
 }
 

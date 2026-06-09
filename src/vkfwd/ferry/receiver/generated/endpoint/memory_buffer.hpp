@@ -26,5 +26,9 @@ bool vkMapMemory_endpoint(const CommandStream & request_stream, const Range & re
                           ::vkfwd::receiver::ReplayContext & replay_context);
 bool vkUnmapMemory_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
                             ::vkfwd::receiver::ReplayContext & replay_context);
+bool vkFlushMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                        ::vkfwd::receiver::ReplayContext & replay_context);
+bool vkInvalidateMappedMemoryRanges_endpoint(const CommandStream & request_stream, const Range & request_range, CommandStream & response_stream,
+                                             ::vkfwd::receiver::ReplayContext & replay_context);
 
 } // namespace vkfwd::receiver::generated

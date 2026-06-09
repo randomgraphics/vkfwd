@@ -169,6 +169,21 @@ VkResult MemoryMapForwarder::invalidate_ranges(VkDevice device, std::uint32_t ra
     return impl_->invalidate_ranges(device, range_count, ranges);
 }
 
+// custom_* wrappers exist to satisfy the generator's
+// FORWARDER_MEMORY_MAP_MANAGED_COMMANDS template, which emits one-line entry
+// delegates of the shape custom_vk<Name>_entry. The actual per-range dispatch
+// lives in flush_ranges / invalidate_ranges; these wrappers carry the
+// Vulkan-spec argument names so the entry point can pass-through verbatim.
+VkResult MemoryMapForwarder::custom_vkFlushMappedMemoryRanges_entry(VkDevice device, std::uint32_t memoryRangeCount,
+                                                                    const VkMappedMemoryRange * pMemoryRanges) {
+    return impl_->flush_ranges(device, memoryRangeCount, pMemoryRanges);
+}
+
+VkResult MemoryMapForwarder::custom_vkInvalidateMappedMemoryRanges_entry(VkDevice device, std::uint32_t memoryRangeCount,
+                                                                         const VkMappedMemoryRange * pMemoryRanges) {
+    return impl_->invalidate_ranges(device, memoryRangeCount, pMemoryRanges);
+}
+
 VkDeviceSize MemoryMapForwarder::test_get_allocation_size(VkDeviceMemory memory) const { return impl_->test_get_allocation_size(memory); }
 
 // ---- MemoryMapReceiver::Impl ------------------------------------------------

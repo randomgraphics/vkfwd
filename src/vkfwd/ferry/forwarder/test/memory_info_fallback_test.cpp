@@ -43,16 +43,16 @@ struct Scenario {
     };
 
     // Query-response knobs.
-    VkResult                         query_status                   = VK_SUCCESS;
-    VkPhysicalDeviceMemoryProperties query_memory_properties        {};
+    VkResult                         query_status = VK_SUCCESS;
+    VkPhysicalDeviceMemoryProperties query_memory_properties {};
     VkDeviceSize                     query_non_coherent_atom_size   = 64;
     std::uint64_t                    query_min_memory_map_alignment = 4096;
 
     // Observed wire traffic for assertions.
-    int  call_count    = 0;
-    bool saw_allocate  = false;
-    bool saw_query     = false;
-    bool saw_map       = false;
+    int  call_count           = 0;
+    bool saw_allocate         = false;
+    bool saw_query            = false;
+    bool saw_map              = false;
     bool saw_unexpected_chunk = false;
 
     QueryPhysicalDeviceMemoryInfoRequest seen_query_request {};
@@ -104,8 +104,8 @@ CommandStream make_map_response(const Scenario & /*s*/, VkDeviceSize effective_s
 // Pull the first chunk's command_id without further parsing — used by the
 // stateful dispatcher to pick the right response branch.
 std::uint32_t peek_command_id(CommandStream & request_stream) {
-    const Range  packet = first_command_range(request_stream);
-    auto         bytes  = command_view(request_stream, packet);
+    const Range packet = first_command_range(request_stream);
+    auto        bytes  = command_view(request_stream, packet);
     REQUIRE(bytes.size() >= sizeof(CommandChunkHeader));
     CommandChunkHeader header {};
     std::memcpy(&header, bytes.address(0), sizeof(header));
@@ -130,8 +130,8 @@ CommandStream stateful_handler(CommandStream & request_stream) {
         s.saw_query = true;
         // Capture the query payload so tests can confirm the physical_device
         // round-tripped correctly.
-        const Range packet = first_command_range(request_stream);
-        auto        bytes  = command_view(request_stream, packet);
+        const Range           packet            = first_command_range(request_stream);
+        auto                  bytes             = command_view(request_stream, packet);
         constexpr std::size_t kPayloadAlignment = alignof(QueryPhysicalDeviceMemoryInfoRequest);
         constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
         REQUIRE(bytes.size() >= kPayloadOffset + sizeof(QueryPhysicalDeviceMemoryInfoRequest));
@@ -143,10 +143,10 @@ CommandStream stateful_handler(CommandStream & request_stream) {
         // Echo the requested map size so the forwarder's strict size-match
         // check passes. We can pull it from the wire payload to avoid hard-
         // coding it in the test.
-        const Range packet = first_command_range(request_stream);
-        auto        bytes  = command_view(request_stream, packet);
-        constexpr std::size_t kPayloadAlignment = alignof(::vkfwd::memory_map::wire::MemoryMapRequest);
-        constexpr std::size_t kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
+        const Range                                 packet            = first_command_range(request_stream);
+        auto                                        bytes             = command_view(request_stream, packet);
+        constexpr std::size_t                       kPayloadAlignment = alignof(::vkfwd::memory_map::wire::MemoryMapRequest);
+        constexpr std::size_t                       kPayloadOffset    = (sizeof(CommandChunkHeader) + kPayloadAlignment - 1) & ~(kPayloadAlignment - 1);
         ::vkfwd::memory_map::wire::MemoryMapRequest map_req {};
         REQUIRE(bytes.size() >= kPayloadOffset + sizeof(map_req));
         std::memcpy(&map_req, bytes.address(kPayloadOffset), sizeof(map_req));
@@ -202,8 +202,8 @@ VkPhysicalDeviceMemoryProperties make_host_visible_properties() {
 } // namespace
 
 TEST_CASE("memory_info_fallback: registry miss triggers query, retry resolves, allocation is tracked") {
-    auto & s                  = scenario();
-    s                         = Scenario {};
+    auto & s = scenario();
+    s        = Scenario {};
     // Unique per-test handles so neither the registry's physical-device rows
     // nor the manager's per-memory record collide with other tests in this
     // process. The registry singleton has no public "forget physical_device"
@@ -251,8 +251,8 @@ TEST_CASE("memory_info_fallback: registry miss triggers query, retry resolves, a
 }
 
 TEST_CASE("memory_info_fallback: receiver returns non-success, allocation stays untracked") {
-    auto & s                  = scenario();
-    s                         = Scenario {};
+    auto & s = scenario();
+    s        = Scenario {};
     // Distinct from the success-path handles above so neither registry rows
     // nor manager records collide.
     s.physical_device         = test_handle<VkPhysicalDevice>(0xFB01);

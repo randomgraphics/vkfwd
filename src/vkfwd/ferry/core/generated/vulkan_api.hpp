@@ -43,6 +43,8 @@ enum class CommandId : std::uint32_t {
     BindBufferMemory                       = 1474043853,
     MapMemory                              = 2426222277,
     UnmapMemory                            = 274088084,
+    FlushMappedMemoryRanges                = 2594288766,
+    InvalidateMappedMemoryRanges           = 3211068669,
     CreateShaderModule                     = 313637281,
     DestroyShaderModule                    = 3128840576,
     CreateDescriptorSetLayout              = 3341903592,

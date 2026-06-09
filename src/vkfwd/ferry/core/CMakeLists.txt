@@ -44,8 +44,10 @@ add_library(vkfwd_ferry_core STATIC
   generated/command/vkDeviceWaitIdle.cpp
   generated/command/vkEnumerateDeviceExtensionProperties.cpp
   generated/command/vkEnumeratePhysicalDevices.cpp
+  generated/command/vkFlushMappedMemoryRanges.cpp
   generated/command/vkFreeMemory.cpp
   generated/command/vkGetBufferMemoryRequirements.cpp
+  generated/command/vkInvalidateMappedMemoryRanges.cpp
   generated/command/vkGetDeviceQueue.cpp
   generated/command/vkGetPhysicalDeviceFeatures.cpp
   generated/command/vkGetPhysicalDeviceMemoryProperties.cpp

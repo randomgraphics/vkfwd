@@ -64,6 +64,10 @@ bool call_api_endpoint(::vkfwd::generated::CommandId command_id, const CommandSt
         return vkMapMemory_endpoint(request_stream, request_range, response_stream, replay_context);
     case ::vkfwd::generated::CommandId::UnmapMemory:
         return vkUnmapMemory_endpoint(request_stream, request_range, response_stream, replay_context);
+    case ::vkfwd::generated::CommandId::FlushMappedMemoryRanges:
+        return vkFlushMappedMemoryRanges_endpoint(request_stream, request_range, response_stream, replay_context);
+    case ::vkfwd::generated::CommandId::InvalidateMappedMemoryRanges:
+        return vkInvalidateMappedMemoryRanges_endpoint(request_stream, request_range, response_stream, replay_context);
     case ::vkfwd::generated::CommandId::CreateShaderModule:
         return vkCreateShaderModule_endpoint(request_stream, request_range, response_stream, replay_context);
     case ::vkfwd::generated::CommandId::DestroyShaderModule:
