@@ -220,20 +220,26 @@ VkResult NonCoherentForwarderAllocation::flush(VkDeviceSize offset, VkDeviceSize
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
-    // Step 2: bound the requested range against the actively mapped extent.
+    // Step 2: resolve VK_WHOLE_SIZE against the actively mapped extent. The
+    // Vulkan spec permits VkMappedMemoryRange.size = VK_WHOLE_SIZE to mean
+    // "from offset to the end of the mapping"; the receiver-side driver call
+    // can also accept it, but we need a concrete value for the byte copy.
+    const VkDeviceSize mapped_end     = mapped_offset_ + mapped_size_;
+    const VkDeviceSize effective_size = (size == VK_WHOLE_SIZE) ? (mapped_end - offset) : size;
+
+    // Step 3: bound the requested range against the actively mapped extent.
     // Anything outside [mapped_offset_, mapped_offset_ + mapped_size_) cannot
     // be backed by committed source staging.
-    const VkDeviceSize mapped_end    = mapped_offset_ + mapped_size_;
-    const VkDeviceSize requested_end = offset + size;
+    const VkDeviceSize requested_end = offset + effective_size;
     if (offset < mapped_offset_ || requested_end > mapped_end || requested_end < offset) {
         VKFWD_LOG_ERROR("vkfwd: NonCoherentForwarderAllocation::flush range [{},{}) outside mapped [{},{})", offset, requested_end, mapped_offset_, mapped_end);
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
-    // Step 3: atom-align offset down and end up. The receiver applies the
+    // Step 4: atom-align offset down and end up. The receiver applies the
     // exact same alignment when constructing its VkMappedMemoryRange so a
     // mismatch would be a same-build wire-format bug.
-    const auto aligned = atom_align(offset, size, info().non_coherent_atom_size, mapped_offset_, mapped_size_);
+    const auto aligned = atom_align(offset, effective_size, info().non_coherent_atom_size, mapped_offset_, mapped_size_);
     if (aligned.size == 0) { return VK_SUCCESS; }
 
     // Step 4: build a single MemoryFlush chunk carrying:
@@ -314,15 +320,16 @@ VkResult NonCoherentForwarderAllocation::invalidate(VkDeviceSize offset, VkDevic
         VKFWD_LOG_ERROR("vkfwd: NonCoherentForwarderAllocation::invalidate called on unmapped allocation");
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
-    const VkDeviceSize mapped_end    = mapped_offset_ + mapped_size_;
-    const VkDeviceSize requested_end = offset + size;
+    const VkDeviceSize mapped_end     = mapped_offset_ + mapped_size_;
+    const VkDeviceSize effective_size = (size == VK_WHOLE_SIZE) ? (mapped_end - offset) : size;
+    const VkDeviceSize requested_end  = offset + effective_size;
     if (offset < mapped_offset_ || requested_end > mapped_end || requested_end < offset) {
         VKFWD_LOG_ERROR("vkfwd: NonCoherentForwarderAllocation::invalidate range [{},{}) outside mapped [{},{})", offset, requested_end, mapped_offset_,
                         mapped_end);
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
-    const auto aligned = atom_align(offset, size, info().non_coherent_atom_size, mapped_offset_, mapped_size_);
+    const auto aligned = atom_align(offset, effective_size, info().non_coherent_atom_size, mapped_offset_, mapped_size_);
     if (aligned.size == 0) { return VK_SUCCESS; }
 
     // Invalidate request is purely metadata — no outbound payload. The
