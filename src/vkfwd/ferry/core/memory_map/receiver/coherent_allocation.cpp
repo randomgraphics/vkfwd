@@ -56,7 +56,7 @@ bool CoherentReceiverAllocation::map_endpoint(const ::vkfwd::CommandStream & req
                                            .return_value            = static_cast<std::int32_t>(VK_ERROR_UNKNOWN),
                                            .effective_size          = 0,
                                            .initial_payload_present = 0,
-                                           .pad0                    = 0,
+                                           .payload_offset          = 0,
                                        });
         return true;
     }
@@ -71,7 +71,7 @@ bool CoherentReceiverAllocation::map_endpoint(const ::vkfwd::CommandStream & req
                                            .return_value            = static_cast<std::int32_t>(VK_ERROR_UNKNOWN),
                                            .effective_size          = 0,
                                            .initial_payload_present = 0,
-                                           .pad0                    = 0,
+                                           .payload_offset          = 0,
                                        });
         return true;
     }
@@ -89,7 +89,7 @@ bool CoherentReceiverAllocation::map_endpoint(const ::vkfwd::CommandStream & req
                                            .return_value            = static_cast<std::int32_t>(VK_ERROR_UNKNOWN),
                                            .effective_size          = 0,
                                            .initial_payload_present = 0,
-                                           .pad0                    = 0,
+                                           .payload_offset          = 0,
                                        });
         return true;
     }
@@ -101,7 +101,7 @@ bool CoherentReceiverAllocation::map_endpoint(const ::vkfwd::CommandStream & req
                                            .return_value            = static_cast<std::int32_t>(driver_result),
                                            .effective_size          = 0,
                                            .initial_payload_present = 0,
-                                           .pad0                    = 0,
+                                           .payload_offset          = 0,
                                        });
         return true;
     }
@@ -114,23 +114,39 @@ bool CoherentReceiverAllocation::map_endpoint(const ::vkfwd::CommandStream & req
 
     // Step 4: C2.1 receiver→source bracketed copy. Pack the response header
     // FIRST so it lives at response_stream offset 0 (forwarder's at<>(0)
-    // requirement), then grow the payload bytes IMMEDIATELY after. Doing it
-    // in this order guarantees the payload lands at sizeof(MemoryMapResponse)
-    // — the offset the forwarder reads from — without needing an offset patch.
+    // requirement), then grow the payload bytes. The payload's logical
+    // offset is NOT necessarily sizeof(MemoryMapResponse): CommandStream
+    // inserts a gap header and may spill into a new chunk when the payload
+    // does not fit alongside the response. Capture the offset returned by
+    // grow() and patch it into the response so the forwarder reads from the
+    // correct location regardless of whether a gap was inserted.
     pack_response(response_stream, wire::MemoryMapResponse {
                                        .manager_revision        = kMemoryMapManagerRevision,
                                        .return_value            = static_cast<std::int32_t>(VK_SUCCESS),
                                        .effective_size          = effective_size,
                                        .initial_payload_present = 1,
-                                       .pad0                    = 0,
+                                       .payload_offset          = sizeof(wire::MemoryMapResponse), // provisional; patched below if grow() lands elsewhere
                                    });
     if (effective_size != 0) {
         // The bytes the driver wrote into the mapping (or, for a freshly
         // allocated coherent allocation, whatever undefined contents the
         // driver guarantees). The forwarder copies them into source staging
         // so a subsequent CPU read of ppData sees what the receiver sees.
-        auto payload_destination = response_stream.grow<std::uint8_t>(static_cast<std::size_t>(effective_size), 1);
+        std::size_t payload_offset      = 0;
+        auto        payload_destination = response_stream.grow<std::uint8_t>(static_cast<std::size_t>(effective_size), 1, &payload_offset);
         std::memcpy(payload_destination.address(0), static_cast<const std::uint8_t *>(receiver_ptr), static_cast<std::size_t>(effective_size));
+
+        // Patch the response's payload_offset to the real logical offset.
+        // The response header sits at offset 0; reading it back and
+        // rewriting payload_offset is safer than assuming offset 0 since the
+        // CommandStream::at<> typed accessor enforces alignment + addressability.
+        auto response_view = response_stream.at<wire::MemoryMapResponse>(0, sizeof(wire::MemoryMapResponse));
+        if (!response_view.empty()) {
+            wire::MemoryMapResponse patched {};
+            std::memcpy(&patched, response_view.address(0), sizeof(patched));
+            patched.payload_offset = payload_offset;
+            std::memcpy(response_view.address(0), &patched, sizeof(patched));
+        }
     }
     return true;
 }

@@ -106,18 +106,20 @@ VkResult CoherentForwarderAllocation::map(VkDeviceSize offset, VkDeviceSize size
         return VK_ERROR_UNKNOWN;
     }
 
-    // C2.1 receiver→source bracketed copy. The receiver appended exactly
-    // effective_size bytes immediately after the response struct; copy them
-    // into source staging at [offset, offset+effective_size). Without this
-    // step a CPU read of mapped coherent memory would see uninitialized
-    // staging instead of the receiver's current contents.
+    // C2.1 receiver→source bracketed copy. The receiver carries the payload
+    // at response.payload_offset (NOT a fixed offset: CommandStream may have
+    // inserted a gap header between the response and the payload if the
+    // payload spilled into a fresh chunk). Copy effective_size bytes into
+    // source staging at [offset, offset+effective_size). Without this step
+    // a CPU read of mapped coherent memory would see uninitialized staging
+    // instead of the receiver's current contents.
     if (response.initial_payload_present != 0) {
-        const std::size_t payload_offset = sizeof(wire::MemoryMapResponse);
+        const std::size_t payload_offset = static_cast<std::size_t>(response.payload_offset);
         const std::size_t payload_size   = static_cast<std::size_t>(effective_size);
         auto              payload_view   = response_stream.at(payload_offset, payload_size);
         if (payload_view.empty() && payload_size != 0) {
-            VKFWD_LOG_ERROR("vkfwd: CoherentForwarderAllocation::map initial payload not addressable (need {} bytes, stream={})", payload_size,
-                            response_stream.size());
+            VKFWD_LOG_ERROR("vkfwd: CoherentForwarderAllocation::map initial payload not addressable (offset={}, need {} bytes, stream={})", payload_offset,
+                            payload_size, response_stream.size());
             vm::release(reservation, static_cast<std::size_t>(allocation_size));
             return VK_ERROR_UNKNOWN;
         }

@@ -41,19 +41,25 @@ struct MemoryMapResponse {
     std::uint32_t manager_revision = kMemoryMapManagerRevision;
     std::int32_t  return_value     = VK_SUCCESS;
     VkDeviceSize  effective_size   = 0;
-    // Phase 3a (C2.1): coherent map_endpoint sets this to 1 when it appends
-    // exactly effective_size raw bytes immediately after this struct, which
-    // the forwarder copies into source staging at [offset, offset+effective_size).
-    // The bracketed-copy is what makes coherent memory observable on the source
+    // Phase 3a (C2.1): coherent map_endpoint sets this to 1 when the response
+    // stream carries effective_size raw payload bytes that the forwarder
+    // copies into source staging at [offset, offset+effective_size). The
+    // bracketed copy is what makes coherent memory observable on the source
     // before a flush is wired — GPU writes that happened prior to vkMapMemory
     // would otherwise be invisible until the next invalidate. Non-coherent
-    // responses leave this 0 and append no payload, so the wire grows by 8
-    // bytes but the non-coherent flow is unchanged. Bumped to 24 from 16.
+    // responses leave this 0 and append no payload, so the wire grows but the
+    // non-coherent flow is unchanged.
     std::uint32_t initial_payload_present = 0;
-    std::uint32_t pad0                    = 0;
+    // Logical offset of the payload bytes inside the response stream. Must be
+    // honored verbatim by the forwarder — CommandStream may insert gap
+    // headers between the response struct and a payload that spilled into a
+    // fresh chunk, so the payload is NOT guaranteed to sit at
+    // sizeof(MemoryMapResponse). When initial_payload_present == 0 this field
+    // is ignored.
+    VkDeviceSize payload_offset = 0;
 };
 static_assert(std::is_trivially_copyable_v<MemoryMapResponse>);
-static_assert(sizeof(MemoryMapResponse) == 24);
+static_assert(sizeof(MemoryMapResponse) == 32);
 
 struct MemoryUnmapRequestHeader {
     std::uint32_t  manager_revision = kMemoryMapManagerRevision;

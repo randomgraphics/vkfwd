@@ -46,7 +46,7 @@ TEST_CASE("MemoryMapResponse round-trips via memcpy") {
         .return_value            = VK_SUCCESS,
         .effective_size          = 0x4000,
         .initial_payload_present = 0,
-        .pad0                    = 0,
+        .payload_offset          = 0,
     };
 
     std::uint8_t buffer[sizeof(resp)] {};
@@ -59,21 +59,22 @@ TEST_CASE("MemoryMapResponse round-trips via memcpy") {
     CHECK(out.return_value == resp.return_value);
     CHECK(out.effective_size == resp.effective_size);
     CHECK(out.initial_payload_present == resp.initial_payload_present);
+    CHECK(out.payload_offset == resp.payload_offset);
 }
 
-// Phase 3a explicit size lock-in: the wire format grew from 16 to 24 bytes
-// when initial_payload_present was added for coherent bracketed copies. Locking
-// in sizeof here guards against a silent layout regression that would mis-read
-// the payload-present flag from struct padding bytes.
-TEST_CASE("MemoryMapResponse with initial_payload_present=1 round-trips and is 24 bytes") {
-    static_assert(sizeof(MemoryMapResponse) == 24, "MemoryMapResponse must remain 24 bytes after Phase 3a wire-format extension");
+// Phase 3a explicit size lock-in: the wire format grew from 16 to 32 bytes
+// when initial_payload_present + payload_offset were added for coherent
+// bracketed copies. Locking sizeof here guards against a silent layout
+// regression that would mis-read the payload-present flag from struct padding.
+TEST_CASE("MemoryMapResponse with initial_payload_present=1 round-trips and is 32 bytes") {
+    static_assert(sizeof(MemoryMapResponse) == 32, "MemoryMapResponse must remain 32 bytes after Phase 3a wire-format extension");
 
     MemoryMapResponse resp {
         .manager_revision        = kMemoryMapManagerRevision,
         .return_value            = VK_SUCCESS,
         .effective_size          = 0x4000,
         .initial_payload_present = 1,
-        .pad0                    = 0,
+        .payload_offset          = 0x1080, // arbitrary non-trivial offset to lock in field placement
     };
 
     std::uint8_t buffer[sizeof(resp)] {};
@@ -86,6 +87,7 @@ TEST_CASE("MemoryMapResponse with initial_payload_present=1 round-trips and is 2
     CHECK(out.return_value == resp.return_value);
     CHECK(out.effective_size == resp.effective_size);
     CHECK(out.initial_payload_present == 1);
+    CHECK(out.payload_offset == 0x1080);
 }
 
 TEST_CASE("QueryPhysicalDeviceMemoryInfoRequest round-trips via memcpy") {
